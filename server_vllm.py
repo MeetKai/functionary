@@ -37,7 +37,7 @@ from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.entrypoints.openai.protocol import (
     CompletionRequest, CompletionResponse, CompletionResponseChoice,
     CompletionResponseStreamChoice, CompletionStreamResponse,
-    ChatCompletionRequest, ChatCompletionResponse,
+    ChatCompletionResponse,
     ChatCompletionResponseChoice, ChatCompletionResponseStreamChoice,
     ChatCompletionStreamResponse, ChatMessage, DeltaMessage, ErrorResponse,
     LogProbs, ModelCard, ModelList, ModelPermission, UsageInfo)
@@ -47,11 +47,34 @@ from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
+from inference import prepare_messages_for_inference
+
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
 logger = init_logger(__name__)
 served_model = None
 app = fastapi.FastAPI()
+
+
+class ChatCompletionRequest(BaseModel):
+    model: str
+    messages: Union[str, List[Dict[str, str]]]
+    functions: Optional[List[Dict[str, Any]]]
+    temperature: Optional[float] = 0.7
+    top_p: Optional[float] = 1.0
+    n: Optional[int] = 1
+    max_tokens: Optional[int] = 16
+    stop: Optional[Union[str, List[str]]] = Field(default_factory=list)
+    stream: Optional[bool] = False
+    presence_penalty: Optional[float] = 0.0
+    frequency_penalty: Optional[float] = 0.0
+    logit_bias: Optional[Dict[str, float]] = None
+    user: Optional[str] = None
+    # Additional parameters supported by vLLM
+    best_of: Optional[int] = None
+    top_k: Optional[int] = -1
+    ignore_eos: Optional[bool] = False
+    use_beam_search: Optional[bool] = False
 
 
 def create_error_response(status_code: HTTPStatus,
@@ -160,7 +183,7 @@ async def create_chat_completion(raw_request: Request):
         return create_error_response(HTTPStatus.BAD_REQUEST,
                                      "logit_bias is not currently supported")
 
-    prompt_token_ids = get_gen_prompt_token_ids(request.messages)
+    prompt_token_ids = prepare_messages_for_inference(request.messages, request.functions)
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     if error_check_ret is not None:
         return error_check_ret
