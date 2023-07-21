@@ -21,6 +21,7 @@ from http import HTTPStatus
 import json
 import time
 from typing import AsyncGenerator, Dict, List, Optional
+from pydantic import BaseModel, Field
 
 import fastapi
 from fastapi import BackgroundTasks, Request
