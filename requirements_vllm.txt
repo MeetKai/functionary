@@ -1,0 +1,3 @@
+git+https://github.com/vllm-project/vllm@2bdea7ac110d3090d6a3c582aed36577ca480473 # This contains all of the requirements
+protobuf==3.20 # For lambdalabs server, this is needed
+openai # Only for client, but we put here for convenience

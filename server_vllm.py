@@ -183,7 +183,7 @@ async def create_chat_completion(raw_request: Request):
         return create_error_response(HTTPStatus.BAD_REQUEST,
                                      "logit_bias is not currently supported")
 
-    prompt_token_ids = prepare_messages_for_inference(request.messages, request.functions).tolist()
+    prompt_token_ids = prepare_messages_for_inference(request.messages, request.functions).tolist()[0]
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     if error_check_ret is not None:
         return error_check_ret
