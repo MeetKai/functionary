@@ -41,10 +41,23 @@ def prepare_messages_for_inference(tokenizer, messages, functions=None):
     all_messages = []
     if functions is not None:
         all_messages.append({"role": "system", "content": generate_schema_for_functions(functions)})
-        #print(all_messages[0]["content"])
     all_messages.append({"role": "system", "content": SYSTEM_MESSAGE})
-    all_messages.extend(messages)
+    for message in messages:
+        if message.get("role") == "assistant":
+            if message.get("content"):
+                all_messages.append({"role": "assistant", "content": message.get("content")})
+            if message.get("function_call"):
+                all_messages.append({"role": "assistant", 
+                                     "to": "functions." + message.get("function_call", {}).get("name"), 
+                                     "content": message.get("function_call", {}).get("arguments")})
+        elif message.get("role") == "function":
+            message["name"] = "functions." + message.get("name", "")
+            all_messages.append(message)
+        else:
+            all_messages.append(message)
+            
     all_messages.append({"role": "assistant", "content": None})
+    #print(all_messages)
     all_input_ids = [prepare_message_for_inference(tokenizer, msg) for msg in all_messages]
     return torch.cat(all_input_ids, dim=-1)
 
@@ -79,12 +92,12 @@ if __name__ == "__main__":
     model = AutoModelForCausalLM.from_pretrained("musabgultekin/functionary-7b-v0.2", low_cpu_mem_usage=True, torch_dtype=torch.float16).to("cuda:0")
     tokenizer = AutoTokenizer.from_pretrained("musabgultekin/functionary-7b-v0.2", use_fast=False)
 
-    generate(
+    out = generate(model,
         tokenizer,
         messages=[
             {"role": "user", "content": "what is the weather for istanbul?"},
-            {"role": "assistant", "to": "functions.get_current_weather", "content": '{\n  "location": "Istanbul",\n  "format": "celsius"\n}'},
-            {"role": "function", "name": "functions.get_current_weather", "content": '{"value": 32}'},
+            {"role": "assistant", "function_call": {"name": "get_current_weather", "arguments": '{\n  "location": "Istanbul",\n  "format": "celsius"\n}'}},
+            {"role": "function", "name": "get_current_weather", "content": '{"value": 32}'},
             {"role": "assistant", "content": "The current weather in Istanbul is 32 degrees Celsius."},
             {"role": "user", "content": "what is the weather for san francisco?"},
         ], 
@@ -110,5 +123,6 @@ if __name__ == "__main__":
                 },
         ]
     )
+    print(out)
     
     
