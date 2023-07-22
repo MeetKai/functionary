@@ -1,5 +1,7 @@
 # Functionary
 
+<img align="right" width="256" height="256" src="https://github.com/musabgultekin/functionary/assets/3749407/c7a1972d-6ad7-40dc-8000-dceabe6baabd">
+
 Functionary is a language model that can interpret and execute functions/plugins.
 
 The model decides when to run a function and it can interpret the output of the function call. Only calling the functions when its necessary. The function definitions are provided as JSON Schema Objects, just like OpenAI GPT function calls, and we provide a drop-in replacement server.
