@@ -54,8 +54,6 @@ See: [inference.py](inference.py)
 
 ## Training
 
---- Work In Progress ---
-
 We use standard HuggingFace Trainer
 
 **Hyperparameters**:
@@ -66,7 +64,7 @@ We use standard HuggingFace Trainer
 - Max length: 2048
 - Weight decay: 0
 
-*Training code will be shared soon*
+*More info and training code will be shared soon*
 
 ## Evaluation
 
