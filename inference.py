@@ -41,10 +41,11 @@ def prepare_messages_for_inference(tokenizer, messages, functions=None):
     all_messages = []
     if functions is not None:
         all_messages.append({"role": "system", "content": generate_schema_for_functions(functions)})
+        #print(all_messages[0]["content"])
     all_messages.append({"role": "system", "content": SYSTEM_MESSAGE})
     all_messages.extend(messages)
     all_messages.append({"role": "assistant", "content": None})
-    all_input_ids = [prepare_message_for_inference(tokenizer, msg) for msg in messages]
+    all_input_ids = [prepare_message_for_inference(tokenizer, msg) for msg in all_messages]
     return torch.cat(all_input_ids, dim=-1)
 
 
@@ -52,11 +53,11 @@ def generate(model, tokenizer, messages, functions=None, temperature=0.7, max_ne
     inputs = prepare_messages_for_inference(tokenizer, messages, functions)
     generate_ids = model.generate(inputs, max_new_tokens=max_new_tokens, temperature=temperature)
     generated_content = tokenizer.batch_decode(generate_ids[:, inputs.shape[1]:], skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-#    print(generated_content)
+    #print(generated_content)
 
     # If its function call:
-    if generated_content.startswith("assistant to=functions."):
-        function_call_content = generated_content.lstrip("assistant to=functions.")
+    if generated_content.startswith("to=functions."):
+        function_call_content = generated_content.lstrip("to=functions.")
         function_name, arguments = function_call_content.split(":\n")
         return {
                 "role": "assistant",
@@ -71,6 +72,7 @@ def generate(model, tokenizer, messages, functions=None, temperature=0.7, max_ne
                     'role': 'assistant',
                     'content': generated_content.lstrip("assistant:\n").rstrip("\n user:\n")
                 }
+
 
 
 if __name__ == "__main__":

@@ -3,7 +3,8 @@ def generate_schema_for_functions(functions, namespace="functions"):
     Convert functions array to a schema that language models can understand.
     """
 
-    schema = f"namespace {namespace} {{\n\n"
+    schema = f"// Supported function definitions that should be called when necessary.\n"
+    schema += f"namespace {namespace} {{\n\n"
 
     for function in functions:
         function_name = function.get("name", None)
@@ -16,7 +17,7 @@ def generate_schema_for_functions(functions, namespace="functions"):
 
         parameters = function.get("parameters", None)
         if parameters is not None:
-            schema += f"  = (_: {{\n"
+            schema += f" = (_: {{\n"
             required_params = parameters.get("required", [])
             for param_name, param in parameters.get("properties", {}).items():
                 # Param Description
