@@ -1,7 +1,7 @@
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-from schema import generate_schema_for_functions
+from schema import generate_schema_from_functions
 
 SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
 
@@ -40,7 +40,7 @@ def prepare_message_for_inference(tokenizer, message):
 def prepare_messages_for_inference(tokenizer, messages, functions=None):
     all_messages = []
     if functions is not None:
-        all_messages.append({"role": "system", "content": generate_schema_for_functions(functions)})
+        all_messages.append({"role": "system", "content": generate_schema_from_functions(functions)})
     all_messages.append({"role": "system", "content": SYSTEM_MESSAGE})
     for message in messages:
         if message.get("role") == "assistant":

@@ -1,4 +1,4 @@
-def generate_schema_for_functions(functions, namespace="functions"):
+def generate_schema_from_functions(functions, namespace="functions"):
     """
     Convert functions array to a schema that language models can understand.
     """
