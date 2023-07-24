@@ -8,16 +8,16 @@ The model decides when to run a function and it can interpret the output of the 
 
 We don't change the logit probabilities to conform a certain schema, but the model itself knows how to conform. This allows us to use existing tools and caching systems with ease.
 
-Its based on [LLaMA](https://arxiv.org/abs/2302.13971).
+Based on [Llama 2](https://arxiv.org/abs/2307.09288).
 
 ## OpenAI compatible server
 
 ### Setup
 
-Make sure you have PyTorch installed. Then:
+Make sure you have [PyTorch](https://pytorch.org/get-started/locally/) installed. Then:
 
     pip install -r requirements.txt
-    python3 server.py --model "musabgultekin/functionary-7b-v0.2"
+    python3 server.py --model "musabgultekin/functionary-7b-v1"
 
 ### Server Usage
 
@@ -28,7 +28,7 @@ openai.api_key = ""
 openai.api_base = "http://localhost:8000/v1"
 
 openai.ChatCompletion.create(
-    model="musabgultekin/functionary-7b-v0.2",
+    model="musabgultekin/functionary-7b-v1",
     messages=[{"role": "user", "content": "What is the weather for Istanbul?"}],
     functions=[{
         "name": "get_current_weather",
@@ -56,15 +56,20 @@ See: [inference.py](inference.py)
 
 ## Training
 
-We use standard HuggingFace Trainer
+We use standard HuggingFace Trainer. When calculating the loss, we only calculate the loss on assistant outputs and assistant function calls. Not on function responses and function definitions
+
+We use the similar hyperparameters as its used in LLama 2 [paper](https://arxiv.org/abs/2307.09288). 
+Except we use bigger weight decay (0.3 instead of 0.1) and warmup of 0.03, to reduce overfitting as we sample 2x of the function calling example conversations. But ablation study is required.
+
+We use transformers after this [commit](https://github.com/huggingface/transformers/commit/f4eb459ef25c62c4cc9edde38052da1980977872). As it fixes OOM for FSDP training on Llama 2.
 
 **Hyperparameters**:
 
-- Batch size: 128
+- Batch size: 64
 - Learning rate: 2e-5
-- Epochs: 3
-- Max length: 2048
-- Weight decay: 0
+- Epochs: 2
+- Max length: 4096
+- Weight decay: 0.3
 
 *More info and training code will be shared soon*
 
@@ -80,9 +85,9 @@ Due to the unique nature, it requires custom evaluation suite. But we can probab
 
 Dataset preparation process consists of several steps:
 
-1. **Function Definitions Conversion:** We begin by selecting multiple function definitions and converting them into TypeScript definitions. This approach benefits from the model's prior exposure to TypeScript tokens during the pretraining phase.
+1. **Function Definitions Conversion:** We begin by selecting multiple function definitions and converting them into TypeScript definitions. This approach benefits from the model's prior exposure to TypeScript tokens during the pretraining phase. [See how we do it](https://github.com/musabgultekin/functionary/blob/17a86de9b06acaedd0afab212717205c0484a218/schema.py#L54) Also see [Microsoft TypeChat](https://github.com/microsoft/TypeChat/blob/d2f2de9ca37ef9adeb108d5fc60703b72fec0a22/site/src/blog/introducing-typechat.md#just-add-types)
 
-2. **Human Prompts Generation:** We then create human prompts that incorporate the converted TypeScript function definitions.
+2. **Human Prompts Generation:** We then create human prompts that incorporate the converted TypeScript function definitions. 
 
 3. **Function Calls Generation:** Following the generation of human prompts, we proceed to generate corresponding function calls.
 
@@ -92,8 +97,9 @@ Dataset preparation process consists of several steps:
 
 6. **Merging and Training:** We combine all the generated elements (prompts, function calls, function answers, and their interpretations) using a custom formatting. This consolidated dataset is then used for the model's training.
 
-More information about this process will be provided soon as possible.
+*Note: Llama 2 70b is capable of doing all syntetic data generation.*
 
+*More information about this process will be provided soon as possible.*
 
 ### v0.1 
 
@@ -106,18 +112,24 @@ This version showed limitations in handling multi-prompt conversations, likely d
 
 ### v0.2
 
-**Data Sources:** 
+**Data Sources:**
 - [ShareGPT 53K](https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/blob/bcd32a724d8460ebe14e1d05b0195e30e9a46cb1/ShareGPT_V3_unfiltered_cleaned_split_no_imsorry.json)
 - Synthetic function calling dataset (3.5k examples). Sampled 2 times.
 
+### v1
+
+**Data Sources:**
+- Same as v0.2
+
 **Observations:**
-Compared to v0.1, It is capable of handling multi-turn conversations and hallucinations are reduced. I want to increase the token size to 4k with Llama 2, that should handle multi-turn conversations better.
+Compared to v0.2, because the model supports 4k context sizes, its much more resilient to the longer conversations and longer function definitions. Also we switched to Llama 2.
 
 
 ## Roadmap
 
-- [ ] If I can save more money, I'll train [Llama 2](https://arxiv.org/abs/2307.09288) 7B and 13B model too, with 2x more data.
+- [ ] If I can save more money, I'll train [Llama 2](https://arxiv.org/abs/2307.09288) 13B model too, with 2x more data.
 - [ ] OpenAPI specification based plugin support.
 - [ ] Fast inference server ([vLLM](https://github.com/vllm-project/vllm) or [text-generation-inference](https://github.com/huggingface/text-generation-inference))
 - [ ] Python function calling support (Automatic detection of type annotations and calling them automatically)
-- ...
+- [ ] Real world usage examples, such as creating agents.
+- **Please consider opening a PR for future requests**

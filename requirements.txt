@@ -1,4 +1,4 @@
-git+https://github.com/huggingface/transformers@3611fc90e090c92f56a46e7f95c4dc2144ee15f1 # We need this until 2.32 is out
+git+https://github.com/huggingface/transformers@f4eb459ef25c62c4cc9edde38052da1980977872 # We need this until 2.32 is out
 accelerate
 sentencepiece
 fastapi
