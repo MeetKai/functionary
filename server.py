@@ -13,7 +13,6 @@ app = FastAPI()
 
 
 class ChatInput(BaseModel):
-    model: str = "musabgultekin/functionary-7b-v0.2"
     messages: List[Dict[str, str]]
     functions: Optional[List[Dict[str, Any]]]
     temperature: float = 0.7  # set a default value
@@ -28,7 +27,7 @@ async def chat_endpoint(chat_input: ChatInput):
         'id': str(uuid.uuid4()),
         'object': 'chat.completion',
         'created': int(time.time()),
-        'model': chat_input.model,
+        'model': model_name,
         'choices': [
             {
                 'message': generated_message,
@@ -42,7 +41,7 @@ async def chat_endpoint(chat_input: ChatInput):
 if __name__ == "__main__":
     # Parse CLI arguments
     parser = argparse.ArgumentParser(description="Functionary API Server")
-    parser.add_argument('--model', type=str, default='musabgultekin/functionary-7b-v0.2', help='The model name to be used.')
+    parser.add_argument('--model', type=str, default='musabgultekin/functionary-7b-v1', help='The model name to be used.')
     args = parser.parse_args()
 
     model_name = args.model
