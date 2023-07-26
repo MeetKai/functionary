@@ -24,7 +24,7 @@ Make sure you have [PyTorch](https://pytorch.org/get-started/locally/) installed
 ```python
 import openai
 
-openai.api_key = ""
+openai.api_key = "" # We just need to set this empty so it works with openai package. No API key is required.
 openai.api_base = "http://localhost:8000/v1"
 
 openai.ChatCompletion.create(
