@@ -3,3 +3,4 @@ accelerate
 sentencepiece
 fastapi
 uvicorn
+openapi-spec-validator

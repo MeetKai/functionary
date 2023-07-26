@@ -1,7 +1,7 @@
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-
-from schema import generate_schema_from_functions
+import os
+from functionary_utils import SchemaGen
 
 SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
 
@@ -33,14 +33,14 @@ def prepare_message_for_inference(tokenizer, message):
     else:
         raise ValueError(f'Unsupported role: {message["role"]}')
 
-    input_ids = tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids.to("cuda:0")
+    input_ids = tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids.to(os.getenv('INFERENCE_DEVICE'))
     return input_ids
 
 
-def prepare_messages_for_inference(tokenizer, messages, functions=None):
+def prepare_messages_for_inference(tokenizer, messages, functions=None, plugins=None):
     all_messages = []
     if functions is not None:
-        all_messages.append({"role": "system", "content": generate_schema_from_functions(functions)})
+        all_messages.append({"role": "system", "content": SchemaGen.generate_schemas(functions=functions, plugins=plugins) })
     all_messages.append({"role": "system", "content": SYSTEM_MESSAGE})
     for message in messages:
         if message.get("role") == "assistant":
@@ -66,25 +66,29 @@ def generate(model, tokenizer, messages, functions=None, temperature=0.7, max_ne
     inputs = prepare_messages_for_inference(tokenizer, messages, functions)
     generate_ids = model.generate(inputs, max_new_tokens=max_new_tokens, temperature=temperature)
     generated_content = tokenizer.batch_decode(generate_ids[:, inputs.shape[1]:], skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-    #print(generated_content)
 
-    # If its function call:
+    # If it's a function call:
     if generated_content.startswith("to=functions."):
-        function_call_content = generated_content.lstrip("to=functions.")
-        function_name, arguments = function_call_content.split(":\n")
-        return {
-                "role": "assistant",
-                "content": None,
-                "function_call": {
-                    "name": function_name,
-                    "arguments": arguments,
-                }
-        }
+        function_call_content = generated_content[len("to=functions."):]  # Remove the prefix
+        function_name, function_arguments = function_call_content.split(":\n")  # Split at the first ":\n"
+    elif generated_content.startswith("to=plugins."):
+        function_call_content = generated_content[len("to=plugins."):]  # Remove the prefix
+        function_name, function_arguments = function_call_content.split(":\n")  # Split at the first ":\n"
     else:
         return {
-                    'role': 'assistant',
-                    'content': generated_content.lstrip("assistant:\n").rstrip("\n user:\n")
-                }
+                'role': 'assistant',
+                'content': generated_content.lstrip("assistant:\n").rstrip("\n user:\n")
+        }
+
+    return {
+            "role": "assistant",
+            "content": None,
+            "function_call": {
+                "name": function_name,
+                "arguments": function_arguments,
+            }
+    }
+
 
 
 
