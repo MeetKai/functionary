@@ -45,9 +45,10 @@ if __name__ == "__main__":
     parser.add_argument('--system_message', type=str, default=default_SYSTEM_MESSAGE, help="The system message to give to the model.")
     args = parser.parse_args()
     model_name = args.model ## since it is used in this script
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     os.environ['MODEL_NAME'] = model_name
-    os.environ['INFERENCE_DEVICE'] = "cuda:0" if torch.cuda.is_available else "cpu"
-    os.environ['SMALL_MEM'] = args.preserve_cpu_mem
+    os.environ['INFERENCE_DEVICE'] = device
+    os.environ['SMALL_MEM'] = str(args.preserve_cpu_mem)
     
-    model = Model(model_name=args.model, preserve_mem=args.preserve_cpu_mem, system_message=args.system_message)
+    model = Model(model_name=args.model, preserve_mem=args.preserve_cpu_mem, system_message=args.system_message, device=device)
     uvicorn.run(app, host="0.0.0.0", port=8000)

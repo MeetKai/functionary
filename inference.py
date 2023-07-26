@@ -10,7 +10,11 @@ class Model:
 
     def __init__(self, model_name, preserve_mem, device, system_message=default_SYSTEM_MESSAGE):
             self.SYSTEM_MESSAGE = system_message
-            self.model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=preserve_mem, torch_dtype=torch.float16).to(device)
+            if preserve_mem == 'True':
+                preserve_mem_real = True
+            else:
+                preserve_mem_real = False
+            self.model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=preserve_mem_real, torch_dtype=torch.float16).to(device)
             self.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
 
     def prepare_message_for_inference(self, tokenizer, message):
