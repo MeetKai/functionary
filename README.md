@@ -130,6 +130,7 @@ Compared to v0.2, because the model supports 4k context sizes, its much more res
 - [ ] If I can save more money, I'll train [Llama 2](https://arxiv.org/abs/2307.09288) 13B model too, with 2x more data.
 - [ ] OpenAPI specification based plugin support.
 - [ ] Fast inference server ([vLLM](https://github.com/vllm-project/vllm) or [text-generation-inference](https://github.com/huggingface/text-generation-inference))
+  - [ ] Streaming Support
 - [ ] Python function calling support (Automatic detection of type annotations and calling them automatically)
 - [ ] Real world usage examples, such as creating agents.
 - **Please consider opening a PR for future requests**
