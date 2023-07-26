@@ -5,10 +5,9 @@ import uuid
 import time
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
-from inference import generate
+from inference import Model, default_SYSTEM_MESSAGE
 import uvicorn
 import argparse
-from functionary_utils import SchemaGen
 import os
 
 app = FastAPI()
@@ -23,7 +22,7 @@ class ChatInput(BaseModel):
 
 @app.post("/v1/chat/completions")
 async def chat_endpoint(chat_input: ChatInput):
-    generated_message = generate(model, tokenizer, chat_input.messages, chat_input.functions, chat_input.temperature)
+    generated_message = model.generate( chat_input.messages, chat_input.functions, chat_input.temperature)
 
     return {
         'id': str(uuid.uuid4()),
@@ -43,13 +42,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Functionary API Server")
     parser.add_argument('--model', type=str, default='musabgultekin/functionary-7b-v1', help='The model name to be used.')
     parser.add_argument('--preserve_cpu_mem', type=bool, default=False, help="If you have a system with low CPU memory (~16gb or under depending on the model being used), then you may want to set '--preserve_cpu_mem True'")
+    parser.add_argument('--system_message', type=str, default=default_SYSTEM_MESSAGE, help="The system message to give to the model.")
     args = parser.parse_args()
-
-    model_name = args.model
-    device = os.environ['INFERENCE_DEVICE'] =="cuda:0" if torch.cuda.is_available else "cpu"
-    if device =="cpu":
-        print("using large language models without a GPU is not recommended. if you have a gpu on your system, then there may be a compatibility issue with pytorch and your gpu drivers.")
-    model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=args.preserve_cpu_mem, torch_dtype=torch.float16).to(device)
-    tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
-
+    model_name = args.model ## since it is used in this script
+    os.environ['MODEL_NAME'] = model_name
+    os.environ['INFERENCE_DEVICE'] = "cuda:0" if torch.cuda.is_available else "cpu"
+    os.environ['SMALL_MEM'] = args.preserve_cpu_mem
+    
+    model = Model(model_name=args.model, preserve_mem=args.preserve_cpu_mem, system_message=args.system_message)
     uvicorn.run(app, host="0.0.0.0", port=8000)
