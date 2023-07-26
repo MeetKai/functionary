@@ -4,3 +4,5 @@ sentencepiece
 fastapi
 uvicorn
 openapi-spec-validator
+bitsandbytes
+scipy

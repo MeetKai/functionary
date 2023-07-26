@@ -3,19 +3,25 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 import os
 from functionary_utils import SchemaGen
 from typing import List
+import bitsandbytes
 
 default_SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
 
 class Model:
+    
+    def __init__(self, model_kwargs, system_message=default_SYSTEM_MESSAGE):
+        self.SYSTEM_MESSAGE = system_message
+        self.device = 'cuda:0' if torch.cuda.is_available else 'cpu'
+        # Transform "True"/"False" strings to boolean True/False
+        for key in model_kwargs:
+            if model_kwargs[key] == 'True':
+                model_kwargs[key] = True
+            elif model_kwargs[key] == 'False':
+                model_kwargs[key] = False
+    
+        self.model = AutoModelForCausalLM.from_pretrained(**model_kwargs, torch_dtype=torch.float16).to(self.device)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_kwargs['pretrained_model_name_or_path'], use_fast=False)
 
-    def __init__(self, model_name, preserve_mem, device, system_message=default_SYSTEM_MESSAGE):
-            self.SYSTEM_MESSAGE = system_message
-            if preserve_mem == 'True':
-                preserve_mem_real = True
-            else:
-                preserve_mem_real = False
-            self.model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=preserve_mem_real, torch_dtype=torch.float16).to(device)
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
 
     def prepare_message_for_inference(self, message):
         tokenizer = self.tokenizer
@@ -45,7 +51,7 @@ class Model:
         else:
             raise ValueError(f'Unsupported role: {message["role"]}')
 
-        input_ids = tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids.to(os.getenv('INFERENCE_DEVICE'))
+        input_ids = tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids.to(self.device)
         return input_ids
 
 
