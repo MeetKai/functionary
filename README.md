@@ -71,7 +71,7 @@ We use transformers after this [commit](https://github.com/huggingface/transform
 - Max length: 4096
 - Weight decay: 0.3
 
-*More info and training code will be shared soon*
+More on training: [README.md](train/README.md) 
 
 ## Evaluation
 
