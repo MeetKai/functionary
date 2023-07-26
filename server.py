@@ -16,13 +16,12 @@ app = FastAPI()
 class ChatInput(BaseModel):
     messages: List[Dict[str, Any]]
     functions: Optional[List[Dict[str, Any]]]
-    plugin_urls : Optional[list[str]] ## cannot use openai client module for this param. coming soon.
     temperature: float = 0.7  # set a default value
 
 
 @app.post("/v1/chat/completions")
 async def chat_endpoint(chat_input: ChatInput):
-    generated_message = model.generate( chat_input.messages, chat_input.functions, chat_input.temperature)
+    generated_message = model.generate( messages=chat_input.messages, functions=chat_input.functions)
 
     return {
         'id': str(uuid.uuid4()),
@@ -40,7 +39,7 @@ async def chat_endpoint(chat_input: ChatInput):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Functionary API Server")
-    parser.add_argument('--model', type=str, default='musabgultekin/functionary-7b-v1', help='The model name to be used.')
+    parser.add_argument('--model', type=str, default='musabgultekin/functionary-7b-v0.2', help='The model name to be used.')
     parser.add_argument('--preserve_cpu_mem', type=bool, default=False, help="If you have a system with low CPU memory (~16gb or under depending on the model being used), then you may want to set '--preserve_cpu_mem True'")
     parser.add_argument('--system_message', type=str, default=default_SYSTEM_MESSAGE, help="The system message to give to the model.")
     args = parser.parse_args()

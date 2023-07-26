@@ -16,7 +16,6 @@ class Function:
         :param definition: A dictionary representing the function definition.
         :param namespace: A string representing the namespace of the function.
         """
-
         self.definition = definition
         self.namespace = namespace
         self.name = definition['name']
@@ -46,9 +45,10 @@ class Function:
 class SchemaGen:
     
     @staticmethod
-    def __call__(functions : list=None , plugin_urls : list = None, namespace = 'auto' ):
+    def __call__(functions : list = None , plugin_urls : list = None, namespace = 'auto' ):
         functions_list = []
         errors = []
+        
         if functions is not None:
             if namespace == 'auto' :
                 json_functions = SchemaGen.generate_from_func_dict(functions=functions, namespace='functions')

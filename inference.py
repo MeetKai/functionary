@@ -2,7 +2,7 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import os
 from functionary_utils import SchemaGen
-
+from typing import List
 
 default_SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
 
@@ -17,7 +17,8 @@ class Model:
             self.model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=preserve_mem_real, torch_dtype=torch.float16).to(device)
             self.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
 
-    def prepare_message_for_inference(self, tokenizer, message):
+    def prepare_message_for_inference(self, message):
+        tokenizer = self.tokenizer
         """Prepares a given message for the model by tokenizing the content."""
 
         if message["role"] == "system":
@@ -48,10 +49,12 @@ class Model:
         return input_ids
 
 
-    def prepare_messages_for_inference(self, tokenizer, messages, functions=None, plugins=None):
+    def prepare_messages_for_inference(self, messages, functions=None, plugins=None):
+        tokenizer = self.tokenizer
         all_messages = []
         if functions is not None:
-            all_messages.append({"role": "system", "content": SchemaGen.generate_schemas(functions=functions, plugins=plugins) })
+            functions_ts = SchemaGen()(functions=functions, plugin_urls=plugins)
+            all_messages.append({"role": "system", "content": functions_ts })
         all_messages.append({"role": "system", "content": self.SYSTEM_MESSAGE})
         for message in messages:
             if message.get("role") == "assistant":
@@ -68,13 +71,14 @@ class Model:
                 all_messages.append(message)
                 
         all_messages.append({"role": "assistant", "content": None})
-        #print(all_messages)
-        all_input_ids = [self.prepare_message_for_inference(tokenizer, msg) for msg in all_messages]
+        print(all_messages)
+        all_input_ids = [self.prepare_message_for_inference(msg) for msg in all_messages]
         return torch.cat(all_input_ids, dim=-1)
 
 
-    def generate(self, messages, functions=None, temperature=0.7, max_new_tokens=256):
-        inputs = self.prepare_messages_for_inference(tokenizer, messages, functions)
+    def generate(self, messages, functions : List = None, temperature=0.7, max_new_tokens=256):
+        tokenizer = self.tokenizer
+        inputs = self.prepare_messages_for_inference( messages=messages, functions=functions)
         generate_ids = self.model.generate(inputs, max_new_tokens=max_new_tokens, temperature=temperature)
         generated_content = self.tokenizer.batch_decode(generate_ids[:, inputs.shape[1]:], skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
 
