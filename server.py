@@ -3,9 +3,8 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 import uuid
 import time
-from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
-from inference import Model, default_SYSTEM_MESSAGE
+from inference import Model, defaultSystemMessage
 import uvicorn
 import argparse
 import os
