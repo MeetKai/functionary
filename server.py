@@ -40,7 +40,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Functionary API Server")
     parser.add_argument('--model', type=str, default='musabgultekin/functionary-7b-v0.2', help='The model name to be used.')
     parser.add_argument('--preserve_cpu_mem', type=bool, default=False, help="If you have a system with low CPU memory (~16gb or under depending on the model being used), then you may want to set '--preserve_cpu_mem True'")
-    parser.add_argument('--system_message', type=str, default=default_SYSTEM_MESSAGE, help="The system message to give to the model.")
+    parser.add_argument('--system_message', type=str, default=defaultSystemMessage, help="The system message to give to the model.")
     parser.add_argument('--use_bitsandbytes', type=bool, help="whether to quantize the model using bitsandbytes. this is particularly useful for systems with low gpu memory. to enable set '--use_bitsandbytes True'")
     args, _ = parser.parse_known_args()  # only parse known arguments
 

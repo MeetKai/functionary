@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional
 from openapi_spec_validator import validate_spec
 from openapi_spec_validator.readers import read_from_filename 
 from collections import OrderedDict
+from .openapi_parsers.parsers import generate_from_openapi_v300, generate_from_openapi_v301
 import collections
 import requests
 import yaml
@@ -291,55 +292,36 @@ class SchemaGen:
         # If none of the endpoints returned a valid specification
         raise ValueError("No openapi spec found on the specified endpoint")
         
-    def generate_from_openapi(specification: Dict[str, Any], namespace: str = 'plugins', description: Optional[str] = None) -> List[Function]:
+    @staticmethod
+    def generate_from_openapi(specification: Dict[str, Any], 
+                            namespace: str = 'plugins', 
+                            description: Optional[str] = None) -> List[Function]:
         """
-        Converts an OpenAPI specification to a list of Function objects.
+        Converts an OpenAPI specification to a list of Function objects based on the OpenAPI version.
 
         :param specification: An OpenAPI specification as a dictionary.
         :param namespace: The namespace for the generated TypeScript schema (default is 'plugins').
         :param description: A description for the OpenAPI specification (optional).
 
         :return: A list of Function objects derived from the OpenAPI specification.
+
+        :raises ValueError: If the OpenAPI version is not supported.
         """
 
+        openapi_version = specification.get('openapi')
+        parser_func_mapping = {
+            '3.0.0': generate_from_openapi_v300,
+            '3.0.1': generate_from_openapi_v301,
+            '3.0.2': generate_from_openapi_v301,
+            
+        }
 
-        function_objects = []  # List to store the created Function objects
+        parser_func = parser_func_mapping.get(openapi_version)
+        if parser_func is None:
+            raise ValueError(f"OpenAPI version {openapi_version} is not supported.")
+            
+        return parser_func(specification, namespace=namespace, description=description)
 
-        for path, path_content in specification.get('paths', {}).items():
-            for method, method_content in path_content.items():
-                if method not in ['get', 'post', 'put', 'delete', 'patch', 'options', 'head']:
-                    continue
-
-                function_name = re.sub(r'{[^}]*}', '', path).replace('/', '_').strip('_')
-
-                parameters = method_content.get('parameters', [])
-
-                parameter_info = {'properties': {}, 'required': []}  # Start without 'type' key
-
-                for parameter in parameters:
-                    param_name = parameter.get('name')
-                    if param_name:
-                        param_type = parameter.get('schema', {}).get('type')
-                        param_description = parameter.get('description', '')
-                        if param_type and param_description:  # only append if both type and description exist and are not empty
-                            parameter_info['properties'][param_name] = {'type': param_type, 'description': param_description}
-                            if parameter.get('required'):
-                                parameter_info['required'].append(param_name)
-
-                # After all parameters have been processed, add 'type' key at the beginning
-                parameter_info = OrderedDict([('type', 'object')] + list(parameter_info.items()))
-
-                if parameter_info['properties'] and parameter_info['required']:
-                    transformed_schema = {
-                        'name': function_name,
-                        'description': method_content.get('summary', ''),
-                        'parameters': parameter_info,
-                    }
-
-                    func_object = Function(transformed_schema, namespace='plugins')
-                    function_objects.append(func_object)  # Add the Function object to the list
-
-        return function_objects
 
                 
 
