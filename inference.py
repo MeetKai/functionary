@@ -56,7 +56,7 @@ class Model:
 
 
     def prepare_messages_for_inference(self, messages, functions=None, plugins=None):
-        tokenizer = self.tokenizer
+
         all_messages = []
         if functions is not None:
             functions_ts = SchemaGen()(functions=functions, plugin_urls=plugins)

@@ -22,8 +22,8 @@ class ChatInput(BaseModel):
 
 @app.post("/v1/chat/completions")
 async def chat_endpoint(chat_input: ChatInput):
-    generated_message = model.generate( chat_input.messages, chat_input.functions, chat_input.temperature)
-
+    generated_message = model.generate( messages=chat_input.messages, functions=chat_input.functions, plugins=chat_input.plugin_urls, temperature=chat_input.temperature)
+    
     return {
         'id': str(uuid.uuid4()),
         'object': 'chat.completion',
