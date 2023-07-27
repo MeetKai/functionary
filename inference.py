@@ -1,16 +1,16 @@
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import os
-from functionary_utils import SchemaGen
+from functionary import SchemaGen
 from typing import List
 import bitsandbytes
 
-default_SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
+defaultSystemMessage = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
 
 class Model:
     
-    def __init__(self, model_kwargs, system_message=default_SYSTEM_MESSAGE):
-        self.SYSTEM_MESSAGE = system_message
+    def __init__(self, model_kwargs, system_message=defaultSystemMessage):
+        self.system_message = system_message
         self.device = 'cuda:0' if torch.cuda.is_available else 'cpu'
         # Transform "True"/"False" strings to boolean True/False
         for key in model_kwargs:
@@ -61,7 +61,7 @@ class Model:
         if functions is not None:
             functions_ts = SchemaGen()(functions=functions, plugin_urls=plugins)
             all_messages.append({"role": "system", "content": functions_ts })
-        all_messages.append({"role": "system", "content": self.SYSTEM_MESSAGE})
+        all_messages.append({"role": "system", "content": self.system_message})
         for message in messages:
             if message.get("role") == "assistant":
                 if message.get("content"):
@@ -83,7 +83,6 @@ class Model:
 
 
     def generate(self, messages, functions : List = None, temperature=0.7, max_new_tokens=256):
-        tokenizer = self.tokenizer
         inputs = self.prepare_messages_for_inference( messages=messages, functions=functions)
         generate_ids = self.model.generate(inputs, max_new_tokens=max_new_tokens, temperature=temperature)
         generated_content = self.tokenizer.batch_decode(generate_ids[:, inputs.shape[1]:], skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
