@@ -46,6 +46,9 @@ class SchemaGen:
     
     @staticmethod
     def __call__(functions : list = None , plugin_urls : list = None, namespace = 'auto' ):
+        """
+        Please note plugins do not do anything yet, thus the argument will be ignored. expect this to be fixed in a few days when server side plugin execution is implemented
+        """
         functions_list = []
         errors = []
         
