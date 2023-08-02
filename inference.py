@@ -89,8 +89,8 @@ def generate(model, tokenizer, messages, functions=None, temperature=0.7, max_ne
 
 
 if __name__ == "__main__":
-    model = AutoModelForCausalLM.from_pretrained("musabgultekin/functionary-7b-v0.2", low_cpu_mem_usage=True, torch_dtype=torch.float16).to("cuda:0")
-    tokenizer = AutoTokenizer.from_pretrained("musabgultekin/functionary-7b-v0.2", use_fast=False)
+    model = AutoModelForCausalLM.from_pretrained("musabgultekin/functionary-7b-v1", low_cpu_mem_usage=True, torch_dtype=torch.float16).to("cuda:0")
+    tokenizer = AutoTokenizer.from_pretrained("musabgultekin/functionary-7b-v1", use_fast=False)
 
     out = generate(model,
         tokenizer,
