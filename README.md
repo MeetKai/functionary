@@ -54,6 +54,177 @@ See: [inference.py](inference.py)
 
     python3 inference.py
 
+# Use Cases
+
+Here are a few examples of how you can use this function calling system:
+
+### Travel and Hospitality - Trip Planning
+The function `plan_trip(destination: string, duration: int, interests: list)` can take user input such as "I want to plan a 7-day trip to Paris with a focus on art and culture" and generate an itinerary accordingly.
+
+<details>
+  <summary>Details (click to expand)</summary>
+
+```python
+openai.ChatCompletion.create(
+    model="musabgultekin/functionary-7b-v1",
+    messages=[
+        {"role": "user", "content": 'I want to plan a 7-day trip to Paris with a focus on art and culture'},
+    ], 
+    functions=[
+        {
+            "name": "plan_trip",
+            "description": "Plan a trip based on user's interests",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "destination": {
+                        "type": "string",
+                        "description": "The destination of the trip",
+                    },
+                    "duration": {
+                        "type": "integer",
+                        "description": "The duration of the trip in days",
+                    },
+                    "interests": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "The interests based on which the trip will be planned",
+                    },
+                },
+                "required": ["destination", "duration", "interests"],
+            },
+        },
+    ]
+)
+```
+
+Response will have: 
+
+```json
+{"role": "assistant", "function_call": {"name": "plan_trip", "arguments": '{\n  "destination": "Paris",\n  "duration": 7,\n  "interests": ["art", "culture"]\n}'}}
+```
+
+Then you need to call ```plan_trip``` function with provided arguments. 
+If you would like a commentary from the model, then you'll call the model again with the response from the function, the model will write necessary commentary.
+
+</details>
+
+
+### Real Estate - Property Valuation
+A function like estimate_property_value(property_details: dict) could allow users to input details about a property (such as location, size, number of rooms, etc.) and receive an estimated market value.
+
+<details>
+  <summary>Details (click to expand)</summary>
+
+```python
+openai.ChatCompletion.create(
+    model="musabgultekin/functionary-7b-v1",
+    messages=[
+        {"role": "user", "content": 'What is the estimated value of a 3-bedroom house in San Francisco with 2000 sq ft area?'},
+        {"role": "assistant", "function_call": {"name": "estimate_property_value", "arguments": '{\n  "property_details": {"location": "San Francisco", "size": 2000, "rooms": 3}\n}'}},
+    ], 
+    functions=[
+        {
+            "name": "estimate_property_value",
+            "description": "Estimate the market value of a property",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "property_details": {
+                        "type": "object",
+                        "properties": {
+                            "location": {
+                                "type": "string",
+                                "description": "The location of the property",
+                            },
+                            "size": {
+                                "type": "integer",
+                                "description": "The size of the property in square feet",
+                            },
+                            "rooms": {
+                                "type": "integer",
+                                "description": "The number of rooms in the property",
+                            },
+                        },
+                        "required": ["location", "size", "rooms"],
+                    },
+                },
+                "required": ["property_details"],
+            },
+        },
+    ]
+)
+```
+
+Response will have: 
+
+```json
+{"role": "assistant", "function_call": {"name": "plan_trip", "arguments": '{\n  "destination": "Paris",\n  "duration": 7,\n  "interests": ["art", "culture"]\n}'}}
+```
+
+Then you need to call ```plan_trip``` function with provided arguments. 
+If you would like a commentary from the model, then you'll call the model again with the response from the function, the model will write necessary commentary.
+
+</details>
+
+
+### Telecommunications - Customer Support
+A function `parse_customer_complaint(complaint: {issue: string, frequency: string, duration: string})` could help in extracting structured information from a complex, narrative customer complaint, identifying the core issue and potential solutions. The `complaint` object could include properties such as `issue` (the main problem), `frequency` (how often the issue occurs), and `duration` (how long the issue has been occurring).
+
+<details>
+  <summary>Details (click to expand)</summary>
+
+```python
+openai.ChatCompletion.create(
+    model="musabgultekin/functionary-7b-v1",
+    messages=[
+        {"role": "user", "content": 'My internet has been disconnecting frequently for the past week'},
+    ], 
+    functions=[
+        {
+            "name": "parse_customer_complaint",
+            "description": "Parse a customer complaint and identify the core issue",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "complaint": {
+                        "type": "object",
+                        "properties": {
+                            "issue": {
+                                "type": "string",
+                                "description": "The main problem",
+                            },
+                            "frequency": {
+                                "type": "string",
+                                "description": "How often the issue occurs",
+                            },
+                            "duration": {
+                                "type": "string",
+                                "description": "How long the issue has been occurring",
+                            },
+                        },
+                        "required": ["issue", "frequency", "duration"],
+                    },
+                },
+                "required": ["complaint"],
+            },
+        },
+    ]
+)
+```
+
+Response will have:
+
+```json
+{"role": "assistant", "function_call": {"name": "parse_customer_complaint", "arguments": '{\n  "complaint": {"issue": "internet disconnecting", "frequency": "frequently", "duration": "past week"}\n}'}}
+```
+
+Then you need to call parse_customer_complaint function with provided arguments.
+If you would like a commentary from the model, then you'll call the model again with the response from the function, the model will write necessary commentary.
+
+</details>
+
+
 ## Training
 
 We use standard HuggingFace Trainer. When calculating the loss, we only calculate the loss on assistant outputs and assistant function calls. Not on function responses and function definitions
