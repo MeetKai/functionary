@@ -1,3 +1,4 @@
+import uuid
 from fastapi import FastAPI
 from transformers import LlamaTokenizer, LlamaForCausalLM
 import torch
@@ -9,8 +10,10 @@ from openai_types import ChatCompletion, ChatInput, Choice
 
 app = FastAPI(title="Functionary API")
 
+
 @app.post("/v1/chat/completions", response_model=ChatCompletion)
 async def chat_endpoint(chat_input: ChatInput):
+    request_id = str(uuid.uuid4())
     response_message = generate_models(
         messages=chat_input.messages,
         functions=chat_input.functions,
@@ -19,7 +22,9 @@ async def chat_endpoint(chat_input: ChatInput):
         tokenizer=tokenizer,
     )
 
-    return ChatCompletion(choices=[Choice.from_message(response_message)])
+    return ChatCompletion(
+        id=request_id, choices=[Choice.from_message(response_message)]
+    )
 
 
 if __name__ == "__main__":

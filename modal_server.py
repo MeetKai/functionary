@@ -1,13 +1,10 @@
-from typing import List, Tuple
 import uuid
+from typing import List
 from fastapi import FastAPI
 from inference import generate_models
 from openai_types import ChatCompletion, ChatInput, Choice, Function, TurnMessage
 
 import modal
-import logging
-
-logger = logging.getLogger("name")
 
 stub = modal.Stub("functionary")
 app = FastAPI(title="Functionary API")
@@ -21,7 +18,6 @@ def get_model():
     import torch
     from transformers import LlamaTokenizer, LlamaForCausalLM
 
-    logger.info("Loading model")
     model = LlamaForCausalLM.from_pretrained(
         MODEL,
         low_cpu_mem_usage=True,
