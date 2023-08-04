@@ -38,11 +38,11 @@ async def chat_endpoint(chat_input: ChatInput):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Functionary API Server")
-    parser.add_argument('--model', type=str, default='musabgultekin/functionary-7b-v1', help='The model name to be used.')
+    parser.add_argument('--model', type=str, default='musabgultekin/functionary-7b-v1', help='Model name')
+    parser.add_argument("--load_in_8bit", type=bool, default=False)
     args = parser.parse_args()
 
-    model_name = args.model
-    model = LlamaForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True, device_map='auto', torch_dtype=torch.float16)
-    tokenizer = LlamaTokenizer.from_pretrained(model_name, use_fast=False)
+    model = LlamaForCausalLM.from_pretrained(args.model, low_cpu_mem_usage=True, device_map='auto', torch_dtype=torch.float16, load_in_8bit=args.load_in_8bit)
+    tokenizer = LlamaTokenizer.from_pretrained(args.model, use_fast=False)
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
