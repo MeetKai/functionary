@@ -12,7 +12,6 @@ MODEL = "musabgultekin/functionary-7b-v1"
 LOADIN8BIT = False
 
 
-@lru_cache()
 def get_model():
     # this is lazy should be using the modal model class
     import torch
@@ -37,7 +36,9 @@ image = (
     modal.Image.debian_slim()
     .pip_install(
         "fastapi",
+        "pydantic",
         "transformers",
+        "sentencepiece",
         "torch",
         "bitsandbytes>=0.39.0",
         "accelerate",
