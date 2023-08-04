@@ -1,9 +1,13 @@
-from functools import lru_cache
+from typing import List, Tuple
+import uuid
 from fastapi import FastAPI
 from inference import generate_models
-from openai_types import ChatCompletion, ChatInput, Choice
+from openai_types import ChatCompletion, ChatInput, Choice, Function, TurnMessage
 
 import modal
+import logging
+
+logger = logging.getLogger("name")
 
 stub = modal.Stub("functionary")
 app = FastAPI(title="Functionary API")
@@ -17,6 +21,7 @@ def get_model():
     import torch
     from transformers import LlamaTokenizer, LlamaForCausalLM
 
+    logger.info("Loading model")
     model = LlamaForCausalLM.from_pretrained(
         MODEL,
         low_cpu_mem_usage=True,
@@ -50,22 +55,46 @@ image = (
 )
 
 
+@stub.cls(gpu="A100", image=image)
+class Model:
+    def __enter__(self):
+        model, tokenizer = get_model()
+        self.model = model
+        self.tokenizer = tokenizer
+
+    @modal.method()
+    def generate(
+        self,
+        messages: List[TurnMessage],
+        functions: List[Function],
+        temperature: float,
+    ):
+        return generate_models(
+            messages=messages,
+            functions=functions,
+            temperature=temperature,
+            model=self.model,  # type: ignore
+            tokenizer=self.tokenizer,
+        )
+
+
 @app.post("/v1/chat/completions", response_model=ChatCompletion)
 async def chat_endpoint(chat_input: ChatInput):
-    model, tokenizer = get_model()
+    request_id = str(uuid.uuid4())
+    model = Model()
 
-    response_message = generate_models(
+    response_message = model.generate.call(
         messages=chat_input.messages,
         functions=chat_input.functions,
         temperature=chat_input.temperature,
-        model=model,  # type: ignore
-        tokenizer=tokenizer,
     )
 
-    return ChatCompletion(choices=[Choice.from_message(response_message)])
+    return ChatCompletion(
+        id=request_id, choices=[Choice.from_message(response_message)]
+    )
 
 
-@stub.function(image=image, gpu="A100")
+@stub.function(image=image)
 @modal.asgi_app()
 def fastapi_app():
     return app

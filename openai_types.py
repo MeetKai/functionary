@@ -19,8 +19,11 @@ class TurnMessage(BaseModel):
     role: str
     content: Optional[str] = None
     name: Optional[str] = None
-    to: Optional[str] = None
+    _to: Optional[str] = None
     function_call: Optional[FunctionCall] = None
+
+    class Config:
+        underscore_attrs_are_private = True
 
     def __str__(self) -> str:
         if self.role == "system":
@@ -35,8 +38,8 @@ class TurnMessage(BaseModel):
         elif self.role == "user":
             return f"user:\n</s>{self.content}\n"
 
-        elif self.role == "assistant" and self.to is not None:
-            return f"assistant to={self.to}:\n{self.content}</s>"
+        elif self.role == "assistant" and self._to is not None:
+            return f"assistant to={self._to}:\n{self.content}</s>"
 
         elif self.role == "assistant" and self.content is None:
             return "assistant"
@@ -65,7 +68,7 @@ class Choice(BaseModel):
 
 
 class ChatCompletion(BaseModel):
-    id: str = Field(default_factory=uuid.uuid4)
+    id: str
     object: str = "chat.completion"
     created: int = Field(default_factory=time.time)
     choices: List[Choice]

@@ -1,9 +1,12 @@
 import torch
+import logging
 from typing import List, Optional
 from transformers import LlamaTokenizer, LlamaForCausalLM
 
 from openai_types import FunctionCall, Function, TurnMessage
 from schema import generate_schema_from_functions
+
+logger = logging.getLogger("inference")
 
 SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate and correct input when necessary"""
 
@@ -20,11 +23,13 @@ def prepare_messages_for_inference(
 ):
     all_messages = []
     if functions is not None:
+        logger.info("Generating schema from functions")
         all_messages.append(
             TurnMessage(
                 role="system", content=generate_schema_from_functions(functions)
             )
         )
+
     all_messages.append(TurnMessage(role="system", content=SYSTEM_MESSAGE))
 
     for message in messages:
