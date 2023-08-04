@@ -26,7 +26,7 @@ async def chat_endpoint(chat_input: ChatInput):
         'id': str(uuid.uuid4()),
         'object': 'chat.completion',
         'created': int(time.time()),
-        'model': model_name,
+        'model': args.model,
         'choices': [
             {
                 'message': generated_message,
