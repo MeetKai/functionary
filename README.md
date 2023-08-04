@@ -6,8 +6,6 @@ Functionary is a language model that can interpret and execute functions/plugins
 
 The model decides when to run a function and it can interpret the output of the function call. Only calling the functions when its necessary. The function definitions are provided as JSON Schema Objects, just like OpenAI GPT function calls, and we provide a drop-in replacement server.
 
-We don't change the logit probabilities to conform a certain schema, but the model itself knows how to conform. This allows us to use existing tools and caching systems with ease.
-
 Based on [Llama 2](https://arxiv.org/abs/2307.09288).
 
 ## OpenAI compatible server
@@ -243,6 +241,44 @@ We use transformers after this [commit](https://github.com/huggingface/transform
 - Weight decay: 0.3
 
 More on training: [README.md](train/README.md) 
+
+## How it Works?
+
+We convert function definitions to a similar text like TypeScript definitions. 
+Then we inject these definitions as system prompts. After that, we inject the default system prompt. 
+Then we start the conversation messages. 
+
+Here is an example prompt that will be provided to the model:
+```text
+system:
+namespace weather {
+
+// Get the current weather
+type get_current_weather  = (_: {
+// The city and state, e.g. San Francisco, CA
+location: string,
+// The temperature unit to use. Infer this from the users location.
+format: "celsius" | "fahrenheit",
+}) => any;
+
+} // namespace weather
+system:
+A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary
+user:
+</s>What is the weather in Istanbul?</s>
+assistant
+```
+
+The model will output:
+
+```text
+ to=weather.get_current_weather:
+{"location": "Istanbul", "format": "celsius"}</s>
+```
+
+Then it will stop.
+
+We don't change the logit probabilities to conform a certain schema, but the model itself knows how to conform. This allows us to use existing tools and caching systems with ease.
 
 ## Evaluation
 
