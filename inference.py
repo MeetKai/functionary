@@ -1,5 +1,4 @@
 import torch
-import logging
 from typing import List, Optional
 from transformers import LlamaTokenizer, LlamaForCausalLM
 
@@ -22,7 +21,6 @@ def prepare_messages_for_inference(
 ):
     all_messages = []
     if functions is not None:
-        logger.info("Generating schema from functions")
         all_messages.append(
             TurnMessage(
                 role="system", content=generate_schema_from_functions(functions)
@@ -42,7 +40,7 @@ def prepare_messages_for_inference(
                 all_messages.append(
                     TurnMessage(
                         role="assistant",
-                        to=f"functions.{fc.name}",
+                        _to=f"functions.{fc.name}",
                         content=fc.arguments,
                     )
                 )
