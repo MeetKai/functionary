@@ -4,7 +4,7 @@
 
 Functionary is a language model that can interpret and execute functions/plugins.
 
-The model decides when to run a function and it can interpret the output of the function call. Only calling the functions when its necessary. The function definitions are provided as JSON Schema Objects, just like OpenAI GPT function calls, and we provide a drop-in replacement server.
+The model determines when to execute a function and can understand its output. It only triggers functions as needed. Function definitions are given as JSON Schema Objects, similar to OpenAI GPT function calls.
 
 Based on [Llama 2](https://arxiv.org/abs/2307.09288).
 
