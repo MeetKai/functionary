@@ -5,10 +5,11 @@ from transformers import LlamaTokenizer, LlamaForCausalLM
 from openai_types import FunctionCall, Function, TurnMessage
 from schema import generate_schema_from_functions
 
+
 SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
 
 
-def to_tokens(message: TurnMessage, tokenizer: LlamaTokenizer):
+def tokenize(message: TurnMessage, tokenizer: LlamaTokenizer):
     text = str(message)
     return tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids.to(
         "cuda:0"
@@ -25,6 +26,7 @@ def prepare_messages_for_inference(
                 role="system", content=generate_schema_from_functions(functions)
             )
         )
+
     all_messages.append(TurnMessage(role="system", content=SYSTEM_MESSAGE))
 
     for message in messages:
@@ -38,7 +40,7 @@ def prepare_messages_for_inference(
                 all_messages.append(
                     TurnMessage(
                         role="assistant",
-                        to=f"functions.{fc.name}",
+                        _to=f"functions.{fc.name}",
                         content=fc.arguments,
                     )
                 )
@@ -50,7 +52,8 @@ def prepare_messages_for_inference(
                     content=message.content,
                 )
             )
-        all_messages.append(message)
+        else:
+            all_messages.append(message)
 
     all_messages.append(TurnMessage(role="assistant", content=None))
 
@@ -58,12 +61,12 @@ def prepare_messages_for_inference(
     # ! >>> text = "".join([str(msg) for msg in all_messages]
     # ! >>> return tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids.to("cuda:0")
     all_input_ids = [
-        to_tokens(tokenizer=tokenizer, message=message) for message in all_messages
+        tokenize(tokenizer=tokenizer, message=message) for message in all_messages
     ]
     return torch.cat(all_input_ids, dim=-1)
 
 
-def generate_models(
+def generate_message(
     model: LlamaForCausalLM,
     tokenizer: LlamaTokenizer,
     messages: List[TurnMessage],
