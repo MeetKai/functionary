@@ -42,7 +42,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     model_name = args.model
-    model = LlamaForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True, device_map='auto' torch_dtype=torch.float16)
+    model = LlamaForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True, device_map='auto', torch_dtype=torch.float16)
     tokenizer = LlamaTokenizer.from_pretrained(model_name, use_fast=False)
 
     uvicorn.run(app, host="0.0.0.0", port=8000)

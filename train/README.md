@@ -5,7 +5,7 @@ python3 -m venv venv && source venv/bin/activate
 # Install Torch 2.0.1
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
-# Install Dependencies, (Latest main version of huggingface is critical as its giving OOM without it, We need to use this until 3.32 is out)
+# Install Dependencies, (Latest main version of huggingface is critical as its giving OOM without it, We need to use this until 4.32 is out)
 pip install accelerate==0.21.0 git+https://github.com/huggingface/transformers sentencepiece packaging ninja einops wandb
 
 # Install Flash Attention 1
