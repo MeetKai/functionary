@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 import uuid
 import time
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import LlamaTokenizer, LlamaForCausalLM
 import torch
 from inference import generate
 import uvicorn
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     model_name = args.model
-    model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True, torch_dtype=torch.float16).to("cuda:0")
-    tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
+    model = LlamaForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True, device_map='auto' torch_dtype=torch.float16)
+    tokenizer = LlamaTokenizer.from_pretrained(model_name, use_fast=False)
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
