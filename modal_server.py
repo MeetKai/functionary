@@ -1,7 +1,7 @@
 import uuid
 from typing import List
 from fastapi import FastAPI
-from inference import generate_models
+from inference import generate_message
 from openai_types import ChatCompletion, ChatInput, Choice, Function, TurnMessage
 
 import modal
@@ -65,7 +65,7 @@ class Model:
         functions: List[Function],
         temperature: float,
     ):
-        return generate_models(
+        return generate_message(
             messages=messages,
             functions=functions,
             temperature=temperature,

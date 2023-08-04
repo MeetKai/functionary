@@ -2,7 +2,7 @@ import uuid
 from fastapi import FastAPI
 from transformers import LlamaTokenizer, LlamaForCausalLM
 import torch
-from inference import generate_models
+from inference import generate_message
 import uvicorn
 import argparse
 
@@ -14,7 +14,7 @@ app = FastAPI(title="Functionary API")
 @app.post("/v1/chat/completions", response_model=ChatCompletion)
 async def chat_endpoint(chat_input: ChatInput):
     request_id = str(uuid.uuid4())
-    response_message = generate_models(
+    response_message = generate_message(
         messages=chat_input.messages,
         functions=chat_input.functions,
         temperature=chat_input.temperature,
