@@ -14,7 +14,7 @@ def generate_schema_from_functions(functions: List[Function], namespace="functio
     for function in functions:
         # Convert Function object to dict, if necessary
         if not isinstance(function, dict):
-            function = function.model_dump()
+            function = function.dict()
         function_name = function.get("name", None)
         if function_name is None:
             continue
