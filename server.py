@@ -26,7 +26,6 @@ async def chat_endpoint(chat_input: ChatInput):
         id=request_id, choices=[Choice.from_message(response_message)]
     )
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Functionary API Server")
     parser.add_argument(
