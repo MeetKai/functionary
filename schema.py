@@ -1,7 +1,9 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List
+
+from openai_types import Function
 
 
-def generate_schema_from_functions(functions, namespace="functions"):
+def generate_schema_from_functions(functions: List[Function], namespace="functions"):
     """
     Convert functions array to a schema that language models can understand.
     """
@@ -10,6 +12,9 @@ def generate_schema_from_functions(functions, namespace="functions"):
     schema += f"namespace {namespace} {{\n\n"
 
     for function in functions:
+        # Convert Function object to dict, if necessary
+        if not isinstance(function, dict):
+            function = function.model_dump()
         function_name = function.get("name", None)
         if function_name is None:
             continue
