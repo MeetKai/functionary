@@ -1,6 +1,7 @@
 import unittest
 from schema import generate_schema_for_functions
 
+
 class TestSchemaGenerator(unittest.TestCase):
     def test_generate_schema_for_functions(self):
         self.maxDiff = None
@@ -42,16 +43,16 @@ class TestSchemaGenerator(unittest.TestCase):
                         "num_days": {
                             "type": "integer",
                             "description": "The number of days to forecast",
-                        }
+                        },
                     },
-                    "required": ["location", "format", "num_days"]
+                    "required": ["location", "format", "num_days"],
                 },
             },
         ]
 
         namespace = "weather"
 
-        expected_output = '''namespace weather {
+        expected_output = """namespace weather {
 
 // Get the current weather
 type get_current_weather  = (_: {
@@ -71,10 +72,11 @@ format: "celsius" | "fahrenheit",
 num_days: number,
 }) => any;
 
-} // namespace weather'''
+} // namespace weather"""
 
         actual_output = generate_schema_for_functions(functions, namespace)
         self.assertEqual(actual_output, expected_output)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()
