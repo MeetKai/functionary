@@ -1,5 +1,5 @@
 import unittest
-from schema import generate_schema_for_functions
+from functionary.schema import generate_schema_from_functions
 
 
 class TestSchemaGenerator(unittest.TestCase):
@@ -52,10 +52,11 @@ class TestSchemaGenerator(unittest.TestCase):
 
         namespace = "weather"
 
-        expected_output = """namespace weather {
+        expected_output = """// Supported function definitions that should be called when necessary.
+namespace weather {
 
 // Get the current weather
-type get_current_weather  = (_: {
+type get_current_weather = (_: {
 // The city and state, e.g. San Francisco, CA
 location: string,
 // The temperature unit to use. Infer this from the users location.
@@ -63,7 +64,7 @@ format: "celsius" | "fahrenheit",
 }) => any;
 
 // Get an N-day weather forecast
-type get_n_day_weather_forecast  = (_: {
+type get_n_day_weather_forecast = (_: {
 // The city and state, e.g. San Francisco, CA
 location: string,
 // The temperature unit to use. Infer this from the users location.
@@ -74,7 +75,7 @@ num_days: number,
 
 } // namespace weather"""
 
-        actual_output = generate_schema_for_functions(functions, namespace)
+        actual_output = generate_schema_from_functions(functions, namespace)
         self.assertEqual(actual_output, expected_output)
 
 

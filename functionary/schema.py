@@ -1,6 +1,6 @@
 from typing import Any, Dict, List
 
-from openai_types import Function
+from functionary.openai_types import Function
 
 
 def generate_schema_from_functions(functions: List[Function], namespace="functions"):
