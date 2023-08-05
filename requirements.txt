@@ -4,5 +4,4 @@ sentencepiece
 fastapi
 uvicorn
 pydantic
-typing_extensions==4.5.0 # Pydantic caused issues, so this fixes that issue
 bitsandbytes # For 8bit support
