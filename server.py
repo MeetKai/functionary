@@ -6,7 +6,7 @@ from inference import generate_message
 import uvicorn
 import argparse
 
-from openai_types import ChatCompletion, ChatInput, Choice
+from functionary.openai_types import ChatCompletion, ChatInput, Choice
 
 app = FastAPI(title="Functionary API")
 

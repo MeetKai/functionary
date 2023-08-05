@@ -2,7 +2,7 @@ import uuid
 from typing import List
 from fastapi import FastAPI
 from inference import generate_message
-from openai_types import ChatCompletion, ChatInput, Choice, Function, TurnMessage
+from functionary.openai_types import ChatCompletion, ChatInput, Choice, Function, TurnMessage
 
 import modal
 
