@@ -5,7 +5,7 @@ import modal
 from fastapi import FastAPI
 
 from functionary.openai_types import ChatCompletion, ChatInput, Choice, Function, TurnMessage
-from inference import generate_message
+from functionary.inference import generate_message
 
 stub = modal.Stub("functionary")
 app = FastAPI(title="Functionary API")

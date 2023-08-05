@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from transformers import LlamaTokenizer, LlamaForCausalLM
 
 from functionary.openai_types import ChatCompletion, ChatInput, Choice
-from inference import generate_message
+from functionary.inference import generate_message
 
 app = FastAPI(title="Functionary API")
 
