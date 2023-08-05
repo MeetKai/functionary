@@ -1,7 +1,8 @@
-git+https://github.com/huggingface/transformers # We need this for training, until 4.32 is out
+transformers==4.31
 accelerate
 sentencepiece
 fastapi
 uvicorn
 pydantic
 bitsandbytes # For 8bit support
+scipy
