@@ -1,12 +1,13 @@
+import argparse
 import uuid
+
+import torch
+import uvicorn
 from fastapi import FastAPI
 from transformers import LlamaTokenizer, LlamaForCausalLM
-import torch
-from inference import generate_message
-import uvicorn
-import argparse
 
 from functionary.openai_types import ChatCompletion, ChatInput, Choice
+from inference import generate_message
 
 app = FastAPI(title="Functionary API")
 

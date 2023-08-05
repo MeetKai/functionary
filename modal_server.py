@@ -1,10 +1,11 @@
 import uuid
 from typing import List
-from fastapi import FastAPI
-from inference import generate_message
-from functionary.openai_types import ChatCompletion, ChatInput, Choice, Function, TurnMessage
 
 import modal
+from fastapi import FastAPI
+
+from functionary.openai_types import ChatCompletion, ChatInput, Choice, Function, TurnMessage
+from inference import generate_message
 
 stub = modal.Stub("functionary")
 app = FastAPI(title="Functionary API")
