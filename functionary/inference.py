@@ -3,13 +3,13 @@ from typing import List, Optional
 import torch
 from transformers import LlamaTokenizer, LlamaForCausalLM
 
-from functionary.openai_types import FunctionCall, Function, TurnMessage
+from functionary.openai_types import FunctionCall, Function, ChatMessage
 from functionary.schema import generate_schema_from_functions
 
 SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
 
 
-def tokenize(message: TurnMessage, tokenizer: LlamaTokenizer):
+def tokenize(message: ChatMessage, tokenizer: LlamaTokenizer):
     text = str(message)
     return tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids.to(
         "cuda:0"
@@ -17,28 +17,28 @@ def tokenize(message: TurnMessage, tokenizer: LlamaTokenizer):
 
 
 def prepare_messages_for_inference(
-    tokenizer: LlamaTokenizer, messages: List[TurnMessage], functions=None
-):
+    tokenizer: LlamaTokenizer, messages: List[ChatMessage], functions=None
+) -> torch.Tensor:
     all_messages = []
     if functions is not None:
         all_messages.append(
-            TurnMessage(
+            ChatMessage(
                 role="system", content=generate_schema_from_functions(functions)
             )
         )
 
-    all_messages.append(TurnMessage(role="system", content=SYSTEM_MESSAGE))
+    all_messages.append(ChatMessage(role="system", content=SYSTEM_MESSAGE))
 
     for message in messages:
         if message.role == "assistant":
             if message:
                 all_messages.append(
-                    TurnMessage(role="assistant", content=message.content)
+                    ChatMessage(role="assistant", content=message.content)
                 )
             if message.function_call:
                 fc = message.function_call
                 all_messages.append(
-                    TurnMessage(
+                    ChatMessage(
                         role="assistant",
                         _to=f"functions.{fc.name}",
                         content=fc.arguments,
@@ -46,7 +46,7 @@ def prepare_messages_for_inference(
                 )
         elif message.role == "function":
             all_messages.append(
-                TurnMessage(
+                ChatMessage(
                     role="function",
                     name=f"functions.{message.name}",
                     content=message.content,
@@ -55,7 +55,7 @@ def prepare_messages_for_inference(
         else:
             all_messages.append(message)
 
-    all_messages.append(TurnMessage(role="assistant", content=None))
+    all_messages.append(ChatMessage(role="assistant", content=None))
 
     # ! should this be done as concatting strings and then tokenizing?
     # ! >>> text = "".join([str(msg) for msg in all_messages]
@@ -69,11 +69,11 @@ def prepare_messages_for_inference(
 def generate_message(
     model: LlamaForCausalLM,
     tokenizer: LlamaTokenizer,
-    messages: List[TurnMessage],
+    messages: List[ChatMessage],
     functions: Optional[List[Function]] = None,
     temperature: float = 0.7,
     max_new_tokens=256,
-) -> TurnMessage:
+) -> ChatMessage:
     inputs = prepare_messages_for_inference(
         tokenizer=tokenizer, messages=messages, functions=functions
     )
@@ -90,11 +90,11 @@ def generate_message(
     if generated_content.startswith("to=functions."):
         function_call_content = generated_content[len("to=functions.") :]
         function_name, arguments = function_call_content.split(":\n")
-        return TurnMessage(
+        return ChatMessage(
             role="assistant",
             function_call=FunctionCall(name=function_name, arguments=arguments),
         )
-    return TurnMessage(
+    return ChatMessage(
         role="assistant",
         content=generated_content.lstrip("assistant:\n").rstrip("\n user:\n"),
     )

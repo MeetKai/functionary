@@ -15,7 +15,7 @@ class Function(BaseModel):
     parameters: dict
 
 
-class TurnMessage(BaseModel):
+class ChatMessage(BaseModel):
     role: str
     content: Optional[str] = None
     name: Optional[str] = None
@@ -52,18 +52,18 @@ class TurnMessage(BaseModel):
 
 
 class ChatInput(BaseModel):
-    messages: List[TurnMessage]
+    messages: List[ChatMessage]
     functions: Optional[List[Function]] = None
     temperature: float = 0.9
 
 
 class Choice(BaseModel):
-    message: TurnMessage
+    message: ChatMessage
     finish_reason: str = "stop"
     index: int = 0
 
     @classmethod
-    def from_message(cls, message: TurnMessage):
+    def from_message(cls, message: ChatMessage):
         return cls(message=message)
 
 

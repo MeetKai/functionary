@@ -4,7 +4,7 @@ from typing import List
 import modal
 from fastapi import FastAPI
 
-from functionary.openai_types import ChatCompletion, ChatInput, Choice, Function, TurnMessage
+from functionary.openai_types import ChatCompletion, ChatInput, Choice, Function, ChatMessage
 from functionary.inference import generate_message
 
 stub = modal.Stub("functionary")
@@ -62,7 +62,7 @@ class Model:
     @modal.method()
     def generate(
         self,
-        messages: List[TurnMessage],
+        messages: List[ChatMessage],
         functions: List[Function],
         temperature: float,
     ):
