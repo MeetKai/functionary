@@ -3,6 +3,6 @@ accelerate
 sentencepiece
 fastapi
 uvicorn
-pydantic
+pydantic==2.1.1
 bitsandbytes # For 8bit support
 scipy
