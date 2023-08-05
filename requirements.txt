@@ -1,4 +1,4 @@
-transformers==4.31
+git+https://github.com/huggingface/transformers@a6e6b1c622d8d08e2510a82cb6266d7b654f1cbf
 accelerate
 sentencepiece
 fastapi
