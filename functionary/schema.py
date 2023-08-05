@@ -5,14 +5,14 @@ from functionary.openai_types import Function
 
 def generate_schema_from_functions(functions: List[Function], namespace="functions"):
     """
-    Convert functions array to a schema that language models can understand.
+    Convert functions schema to a schema that language models can understand.
     """
 
     schema = f"// Supported function definitions that should be called when necessary.\n"
     schema += f"namespace {namespace} {{\n\n"
 
     for function in functions:
-        # Convert Function object to dict, if necessary
+        # Convert a Function object to dict, if necessary
         if not isinstance(function, dict):
             function = function.dict()
         function_name = function.get("name", None)
@@ -81,7 +81,7 @@ def generate_schema_from_openapi(specification: Dict[str, Any], description: str
     """
 
     description_clean = description.replace('\n', '')
-    
+
     schema = f"// {description_clean}\n"
     schema += f"namespace {namespace} {{\n\n"
 
@@ -98,19 +98,22 @@ def generate_schema_from_openapi(specification: Dict[str, Any], description: str
                 schema += f"  = (_: {{\n"
                 # Body
                 if "requestBody" in method_info:
-                    body_schema = method_info.get("requestBody", {}).get("content", {}).get("application/json", {}).get("schema", {})
+                    body_schema = method_info.get("requestBody", {}).get("content", {}).get("application/json", {}).get(
+                        "schema", {})
                     for param_name, param in body_schema.get("properties", {}).items():
-                        
+
                         # Param Description
                         description = param.get("description")
                         if description is not None:
                             schema += f"// {description}\n"
-                        
+
                         # Param Name
                         schema += f"{param_name}"
-                        if (not param.get('required', False)) or (param.get("nullable", False)) or (param_name in body_schema.get("required", [])):
+                        if (not param.get('required', False)) \
+                                or (param.get("nullable", False)) \
+                                or (param_name in body_schema.get("required", [])):
                             schema += '?'
-                        
+
                         # Param Type
                         param_type = param.get("type", "any")
                         if param_type == 'integer':
@@ -124,12 +127,12 @@ def generate_schema_from_openapi(specification: Dict[str, Any], description: str
                     # Param Description
                     if description := param.get("description"):
                         schema += f"// {description}\n"
-                    
+
                     # Param Name
                     schema += f"{param['name']}"
                     if (not param.get('required', False)) or (param.get("nullable", False)):
                         schema += '?'
-                    if param.get("schema")is None:
+                    if param.get("schema") is None:
                         continue
                     # Param Type
                     param_type = param['schema'].get("type", "any")
@@ -141,9 +144,8 @@ def generate_schema_from_openapi(specification: Dict[str, Any], description: str
 
                 schema += f"}}) => any;\n\n"
             else:
-                # Doesnt have any parameters
+                # Doesn't have any parameters
                 schema += f" = () => any;\n\n"
-
 
     schema += f"}} // namespace {namespace}"
 
