@@ -179,6 +179,7 @@ def train():
         model_max_length=training_args.model_max_length,
         padding_side="right",
         use_fast=False,
+        # legacy=False,  # See: https://github.com/huggingface/transformers/pull/24565
     )
     # See: https://github.com/facebookresearch/llama-recipes/blob/83fde7b94bd47e402731bfcf491beaf9950d2929/llama_finetuning.py#L111
     tokenizer.add_special_tokens(
