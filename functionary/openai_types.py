@@ -70,5 +70,5 @@ class Choice(BaseModel):
 class ChatCompletion(BaseModel):
     id: str
     object: str = "chat.completion"
-    created: int = Field(default_factory=time.time)
+    created: float = Field(default_factory=time.time)
     choices: List[Choice]

@@ -46,11 +46,12 @@ openai.ChatCompletion.create(
 
 ```
 
-## Standalone Usage: 
+If you're having trouble with dependencies, and you have [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#setting-up-nvidia-container-toolkit), 
+you can start your environment like this: 
 
-See: [inference.py](inference.py)
-
-    python3 inference.py
+```shell
+sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functionary_workspace:/workspace -p 8000:8000 nvcr.io/nvidia/pytorch:22.12-py3
+```
 
 # Use Cases
 
