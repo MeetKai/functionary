@@ -312,7 +312,7 @@ Dataset preparation process consists of several steps:
 
 6. **Merging and Training:** We combine all the generated elements (prompts, function calls, function answers, and their interpretations) using a custom formatting. This consolidated dataset is then used for the model's training.
 
-*Note: Llama 2 70b is capable of doing all syntetic data generation.*
+*Note: Llama 2 70b is capable of doing all synthetic data generation.*
 
 *More information about this process will be provided soon as possible.*
 
