@@ -26,6 +26,61 @@ def create_target_tensors(input_ids, ignore_from=None, ignore_to=None):
     return targets
 
 
+
+
+'''
+for llama 2, use this formatting function.
+
+def prepare_message_for_model(messages, tokenizer):
+    """Prepares given messages for the model by tokenizing the content and determining target tokens."""
+
+    system_content = ""
+    conversation_content = ""
+    inst_flag = False  # Flag to check if a new turn has started
+
+    for message in messages:
+        if message["role"] == 'system':
+            content = message.get("content", "")
+            system_content += "<<SYS>>\n{content}\n<</SYS>>\n".format(content=content)
+
+        elif message["role"] == "user" and message.get("content") is not None:
+            if inst_flag:  # Check if a new turn should start
+                conversation_content += "</s><s>[INST]"
+            else:
+                conversation_content += "[INST]"
+            content = message.get("content", "")
+            conversation_content += "{content}[/INST] ".format(content=content)
+        ## this condition must be before 'elif message["role"] == 'assistant' and message.get("content") is not None:'
+        elif message["role"] == "assistant" and message.get("to"):
+            fn_call = "to={to}:\n{content}".format(to=message.get("to", ""), content=message.get("content", ""))
+            print(fn_call)
+            conversation_content += "{content}".format(content=fn_call)
+            inst_flag = True
+
+        elif message["role"] == 'assistant' and message.get("content") is not None:
+            content = message.get("content", "")
+            conversation_content += "{content}".format(content=content)
+            inst_flag = True
+
+        elif message["role"] == "function":
+            text = "function name={name}:\n{content}\n".format(name=message.get("name", ""),
+                                                           content=message.get("content", ""))
+            if inst_flag:  # Check if a new turn should start
+                conversation_content += "</s><s>[INST]".format(content=text)
+            else:
+                conversation_content += "[INST]"
+            conversation_content += "{content}[/INST] ".format(content=text)
+
+    # Check if the last turn was not closed
+    if inst_flag:
+        conversation_content += "</s>"
+
+    text = "<s>[INST]{system_content}{conversation_content}".format(system_content=system_content, conversation_content=conversation_content)
+
+    return text
+
+'''
+
 def prepare_message_for_model(message, tokenizer):
     """Prepares a given message for the model by tokenizing the content and determining target tokens."""
 
