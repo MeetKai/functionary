@@ -14,16 +14,24 @@ Based on [Llama 2](https://arxiv.org/abs/2307.09288).
 
 Make sure you have [PyTorch](https://pytorch.org/get-started/locally/) installed. Then:
 
-    pip install -r requirements.txt
-    python3 server.py --model "musabgultekin/functionary-7b-v1"
+```shell
+pip install -r requirements.txt
+python3 server.py --model "musabgultekin/functionary-7b-v1"
+```
+
+Or start blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server:
+
+```shell
+python3 server_vllm.py --model "musabgultekin/functionary-7b-v1" --host 0.0.0.0
+```
 
 ### Server Usage
 
 ```python
 import openai
 
-openai.api_key = "" # We just need to set this empty so it works with openai package. No API key is required.
 openai.api_base = "http://localhost:8000/v1"
+openai.api_key = "functionary" # We just need to set this something other than None, so it works with openai package. No API key is required.
 
 openai.ChatCompletion.create(
     model="musabgultekin/functionary-7b-v1",
@@ -43,7 +51,6 @@ openai.ChatCompletion.create(
         },
     }]
 )
-
 ```
 
 If you're having trouble with dependencies, and you have [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#setting-up-nvidia-container-toolkit), 
