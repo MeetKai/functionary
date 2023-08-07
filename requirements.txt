@@ -1,8 +1,11 @@
 git+https://github.com/huggingface/transformers@a6e6b1c622d8d08e2510a82cb6266d7b654f1cbf
 accelerate
 sentencepiece
-fastapi
-uvicorn
+fastapi~=0.100.0
+uvicorn~=0.23.1
 pydantic==2.1.1
 scipy
 # bitsandbytes # For 8bit support
+jsonref~=1.1.0
+requests~=2.31.0
+PyYAML~=6.0.1
