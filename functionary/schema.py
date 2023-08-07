@@ -1,4 +1,9 @@
+from copy import deepcopy
 from typing import Any, Dict, List
+
+import jsonref
+import requests
+import yaml
 
 from functionary.openai_types import Function
 
@@ -25,7 +30,7 @@ def generate_schema_from_functions(functions: List[Function], namespace="functio
 
         parameters = function.get("parameters", None)
         if parameters is not None:
-            schema += " = (_: {{\n"
+            schema += " = (_: {\n"
             required_params = parameters.get("required", [])
             for param_name, param in parameters.get("properties", {}).items():
                 # Param Description
@@ -150,3 +155,22 @@ def generate_schema_from_openapi(specification: Dict[str, Any], description: str
     schema += f"}} // namespace {namespace}"
 
     return schema
+
+
+def generate_specification_from_openapi_url(openapi_url: str, proxies: dict = None) -> str:
+    headers = {"Accept": "application/x-yaml, text/yaml, text/x-yaml, application/json"}
+    response = requests.get(openapi_url, verify=False, headers=headers, timeout=60, proxies=proxies)
+    if response.status_code == 200:
+        if response.headers.get("Content-Type") is not None:
+            if "application/json" in response.headers.get("Content-Type"):
+                specification = response.json()
+            else:
+                specification = yaml.safe_load(response.text)
+        elif response.url.endswith(".json"):
+            specification = response.json()
+        else:
+            specification = yaml.safe_load(response.text)
+
+        specification = deepcopy(jsonref.JsonRef.replace_refs(specification))
+        return specification
+

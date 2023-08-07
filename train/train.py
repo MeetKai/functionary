@@ -26,13 +26,8 @@ def create_target_tensors(input_ids, ignore_from=None, ignore_to=None):
     return targets
 
 
-
-
-'''
-for llama 2, use this formatting function.
-
-def prepare_message_for_model(messages, tokenizer):
-    """Prepares given messages for the model by tokenizing the content and determining target tokens."""
+def prepare_message_for_model_llama2chat(messages, tokenizer):
+    """Prepares given messages for the model for llama2-chat models"""
 
     system_content = ""
     conversation_content = ""
@@ -64,7 +59,7 @@ def prepare_message_for_model(messages, tokenizer):
 
         elif message["role"] == "function":
             text = "function name={name}:\n{content}\n".format(name=message.get("name", ""),
-                                                           content=message.get("content", ""))
+                                                               content=message.get("content", ""))
             if inst_flag:  # Check if a new turn should start
                 conversation_content += "</s><s>[INST]".format(content=text)
             else:
@@ -75,11 +70,10 @@ def prepare_message_for_model(messages, tokenizer):
     if inst_flag:
         conversation_content += "</s>"
 
-    text = "<s>[INST]{system_content}{conversation_content}".format(system_content=system_content, conversation_content=conversation_content)
-
+    text = "<s>[INST]{system_content}{conversation_content}".format(system_content=system_content,
+                                                                    conversation_content=conversation_content)
     return text
 
-'''
 
 def prepare_message_for_model(message, tokenizer):
     """Prepares a given message for the model by tokenizing the content and determining target tokens."""
@@ -217,6 +211,7 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
         cpu_state_dict = {key: value.cpu() for key, value in state_dict.items()}
         del state_dict
         trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
+
 
 def train():
     argument_parser = transformers.HfArgumentParser(
