@@ -4,5 +4,5 @@ sentencepiece
 fastapi
 uvicorn
 pydantic==2.1.1
-bitsandbytes # For 8bit support
 scipy
+# bitsandbytes # For 8bit support

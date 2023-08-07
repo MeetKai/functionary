@@ -8,7 +8,7 @@ def generate_schema_from_functions(functions: List[Function], namespace="functio
     Convert functions schema to a schema that language models can understand.
     """
 
-    schema = f"// Supported function definitions that should be called when necessary.\n"
+    schema = "// Supported function definitions that should be called when necessary.\n"
     schema += f"namespace {namespace} {{\n\n"
 
     for function in functions:
@@ -25,7 +25,7 @@ def generate_schema_from_functions(functions: List[Function], namespace="functio
 
         parameters = function.get("parameters", None)
         if parameters is not None:
-            schema += f" = (_: {{\n"
+            schema += " = (_: {{\n"
             required_params = parameters.get("required", [])
             for param_name, param in parameters.get("properties", {}).items():
                 # Param Description
@@ -46,10 +46,10 @@ def generate_schema_from_functions(functions: List[Function], namespace="functio
                     param_type = ' | '.join([f'"{v}"' for v in param['enum']])
                 schema += f": {param_type},\n"
 
-            schema += f"}}) => any;\n\n"
+            schema += "}) => any;\n\n"
         else:
-            # Doesnt have any parameters
-            schema += f" = () => any;\n\n"
+            # Doesn't have any parameters
+            schema += " = () => any;\n\n"
 
     schema += f"}} // namespace {namespace}"
 
