@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "functionary"
+version = "0.1.0"
+description = "Chat language model that can interpret and execute functions/plugins"
+authors = ["MeetKai"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pydantic = ">=2.1.1,<2.2.0"
+transformers = {git = "https://github.com/huggingface/transformers", rev = "a6e6b1c622d8d08e2510a82cb6266d7b654f1cbf"}
+torch = "^2.0.1"
+jsonref = ">=1.1.0,<1.2.0"
+requests = ">=2.31.0,<2.32.0"
+pyyaml = ">=6.0.1,<6.1.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
