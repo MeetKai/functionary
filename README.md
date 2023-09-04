@@ -259,6 +259,7 @@ Then we start the conversation messages.
 Here is an example prompt that will be provided to the model:
 ```text
 system:
+// Supported function definitions that should be called when necessary.
 namespace weather {
 
 // Get the current weather
