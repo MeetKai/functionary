@@ -343,7 +343,7 @@ Compared to v0.2, because the model supports 4k context sizes, its much more res
 
 ## Roadmap
 
-- [ ] If I can save more money, I'll train [Llama 2](https://arxiv.org/abs/2307.09288) 13B model too, with 2x more data.
+- [ ] Train [Llama 2](https://arxiv.org/abs/2307.09288) 13B model too, with 2x more data.
 - [ ] OpenAPI specification based plugin support.
 - [X] Fast inference server 
   - [X] [vLLM](https://github.com/vllm-project/vllm) 
