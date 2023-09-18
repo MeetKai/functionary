@@ -1,9 +1,9 @@
 from typing import List, Optional
 
 import torch
-from transformers import LlamaTokenizer, LlamaForCausalLM
+from transformers import LlamaForCausalLM, LlamaTokenizer
 
-from functionary.openai_types import FunctionCall, Function, ChatMessage
+from functionary.openai_types import ChatMessage, Function, FunctionCall
 from functionary.schema import generate_schema_from_functions
 
 SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""

@@ -4,8 +4,14 @@ from typing import List
 import modal
 from fastapi import FastAPI
 
-from functionary.openai_types import ChatCompletion, ChatInput, Choice, Function, ChatMessage
 from functionary.inference import generate_message
+from functionary.openai_types import (
+    ChatCompletion,
+    ChatInput,
+    ChatMessage,
+    Choice,
+    Function,
+)
 
 stub = modal.Stub("functionary")
 app = FastAPI(title="Functionary API")
@@ -17,7 +23,7 @@ LOADIN8BIT = False
 def get_model():
     # this is lazy should be using the modal model class
     import torch
-    from transformers import LlamaTokenizer, LlamaForCausalLM
+    from transformers import LlamaForCausalLM, LlamaTokenizer
 
     model = LlamaForCausalLM.from_pretrained(
         MODEL,
