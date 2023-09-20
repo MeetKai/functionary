@@ -91,6 +91,7 @@ def generate_message(
     max_new_tokens=256,
 ) -> ChatMessage:
     inputs = prepare_messages_for_inference(tokenizer=tokenizer, messages=messages, functions=functions)
+    print("input shape: ", inputs.shape)
     generate_ids = model.generate(inputs, max_new_tokens=max_new_tokens, temperature=temperature)
     generated_content = tokenizer.batch_decode(
         generate_ids[:, inputs.shape[1] :],
@@ -136,22 +137,22 @@ def generate_text_stream(
     input_ids = prepare_messages_for_inference(tokenizer=tokenizer, messages=messages, functions=functions)
     input_ids = input_ids.to(device)
     output_ids = input_ids.clone().detach()
-    past_key_values = out = None
+    past_key_values = None # KV cached
+    token_ts = None # next token
     finish_reason = None
     reach_stop_token = False
+    words = ""
     for i in range(max_new_tokens):
         if i == 0:  # prefill
             out = model(input_ids, use_cache=True)
-            logits = out.logits
-            past_key_values = out.past_key_values
         else:  # decoding
             out = model(
-                input_ids=output_ids,
-                use_cache=True,
-                past_key_values=past_key_values,
-            )
-            logits = out.logits
-            past_key_values = out.past_key_values
+                    input_ids=token_ts,
+                    use_cache=True,
+                    past_key_values=past_key_values,
+                )
+        logits = out.logits
+        past_key_values = out.past_key_values
 
         if logits_processor:
             if repetition_penalty > 1.0:
@@ -183,11 +184,10 @@ def generate_text_stream(
             clean_up_tokenization_spaces=False,
         )
         output = next_output_text[len(current_output_text) :]
-
+        words += output
         if token_int in stop_token_ids:
             reach_stop_token = True
             break
-        print(f"token_id: {token_int}; output:{output}")
         yield (output, finish_reason)
 
     # Finish stream event, which contains finish reason
