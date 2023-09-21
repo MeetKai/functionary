@@ -55,6 +55,7 @@ class ChatInput(BaseModel):
     messages: List[ChatMessage]
     functions: Optional[List[Function]] = None
     temperature: float = 0.9
+    stream: bool = False
 
 
 class Choice(BaseModel):
@@ -72,3 +73,16 @@ class ChatCompletion(BaseModel):
     object: str = "chat.completion"
     created: float = Field(default_factory=time.time)
     choices: List[Choice]
+
+
+class StreamChoice(BaseModel):
+    delta: ChatMessage
+    finish_reason: Optional[str] = "stop"
+    index: int = 0
+
+
+class ChatCompletionChunk(BaseModel):
+    id: str
+    object: str = "chat.completion.chunk"
+    created: float = Field(default_factory=time.time)
+    choices: List[StreamChoice]
