@@ -9,7 +9,8 @@ from transformers import LlamaTokenizer, LlamaForCausalLM
 import json
 
 from functionary.openai_types import ChatCompletion, ChatInput, Choice, StreamChoice, ChatCompletionChunk
-from functionary.inference import generate_message, generate_stream
+from functionary.inference import generate_message
+from functionary.inference_stream import generate_stream
 from fastapi.responses import StreamingResponse, JSONResponse
 
 app = FastAPI(title="Functionary API")
