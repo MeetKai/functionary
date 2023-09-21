@@ -91,7 +91,6 @@ def generate_message(
     max_new_tokens=256,
 ) -> ChatMessage:
     inputs = prepare_messages_for_inference(tokenizer=tokenizer, messages=messages, functions=functions)
-    print("input shape: ", inputs.shape)
     generate_ids = model.generate(inputs, max_new_tokens=max_new_tokens, temperature=temperature)
     generated_content = tokenizer.batch_decode(
         generate_ids[:, inputs.shape[1] :],
@@ -121,7 +120,7 @@ def generate_text_stream(
     temperature: float = 0.7,
     max_new_tokens=256,
     **kwargs,
-):
+) -> Generator[Tuple[int, str, Optional[str]], Any, Any]:
     if hasattr(model, "device"):
         device = model.device
     else:
@@ -137,8 +136,8 @@ def generate_text_stream(
     input_ids = prepare_messages_for_inference(tokenizer=tokenizer, messages=messages, functions=functions)
     input_ids = input_ids.to(device)
     output_ids = input_ids.clone().detach()
-    past_key_values = None # KV cached
-    token_ts = None # next token
+    past_key_values = None  # KV cached
+    token_ts = None  # next token
     finish_reason = None
     reach_stop_token = False
     words = ""
@@ -147,10 +146,10 @@ def generate_text_stream(
             out = model(input_ids, use_cache=True)
         else:  # decoding
             out = model(
-                    input_ids=token_ts,
-                    use_cache=True,
-                    past_key_values=past_key_values,
-                )
+                input_ids=token_ts,
+                use_cache=True,
+                past_key_values=past_key_values,
+            )
         logits = out.logits
         past_key_values = out.past_key_values
 
@@ -188,7 +187,7 @@ def generate_text_stream(
         if token_int in stop_token_ids:
             reach_stop_token = True
             break
-        yield (output, finish_reason)
+        yield (token_int, output, finish_reason)
 
     # Finish stream event, which contains finish reason
     if reach_stop_token:
@@ -196,12 +195,45 @@ def generate_text_stream(
     else:
         finish_reason = "lenghth"
 
-    yield ("", finish_reason)
+    yield (token_int, "", finish_reason)
 
     # Clean
     del past_key_values, out
     gc.collect()
     torch.cuda.empty_cache()
+
+
+def generate_with_check_stop(
+    generator: Generator[Tuple[int, str, Optional[str]], Any, Any], stop_list: List[List[int]]
+) -> Generator[Tuple[str, Optional[str]], Any, Any]:
+    max_leng = max([len(stop) for stop in stop_list])
+    temp_list: List[
+        Tuple[int, str, Optional[str]]
+    ] = []  # buffer of tokens; len(temp_list) <= max_leng, will yield a token if len(temp_list) == max_leng + 1
+
+    def check_stop_criteria():
+        for stop in stop_list:
+            if len(temp_list) >= len(stop):
+                token_ids = [
+                    item[0] for item in temp_list[-len(stop) :]
+                ]  # get sequence of token_ids to check; item[0] is token_id
+                # print(f"check: {token_ids} vs {stop}")
+                if token_ids == stop:
+                    return True, stop
+        return False, None
+
+    for item in generator:
+        temp_list.append(item)
+        stop_now, stop = check_stop_criteria()
+        if stop_now:
+            temp_list = temp_list[: -len(stop)]
+            break
+        if len(temp_list) == max_leng + 1:
+            return_item = temp_list.pop(0)
+            yield return_item[1:]
+
+    for return_item in temp_list:
+        yield return_item[1:]
 
 
 def generate_stream(
@@ -212,7 +244,7 @@ def generate_stream(
     temperature: float = 0.7,
     max_new_tokens=256,
     **kwargs,
-):
+) -> Generator[Dict, Any, Any]:
     generator = generate_text_stream(
         model=model,
         tokenizer=tokenizer,
@@ -222,11 +254,19 @@ def generate_stream(
         max_new_tokens=max_new_tokens,
         **kwargs,
     )
+    stop_list = kwargs.get("stops", [])
+    stop_list.append("\n user:\n")
+    stop_tokens_list = [tokenizer.encode(stop, add_special_tokens=False) for stop in stop_list]
+    # We need to remove 29871 because sometimes Llamatokenizer automatically add: 29871
+    # (take a loot at this: https://github.com/huggingface/transformers/issues/26273)
+    stop_tokens_list = [item[1:] if len(item) > 1 and item[0] == 29871 else item for item in stop_tokens_list]
+    checked_generator = generate_with_check_stop(generator, stop_tokens_list)
+
     cur_text = ""
     func_name = None
     response_type = None  # = function if it is function call; = text if it is chit-chat
     response: Dict[str, Any] = {}
-    for item, finish_reason in generator:
+    for item, finish_reason in checked_generator:
         # print(f"item:{item}, finish_reason: {finish_reason}; response_type: {response_type}")
         cur_text += item
         if response_type is None:
