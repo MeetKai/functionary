@@ -290,10 +290,39 @@ Then it will stop.
 We don't change the logit probabilities to conform a certain schema, but the model itself knows how to conform. This allows us to use existing tools and caching systems with ease.
 
 ## Evaluation
+[LLM Judge](https://github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge)
+<details>
+  <summary><b><code>MT-Bench</code> leaderboard</b></summary>
 
---- Work In Progress ---
+|                       | MT-Bench |
+|:----------------------|---------:|
+| GPT-4                  |     8.99 |
+| Claude-2               |     8.06 |
+| GPT-3.5-turbo          |     7.94 | 
+| Claude-1                |     7.90 |
+| WizardLM-70B-v1.  |     7.71 |
+| WizardLM-13B-v1.2  |     7.20 |
+| Vicuna-33B            |     7.12 |
+| Llama-2-70b-chat           |     6.86 |
+| Llama-2-13B-chat             |     6.65 |
+| Vicuna-13B           |     6.57 |
+| Tulu-30B           |     6.43 |
+| Vicuna-7B   |    6.17 |
+| **Functionary-7B-v1**      |     **6.15** |
+| Nous-Hermes-13B      |     5.51 |
+| Koala-13B      |     5.35 |
+| Falcon-40B-Instruct      |     5.17 |
+| Alpaca-13B      |     4.53 |
+| LLaMA-13B      |     2.61 |
 
-Due to the unique nature, it requires custom evaluation suite. But we can probably evaluate with gpt-4-0613, likely with a similar approach like [LLM Judge](https://github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge)
+</details>
+
+<details>
+  <summary><b><code>Alpaca Eval</code> leaderboard</b></summary>
+    
+ --- Work In Progress ---
+
+</details>
 
 ## Dataset
 
