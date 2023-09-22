@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class FunctionCall(BaseModel):
-    name: str
+    name: Optional[str] = None
     arguments: str
 
 
@@ -16,7 +16,7 @@ class Function(BaseModel):
 
 
 class ChatMessage(BaseModel):
-    role: str
+    role: Optional[str] = None
     content: Optional[str] = None
     name: Optional[str] = None
     _to: Optional[str] = None
@@ -64,8 +64,8 @@ class Choice(BaseModel):
     index: int = 0
 
     @classmethod
-    def from_message(cls, message: ChatMessage):
-        return cls(message=message)
+    def from_message(cls, message: ChatMessage, finish_reason: str):
+        return cls(message=message, finish_reason=finish_reason)
 
 
 class ChatCompletion(BaseModel):

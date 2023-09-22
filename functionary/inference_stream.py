@@ -146,6 +146,11 @@ def generate_with_check_stop(
         stop_now, stop = check_stop_criteria()
         if stop_now:
             temp_list = temp_list[: -len(stop)]
+            # change finish_reason=stop if it is stopped if not the finish_reason is still None
+            if len(temp_list) > 0:
+                last_item = temp_list[-1]
+                new_item = (last_item[0], last_item[1], "stop")
+                temp_list[-1] = new_item
             break
         if len(temp_list) == max_leng + 1:
             return_item = temp_list.pop(0)
@@ -210,15 +215,15 @@ def generate_stream(
         elif response_type == "function":
             if finish_reason is None:
                 response = {
-                    "delta": {"role": "assistant", "function_call": {"arguments": item, "name": func_name}},
+                    "delta": {"role": "assistant", "function_call": {"arguments": item}},  # format of openAI at the second return, don't need to add function_name
                     "finish_reason": None,
                 }
             else:
-                response = {"delta": {"role": "assistant"}, "finish_reason": "function_call"}
+                response = {"delta": {}, "finish_reason": "function_call"}  # format of openAI at the end, delta must be empty
             yield response
         elif response_type == "text":
             if finish_reason is None:
                 response = {"delta": {"content": item, "role": "assistant"}, "finish_reason": None}
             else:
-                response = {"delta": {"role": "assistant"}, "finish_reason": finish_reason}
+                response = {"delta": {}, "finish_reason": finish_reason}  # format of openAI at the end, delta must be empty
             yield response

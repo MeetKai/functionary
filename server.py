@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 app = FastAPI(title="Functionary API")
 
 
-@app.post("/v1/chat/completions", response_model=ChatCompletion)
+@app.post("/v1/chat/completions")
 async def chat_endpoint(chat_input: ChatInput):
     request_id = str(uuid.uuid4())
     if not chat_input.stream:
@@ -27,7 +27,11 @@ async def chat_endpoint(chat_input: ChatInput):
             model=model,  # type: ignore
             tokenizer=tokenizer,
         )
-        return ChatCompletion(id=request_id, choices=[Choice.from_message(response_message)])
+        finish_reason = "stop" 
+        if response_message.function_call is not None:
+            finish_reason = "function_call"  # need to add this to follow the format of openAI function calling
+        result = ChatCompletion(id=request_id, choices=[Choice.from_message(response_message, finish_reason)])
+        return result.model_dump(exclude_none=True)
     else:
         response_generator = generate_stream(
             messages=chat_input.messages,
@@ -36,7 +40,6 @@ async def chat_endpoint(chat_input: ChatInput):
             model=model,  # type: ignore
             tokenizer=tokenizer,
         )
-
         def get_response_stream():
             for response in response_generator:
                 chunk = StreamChoice(**response)
