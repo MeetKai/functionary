@@ -60,7 +60,7 @@ you can start your environment like this:
 sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functionary_workspace:/workspace -p 8000:8000 nvcr.io/nvidia/pytorch:22.12-py3
 ```
 
-### Call Real Python Functions
+### Call Real Python Function
 To call the real python function, get the result and extract the result to respond, you can use [chatlab](https://github.com/rgbkrk/chatlab).
 
 ```python
