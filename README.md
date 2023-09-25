@@ -290,37 +290,46 @@ Then it will stop.
 We don't change the logit probabilities to conform a certain schema, but the model itself knows how to conform. This allows us to use existing tools and caching systems with ease.
 
 ## Evaluation
-[LLM Judge](https://github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge)
-<details>
-  <summary><b><code>MT-Bench</code> leaderboard</b></summary>
 
+### [MT-Bench](https://github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge) leaderboard
 |                       | MT-Bench |
 |:----------------------|---------:|
-| GPT-4                  |     8.99 |
-| Claude-2               |     8.06 |
-| GPT-3.5-turbo          |     7.94 | 
-| Claude-1                |     7.90 |
-| WizardLM-70B-v1.  |     7.71 |
-| WizardLM-13B-v1.2  |     7.20 |
+| GPT-4                 |     8.99 |
+| Claude-2              |     8.06 |
+| GPT-3.5-turbo         |     7.94 | 
+| Claude-1              |     7.90 |
+| WizardLM-70B-v1.      |     7.71 |
+| WizardLM-13B-v1.2     |     7.20 |
 | Vicuna-33B            |     7.12 |
-| Llama-2-70b-chat           |     6.86 |
-| Llama-2-13B-chat             |     6.65 |
-| Vicuna-13B           |     6.57 |
-| Tulu-30B           |     6.43 |
-| Vicuna-7B   |    6.17 |
-| **Functionary-7B-v1**      |     **6.15** |
-| Nous-Hermes-13B      |     5.51 |
-| Koala-13B      |     5.35 |
-| Falcon-40B-Instruct      |     5.17 |
-| Alpaca-13B      |     4.53 |
-| LLaMA-13B      |     2.61 |
+| Llama-2-70b-chat      |     6.86 |
+| Llama-2-13B-chat      |     6.65 |
+| Vicuna-13B            |     6.57 |
+| Tulu-30B              |     6.43 |
+| Vicuna-7B             |     6.17 |
+| **Functionary-7B-v1** | **6.15** |
+| Nous-Hermes-13B       |     5.51 |
+| Koala-13B             |     5.35 |
+| Falcon-40B-Instruct   |     5.17 |
+| Alpaca-13B            |     4.53 |
+| LLaMA-13B             |     2.61 |
 
-</details>
-
-<details>
-  <summary><b><code>Alpaca Eval</code> leaderboard</b></summary>
+### [Alpaca Eval](https://github.com/tatsu-lab/alpaca_eval) Leaderboard
     
- --- Work In Progress ---
+|                       | Win Rate | Std Error |
+|:----------------------|---------:|----------:|
+| gpt4                  |     95.3 |       0.7 |
+| claude                |     88.4 |       1.1 |
+| chatgpt               |     86.1 |       1.2 |
+| wizardlm-13b          |     75.3 |       1.5 |
+| guanaco-65b           |     71.8 |       1.6 |
+| vicuna-13b            |     70.4 |       1.6 |
+| oasst-rlhf-llama-33b  |     66.5 |       1.7 |
+|**functionary-7b-v1**  | **62.6** |   **1.7** |
+| text_davinci_003      |     50.0 |       0.0 |
+| falcon-40b-instruct   |     45.7 |       1.8 |
+| alpaca-farm-ppo-human |     41.2 |       1.7 |
+| alpaca-7b             |     26.5 |       1.5 |
+| text_davinci_001      |     15.2 |       1.2 |
 
 </details>
 
