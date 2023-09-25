@@ -19,11 +19,7 @@ class ChatMessage(BaseModel):
     role: Optional[str] = None
     content: Optional[str] = None
     name: Optional[str] = None
-    _to: Optional[str] = None
     function_call: Optional[FunctionCall] = None
-
-    class Config:
-        underscore_attrs_are_private = True
 
     def __str__(self) -> str:
         if self.role == "system":
@@ -32,20 +28,24 @@ class ChatMessage(BaseModel):
         elif self.role == "function":
             return f"function name={self.name}:\n{self.content}\n"
 
-        elif self.role == "user" and self.content is None:
-            return "user:\n</s>"
-
         elif self.role == "user":
-            return f"user:\n</s>{self.content}\n"
-
-        elif self.role == "assistant" and self._to is not None:
-            return f"assistant to={self._to}:\n{self.content}</s>"
-
-        elif self.role == "assistant" and self.content is None:
-            return "assistant"
+            if self.content is None:
+                return "user:\n</s>"
+            else:
+                return f"user:\n</s>{self.content}\n"
 
         elif self.role == "assistant":
-            return f"assistant:\n{self.content}\n"
+            if self.content is not None and self.function_call is not None:
+                return f"assistant:\n{self.content}\nassistant to={self.function_call.name}:\n{self.function_call.arguments}</s>"
+
+            elif self.function_call is not None:
+                return f"assistant to={self.function_call.name}:\n{self.function_call.arguments}</s>"
+
+            elif self.content is None:
+                return "assistant"
+
+            else:
+                return f"assistant:\n{self.content}\n"
 
         else:
             raise ValueError(f"Unsupported role: {self.role}")
