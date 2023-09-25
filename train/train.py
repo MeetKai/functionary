@@ -14,6 +14,8 @@ replace_llama_attn_with_flash_attn()
 
 import transformers
 from transformers import Trainer, LlamaTokenizer
+import evaluate
+import numpy as np
 
 
 def create_target_tensors(input_ids, ignore_from=None, ignore_to=None):
@@ -211,6 +213,13 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
         cpu_state_dict = {key: value.cpu() for key, value in state_dict.items()}
         del state_dict
         trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
+        
+        
+def compute_metrics(eval_preds):
+    perplexity = evaluate.load("perplexity", module_type="metric")
+    logits, labels = eval_preds
+    predictions = np.argmax(logits, axis=-1)
+    ppl_results = perplexity.compute(predictions=predictions, model_id="llama")
 
 
 def train():
@@ -248,6 +257,7 @@ def train():
         tokenizer=tokenizer,
         args=training_args,
         train_dataset=dataset,
+        compute_metrics=compute_metrics,
     )
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
