@@ -254,21 +254,28 @@ def train():
     eval_dataset = CustomDataset(random.sample(raw_data, k=1), tokenizer)
     
     def compute_metrics(eval_preds):
-        logits = list(eval_preds.predictions)
-        labels = list(eval_preds.label_ids)
-        if LOCAL_RANK == 0:
-            breakpoint()
-        logits = torch.from_numpy(eval_preds.predictions)
-        labels = torch.from_numpy(eval_preds.label_ids)
-        loss = F.cross_entropy(logits.view(-1, tokenizer.vocab_size), labels.view(-1))
+        logits = eval_preds.predictions[..., :-1, :]
+        labels = eval_preds.label_ids.tolist()
         accuracy = evaluate.load("accuracy")
-        preds, label_ids = eval_preds
-        predictions = np.argmax(preds, axis=-1)
         acc_results = 0.0
-        for pred, label_id in zip(predictions, label_ids):
-            print(label_id[:])
-            acc_results += accuracy.compute(predictions=pred, references=label_id)["accuracy"]
-        return {'perplexity': math.exp(loss), "accuracy": acc_results / len(pred)}
+        for logit, label in zip(logits, labels):
+            label = label[1:]
+            start_idx = len(label) - label[::-1].index(-100)
+            acc_results += accuracy.compute(predictions=np.argmax(logit[start_idx:, :], axis=-1), references=label[start_idx:])["accuracy"]
+            # if LOCAL_RANK == 0:
+            #     breakpoint()
+        return {"accuracy": acc_results / len(labels)}
+        # logits = torch.from_numpy(eval_preds.predictions)
+        # labels = torch.from_numpy(eval_preds.label_ids)
+        # loss = F.cross_entropy(logits.view(-1, tokenizer.vocab_size), labels.view(-1))
+        
+        # preds, label_ids = eval_preds
+        # predictions = np.argmax(preds, axis=-1)
+        # acc_results = 0.0
+        # for pred, label_id in zip(predictions, label_ids):
+        #     print(label_id[:])
+            
+        # return {'perplexity': math.exp(loss), "accuracy": acc_results / len(pred)}
 
     trainer = Trainer(
         model=model,
