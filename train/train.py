@@ -3,10 +3,12 @@ from dataclasses import dataclass, field
 import json
 import pathlib
 from typing import Dict, Optional
+import math
 
 import torch
 from torch.utils.data import Dataset
 import torch.distributed
+import torch.nn.functional as F
 
 from llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
 
@@ -14,8 +16,8 @@ replace_llama_attn_with_flash_attn()
 
 import transformers
 from transformers import Trainer, LlamaTokenizer
-import evaluate
 import numpy as np
+import evaluate
 
 
 def create_target_tensors(input_ids, ignore_from=None, ignore_to=None):
@@ -213,16 +215,14 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
         cpu_state_dict = {key: value.cpu() for key, value in state_dict.items()}
         del state_dict
         trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
-        
-        
-def compute_metrics(eval_preds):
-    perplexity = evaluate.load("perplexity", module_type="metric")
-    logits, labels = eval_preds
-    predictions = np.argmax(logits, axis=-1)
-    ppl_results = perplexity.compute(predictions=predictions, model_id="llama")
 
 
 def train():
+    import os
+    LOCAL_RANK = int(os.environ['LOCAL_RANK'])
+    WORLD_SIZE = int(os.environ['WORLD_SIZE'])
+    WORLD_RANK = int(os.environ['RANK'])
+
     argument_parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments)
     )
@@ -251,12 +251,31 @@ def train():
     random.shuffle(raw_data)
 
     dataset = CustomDataset(raw_data, tokenizer)
+    eval_dataset = CustomDataset(random.sample(raw_data, k=1), tokenizer)
+    
+    def compute_metrics(eval_preds):
+        logits = list(eval_preds.predictions)
+        labels = list(eval_preds.label_ids)
+        if LOCAL_RANK == 0:
+            breakpoint()
+        logits = torch.from_numpy(eval_preds.predictions)
+        labels = torch.from_numpy(eval_preds.label_ids)
+        loss = F.cross_entropy(logits.view(-1, tokenizer.vocab_size), labels.view(-1))
+        accuracy = evaluate.load("accuracy")
+        preds, label_ids = eval_preds
+        predictions = np.argmax(preds, axis=-1)
+        acc_results = 0.0
+        for pred, label_id in zip(predictions, label_ids):
+            print(label_id[:])
+            acc_results += accuracy.compute(predictions=pred, references=label_id)["accuracy"]
+        return {'perplexity': math.exp(loss), "accuracy": acc_results / len(pred)}
 
     trainer = Trainer(
         model=model,
         tokenizer=tokenizer,
         args=training_args,
         train_dataset=dataset,
+        eval_dataset=eval_dataset,
         compute_metrics=compute_metrics,
     )
 

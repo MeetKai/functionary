@@ -6,7 +6,7 @@ python3 -m venv venv && source venv/bin/activate
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
 # Install Dependencies, (Latest main version of huggingface is critical as its giving OOM without it, We need to use this until 4.32 is out)
-pip install accelerate==0.21.0 git+https://github.com/huggingface/transformers evaluate==0.4.0 sentencepiece packaging ninja einops wandb
+pip install accelerate==0.21.0 git+https://github.com/huggingface/transformers evaluate==0.4.0 scikit-learn sentencepiece packaging ninja einops wandb
 
 # Install Flash Attention 2
 git clone https://github.com/Dao-AILab/flash-attention && cd flash-attention && python setup.py install && cd ..
