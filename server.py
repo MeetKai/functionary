@@ -71,7 +71,7 @@ if __name__ == "__main__":
         args.model,
         low_cpu_mem_usage=True,
         device_map=args.device,
-        torch_dtype=torch.bfloat16,
+        torch_dtype=torch.bfloat16 if args.device == "cpu" else torch.float16,
         load_in_8bit=args.load_in_8bit,
     )
     tokenizer = LlamaTokenizer.from_pretrained(args.model, use_fast=False)
