@@ -1,19 +1,19 @@
+import json
+import math
+import pathlib
 import random
 from dataclasses import dataclass, field
-import json
-import pathlib
 from typing import Dict, Optional
 
 import torch
-from torch.utils.data import Dataset
 import torch.distributed
-
 from llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
+from torch.utils.data import Dataset
 
 replace_llama_attn_with_flash_attn()
 
 import transformers
-from transformers import Trainer, LlamaTokenizer
+from transformers import LlamaTokenizer, Trainer
 
 
 def create_target_tensors(input_ids, ignore_from=None, ignore_to=None):
@@ -34,7 +34,7 @@ def prepare_message_for_model_llama2chat(messages, tokenizer):
     inst_flag = False  # Flag to check if a new turn has started
 
     for message in messages:
-        if message["role"] == 'system':
+        if message["role"] == "system":
             content = message.get("content", "")
             system_content += "<<SYS>>\n{content}\n<</SYS>>\n".format(content=content)
 
@@ -47,19 +47,22 @@ def prepare_message_for_model_llama2chat(messages, tokenizer):
             conversation_content += "{content}[/INST] ".format(content=content)
         ## this condition must be before 'elif message["role"] == 'assistant' and message.get("content") is not None:'
         elif message["role"] == "assistant" and message.get("to"):
-            fn_call = "to={to}:\n{content}".format(to=message.get("to", ""), content=message.get("content", ""))
+            fn_call = "to={to}:\n{content}".format(
+                to=message.get("to", ""), content=message.get("content", "")
+            )
             print(fn_call)
             conversation_content += "{content}".format(content=fn_call)
             inst_flag = True
 
-        elif message["role"] == 'assistant' and message.get("content") is not None:
+        elif message["role"] == "assistant" and message.get("content") is not None:
             content = message.get("content", "")
             conversation_content += "{content}".format(content=content)
             inst_flag = True
 
         elif message["role"] == "function":
-            text = "function name={name}:\n{content}\n".format(name=message.get("name", ""),
-                                                               content=message.get("content", ""))
+            text = "function name={name}:\n{content}\n".format(
+                name=message.get("name", ""), content=message.get("content", "")
+            )
             if inst_flag:  # Check if a new turn should start
                 conversation_content += "</s><s>[INST]".format(content=text)
             else:
@@ -70,8 +73,9 @@ def prepare_message_for_model_llama2chat(messages, tokenizer):
     if inst_flag:
         conversation_content += "</s>"
 
-    text = "<s>[INST]{system_content}{conversation_content}".format(system_content=system_content,
-                                                                    conversation_content=conversation_content)
+    text = "<s>[INST]{system_content}{conversation_content}".format(
+        system_content=system_content, conversation_content=conversation_content
+    )
     return text
 
 
@@ -80,38 +84,59 @@ def prepare_message_for_model(message, tokenizer):
 
     if message["role"] == "system":
         text = "system:\n{content}\n".format(content=message.get("content", ""))
-        input_ids = tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids
-        targets = create_target_tensors(input_ids, ignore_from=0, ignore_to=len(input_ids[0]))
+        input_ids = tokenizer(
+            text, add_special_tokens=False, return_tensors="pt"
+        ).input_ids
+        targets = create_target_tensors(
+            input_ids, ignore_from=0, ignore_to=len(input_ids[0])
+        )
 
     elif message["role"] == "function":
-        text = "function name={name}:\n{content}\n".format(name=message.get("name", ""),
-                                                           content=message.get("content", ""))
-        input_ids = tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids
-        targets = create_target_tensors(input_ids, ignore_from=0, ignore_to=len(input_ids[0]))
+        text = "function name={name}:\n{content}\n".format(
+            name=message.get("name", ""), content=message.get("content", "")
+        )
+        input_ids = tokenizer(
+            text, add_special_tokens=False, return_tensors="pt"
+        ).input_ids
+        targets = create_target_tensors(
+            input_ids, ignore_from=0, ignore_to=len(input_ids[0])
+        )
 
     elif message["role"] == "user" and message.get("content") is None:
         text = "user:\n</s>"
-        input_ids = tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids
+        input_ids = tokenizer(
+            text, add_special_tokens=False, return_tensors="pt"
+        ).input_ids
         targets = create_target_tensors(input_ids)
 
     elif message["role"] == "user":
         text = "user:\n</s>{content}\n".format(content=message.get("content", ""))
-        input_ids = tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids
+        input_ids = tokenizer(
+            text, add_special_tokens=False, return_tensors="pt"
+        ).input_ids
         targets = create_target_tensors(input_ids, ignore_from=4)
 
     elif message["role"] == "assistant" and message.get("to") is not None:
-        text = "assistant to={to}:\n{content}</s>".format(to=message.get("to", ""), content=message.get("content", ""))
-        input_ids = tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids
+        text = "assistant to={to}:\n{content}</s>".format(
+            to=message.get("to", ""), content=message.get("content", "")
+        )
+        input_ids = tokenizer(
+            text, add_special_tokens=False, return_tensors="pt"
+        ).input_ids
         targets = create_target_tensors(input_ids)
 
     elif message["role"] == "assistant" and message.get("content") is None:
         text = "assistant"
-        input_ids = tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids
+        input_ids = tokenizer(
+            text, add_special_tokens=False, return_tensors="pt"
+        ).input_ids
         targets = create_target_tensors(input_ids)
 
     elif message["role"] == "assistant":
         text = "assistant:\n{content}\n".format(content=message.get("content", ""))
-        input_ids = tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids
+        input_ids = tokenizer(
+            text, add_special_tokens=False, return_tensors="pt"
+        ).input_ids
         targets = create_target_tensors(input_ids)
 
     return text, input_ids, targets
@@ -119,7 +144,8 @@ def prepare_message_for_model(message, tokenizer):
 
 def prepare_messages_for_model(messages, tokenizer):
     """Prepares a list of messages for the model by calling `prepare_message_for_model` function on each of them and
-    concatenating the returned input_ids and targets. Also, the function merges the text of the messages."""
+    concatenating the returned input_ids and targets. Also, the function merges the text of the messages.
+    """
     all_texts = []
     all_input_ids = []
     all_targets = []
@@ -191,7 +217,9 @@ class ModelArguments:
 
 @dataclass
 class DataArguments:
-    data_path: str = field(default=None, metadata={"help": "Path to the training data."})
+    data_path: str = field(
+        default=None, metadata={"help": "Path to the training data."}
+    )
 
 
 @dataclass
@@ -200,7 +228,9 @@ class TrainingArguments(transformers.TrainingArguments):
     optim: str = field(default="adamw_torch")
     model_max_length: int = field(
         default=4096,
-        metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
+        metadata={
+            "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
+        },
     )
 
 
@@ -218,8 +248,21 @@ def train():
         (ModelArguments, DataArguments, TrainingArguments)
     )
     model_args, data_args, training_args = argument_parser.parse_args_into_dataclasses()
+
+    # Set RoPE scaling factor
+    config = transformers.AutoConfig.from_pretrained(
+        model_args.model_name_or_path,
+        cache_dir=training_args.cache_dir,
+    )
+    orig_ctx_len = getattr(config, "max_position_embeddings", None)
+    if orig_ctx_len and training_args.model_max_length > orig_ctx_len:
+        scaling_factor = float(math.ceil(training_args.model_max_length / orig_ctx_len))
+        config.rope_scaling = {"type": "linear", "factor": scaling_factor}
+    config.use_cache = False
+
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
+        config=config,
         cache_dir=training_args.cache_dir,
     )
     model.config.use_cache = False
