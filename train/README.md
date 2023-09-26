@@ -8,9 +8,7 @@ pip3 install torch torchvision torchaudio --index-url https://download.pytorch.o
 # Install Dependencies, (Latest main version of huggingface is critical as its giving OOM without it, We need to use this until 4.32 is out)
 pip install accelerate==0.21.0 git+https://github.com/huggingface/transformers sentencepiece packaging ninja einops wandb
 
-# Install Flash Attention 1
-git clone https://github.com/Dao-AILab/flash-attention && cd flash-attention && git checkout 6d48e14a6c2f551db96f0badc658a6279a929df3 && python setup.py install && cd ..
-# OR Install Flash Attention 2
+# Install Flash Attention 2
 git clone https://github.com/Dao-AILab/flash-attention && cd flash-attention && python setup.py install && cd ..
 
 # 2xA100 80GB

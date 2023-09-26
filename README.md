@@ -60,6 +60,56 @@ you can start your environment like this:
 sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functionary_workspace:/workspace -p 8000:8000 nvcr.io/nvidia/pytorch:22.12-py3
 ```
 
+### Call Real Python Function
+To call the real python function, get the result and extract the result to respond, you can use [chatlab](https://github.com/rgbkrk/chatlab).
+
+```python
+from chatlab import Chat
+import asyncio
+import json 
+import openai
+openai.api_key = "functionary"
+openai.api_base = "http://localhost:8000/v1"
+
+# now provide the function with description
+def get_car_price(car_name: str):
+    """this function is used to get the price of the car given the name
+    :param car_name: name of the car to get the price
+    """
+    car_price = {
+        "tang": {"price": "$20000"},
+        "song": {"price": "$25000"} 
+    }
+    for key in car_price:
+        if key in car_name.lower():
+            return {"price": car_price[key]}
+    return {"price": "unknown"}
+
+chat = Chat()
+chat.register(get_car_price)  # register this function
+asyncio.run(chat("what is the price of the car named Tang?", stream=False))
+# print the flow
+for message in chat.messages:
+    role = message["role"].upper()
+    if "function_call" in message:
+        func_name = message["function_call"]["name"]
+        func_param = message["function_call"]["arguments"]
+        print(f"{role}: call function: {func_name}, arguments:{func_param}")
+    else:
+        content = message["content"]
+        print(f"{role}: {content}")
+```
+
+The output will look like this:
+```
+USER: what is the price of the car named Tang?
+ASSISTANT: call function: get_car_price, arguments:{
+  "car_name": "Tang"
+}
+FUNCTION: {'price': {'price': '$20000'}}
+ASSISTANT: The price of the car named Tang is $20,000.
+```
+
 # Use Cases
 
 Here are a few examples of how you can use this function calling system:
@@ -291,9 +341,47 @@ We don't change the logit probabilities to conform a certain schema, but the mod
 
 ## Evaluation
 
---- Work In Progress ---
+### [MT-Bench](https://github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge) leaderboard
+|                       | MT-Bench |
+|:----------------------|---------:|
+| GPT-4                 |     8.99 |
+| Claude-2              |     8.06 |
+| GPT-3.5-turbo         |     7.94 | 
+| Claude-1              |     7.90 |
+| WizardLM-70B-v1.      |     7.71 |
+| WizardLM-13B-v1.2     |     7.20 |
+| Vicuna-33B            |     7.12 |
+| Llama-2-70b-chat      |     6.86 |
+| Llama-2-13B-chat      |     6.65 |
+| Vicuna-13B            |     6.57 |
+| Tulu-30B              |     6.43 |
+| Vicuna-7B             |     6.17 |
+| **Functionary-7B-v1** | **6.15** |
+| Nous-Hermes-13B       |     5.51 |
+| Koala-13B             |     5.35 |
+| Falcon-40B-Instruct   |     5.17 |
+| Alpaca-13B            |     4.53 |
+| LLaMA-13B             |     2.61 |
 
-Due to the unique nature, it requires custom evaluation suite. But we can probably evaluate with gpt-4-0613, likely with a similar approach like [LLM Judge](https://github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge)
+### [Alpaca Eval](https://github.com/tatsu-lab/alpaca_eval) Leaderboard
+    
+|                       | Win Rate | Std Error |
+|:----------------------|---------:|----------:|
+| gpt4                  |     95.3 |       0.7 |
+| claude                |     88.4 |       1.1 |
+| chatgpt               |     86.1 |       1.2 |
+| wizardlm-13b          |     75.3 |       1.5 |
+| guanaco-65b           |     71.8 |       1.6 |
+| vicuna-13b            |     70.4 |       1.6 |
+| oasst-rlhf-llama-33b  |     66.5 |       1.7 |
+|**functionary-7b-v1**  | **62.6** |   **1.7** |
+| text_davinci_003      |     50.0 |       0.0 |
+| falcon-40b-instruct   |     45.7 |       1.8 |
+| alpaca-farm-ppo-human |     41.2 |       1.7 |
+| alpaca-7b             |     26.5 |       1.5 |
+| text_davinci_001      |     15.2 |       1.2 |
+
+</details>
 
 ## Dataset
 
