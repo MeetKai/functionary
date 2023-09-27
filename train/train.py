@@ -8,7 +8,6 @@ import math
 
 import torch
 import torch.distributed
-import torch.nn.functional as F
 
 from llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
 from torch.utils.data import Dataset
@@ -17,8 +16,6 @@ replace_llama_attn_with_flash_attn()
 
 import transformers
 from transformers import LlamaTokenizer, Trainer
-import numpy as np
-import evaluate
 
 
 def create_target_tensors(input_ids, ignore_from=None, ignore_to=None):
