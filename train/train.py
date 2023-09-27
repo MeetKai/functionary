@@ -290,28 +290,28 @@ def train():
     random.shuffle(raw_data)
 
     if training_args.do_eval:
-        # 90:10 train-eval split
+        # Take 90:10 train-validation split
         raw_train_data, raw_eval_data = raw_data[:int(len(raw_data) * 0.9)], raw_data[int(len(raw_data) * 0.9):]
         train_dataset = CustomDataset(raw_train_data, tokenizer)
         eval_dataset = CustomDataset(raw_eval_data, tokenizer)
     else:
         train_dataset = CustomDataset(raw_data, tokenizer)
+        
+    def preprocess_logits_for_metrics(logits, labels):
+        pred_ids = torch.argmax(logits, dim=-1)
+        return pred_ids
     
     def compute_metrics(eval_preds):
-        logits = eval_preds.predictions[..., :-1, :]
-        labels = eval_preds.label_ids.tolist()
-        accuracy = evaluate.load("accuracy")
-        acc_results = 0.0
-        loss = 0.0
+        predictions = eval_preds.predictions[:, : -1].flatten().tolist()  # B x L
+        labels = eval_preds.label_ids[:, 1:].flatten().tolist()  #  B x L
+        acc_count = 0
         total_num = 0
-        for logit, label in zip(logits, labels):
-            label = label[1:]
-            start_idx = len(label) - label[::-1].index(-100)
-            acc_results += accuracy.compute(predictions=np.argmax(logit[start_idx:, :], axis=-1), references=label[start_idx:])["accuracy"]
-            logit = torch.from_numpy(logit[start_idx:, :])
-            loss += F.cross_entropy(logit, torch.tensor(label[start_idx:]), reduction="sum")
-            total_num += len(label[start_idx:])
-        return {"accuracy": acc_results / len(labels), "perplexity": math.exp(loss / total_num)}
+        for pred, label in zip(predictions, labels):
+            if label != -100:
+                if label == pred:
+                    acc_count += 1
+                total_num += 1
+        return {"accuracy": acc_count / total_num}
 
     trainer = Trainer(
         model=model,
@@ -320,6 +320,7 @@ def train():
         train_dataset=train_dataset,
         eval_dataset=eval_dataset if training_args.do_eval else None,
         compute_metrics=compute_metrics if training_args.do_eval else None,
+        preprocess_logits_for_metrics=preprocess_logits_for_metrics if training_args.do_eval else None,
     )
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
