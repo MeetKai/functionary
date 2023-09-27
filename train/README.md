@@ -46,7 +46,7 @@ torchrun --nproc_per_node=2 --master_port=20001 train.py \
     --per_device_eval_batch_size 4 \
     --eval_accumulation_steps 16 \
     --evaluation_strategy "steps" \
-    --eval_steps 1 \
+    --eval_steps 400 \
     --save_strategy "steps" \
     --save_steps 200 \
     --save_total_limit 5 \
