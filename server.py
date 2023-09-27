@@ -26,6 +26,7 @@ async def chat_endpoint(chat_input: ChatInput):
             temperature=chat_input.temperature,
             model=model,  # type: ignore
             tokenizer=tokenizer,
+            device=model.device,
         )
         finish_reason = "stop" 
         if response_message.function_call is not None:
@@ -58,14 +59,19 @@ if __name__ == "__main__":
         default="musabgultekin/functionary-7b-v1",
         help="Model name",
     )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        help="choose which device to host the model: cpu, cuda, cuda:xxx, or auto",
+    )
     parser.add_argument("--load_in_8bit", type=bool, default=False)
     args = parser.parse_args()
-
     model = LlamaForCausalLM.from_pretrained(
         args.model,
         low_cpu_mem_usage=True,
-        device_map="auto",
-        torch_dtype=torch.float16,
+        device_map=args.device,
+        torch_dtype=torch.bfloat16 if args.device == "cpu" else torch.float16,
         load_in_8bit=args.load_in_8bit,
     )
     tokenizer = LlamaTokenizer.from_pretrained(args.model, use_fast=False)
