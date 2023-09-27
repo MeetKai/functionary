@@ -218,11 +218,6 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
 
 
 def train():
-    import os
-    LOCAL_RANK = int(os.environ['LOCAL_RANK'])
-    WORLD_SIZE = int(os.environ['WORLD_SIZE'])
-    WORLD_RANK = int(os.environ['RANK'])
-
     argument_parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments)
     )
@@ -250,40 +245,37 @@ def train():
 
     random.shuffle(raw_data)
 
-    dataset = CustomDataset(raw_data, tokenizer)
-    eval_dataset = CustomDataset(random.sample(raw_data, k=1), tokenizer)
+    if training_args.do_eval:
+        # 90:10 train-eval split
+        raw_train_data, raw_eval_data = raw_data[:int(len(raw_data) * 0.9)], raw_data[int(len(raw_data) * 0.9):]
+        train_dataset = CustomDataset(raw_train_data, tokenizer)
+        eval_dataset = CustomDataset(raw_eval_data, tokenizer)
+    else:
+        train_dataset = CustomDataset(raw_data, tokenizer)
     
     def compute_metrics(eval_preds):
         logits = eval_preds.predictions[..., :-1, :]
         labels = eval_preds.label_ids.tolist()
         accuracy = evaluate.load("accuracy")
         acc_results = 0.0
+        loss = 0.0
+        total_num = 0
         for logit, label in zip(logits, labels):
             label = label[1:]
             start_idx = len(label) - label[::-1].index(-100)
             acc_results += accuracy.compute(predictions=np.argmax(logit[start_idx:, :], axis=-1), references=label[start_idx:])["accuracy"]
-            # if LOCAL_RANK == 0:
-            #     breakpoint()
-        return {"accuracy": acc_results / len(labels)}
-        # logits = torch.from_numpy(eval_preds.predictions)
-        # labels = torch.from_numpy(eval_preds.label_ids)
-        # loss = F.cross_entropy(logits.view(-1, tokenizer.vocab_size), labels.view(-1))
-        
-        # preds, label_ids = eval_preds
-        # predictions = np.argmax(preds, axis=-1)
-        # acc_results = 0.0
-        # for pred, label_id in zip(predictions, label_ids):
-        #     print(label_id[:])
-            
-        # return {'perplexity': math.exp(loss), "accuracy": acc_results / len(pred)}
+            logit = torch.from_numpy(logit[start_idx:, :])
+            loss += F.cross_entropy(logit, torch.tensor(label[start_idx:]), reduction="sum")
+            total_num += len(label[start_idx:])
+        return {"accuracy": acc_results / len(labels), "perplexity": math.exp(loss / total_num)}
 
     trainer = Trainer(
         model=model,
         tokenizer=tokenizer,
         args=training_args,
-        train_dataset=dataset,
-        eval_dataset=eval_dataset,
-        compute_metrics=compute_metrics,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset if training_args.do_eval else None,
+        compute_metrics=compute_metrics if training_args.do_eval else None,
     )
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
