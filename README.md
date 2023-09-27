@@ -60,6 +60,56 @@ you can start your environment like this:
 sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functionary_workspace:/workspace -p 8000:8000 nvcr.io/nvidia/pytorch:22.12-py3
 ```
 
+### Call Real Python Function
+To call the real python function, get the result and extract the result to respond, you can use [chatlab](https://github.com/rgbkrk/chatlab).
+
+```python
+from chatlab import Chat
+import asyncio
+import json 
+import openai
+openai.api_key = "functionary"
+openai.api_base = "http://localhost:8000/v1"
+
+# now provide the function with description
+def get_car_price(car_name: str):
+    """this function is used to get the price of the car given the name
+    :param car_name: name of the car to get the price
+    """
+    car_price = {
+        "tang": {"price": "$20000"},
+        "song": {"price": "$25000"} 
+    }
+    for key in car_price:
+        if key in car_name.lower():
+            return {"price": car_price[key]}
+    return {"price": "unknown"}
+
+chat = Chat()
+chat.register(get_car_price)  # register this function
+asyncio.run(chat("what is the price of the car named Tang?", stream=False))
+# print the flow
+for message in chat.messages:
+    role = message["role"].upper()
+    if "function_call" in message:
+        func_name = message["function_call"]["name"]
+        func_param = message["function_call"]["arguments"]
+        print(f"{role}: call function: {func_name}, arguments:{func_param}")
+    else:
+        content = message["content"]
+        print(f"{role}: {content}")
+```
+
+The output will look like this:
+```
+USER: what is the price of the car named Tang?
+ASSISTANT: call function: get_car_price, arguments:{
+  "car_name": "Tang"
+}
+FUNCTION: {'price': {'price': '$20000'}}
+ASSISTANT: The price of the car named Tang is $20,000.
+```
+
 # Use Cases
 
 Here are a few examples of how you can use this function calling system:
