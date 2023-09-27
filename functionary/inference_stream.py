@@ -52,8 +52,7 @@ def generate_text_stream(
         stop_token_ids.append(tokenizer.eos_token_id)
 
     logits_processor = prepare_logits_processor(temperature, repetition_penalty, top_p, top_k)
-    input_ids = prepare_messages_for_inference(tokenizer=tokenizer, messages=messages, functions=functions)
-    input_ids = input_ids.to(device)
+    input_ids = prepare_messages_for_inference(tokenizer=tokenizer, messages=messages, functions=functions, device=device)
     output_ids = input_ids.clone().detach()
     past_key_values = None  # KV cached
     token_ts = None  # next token
