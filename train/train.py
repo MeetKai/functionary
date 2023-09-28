@@ -8,6 +8,7 @@ import math
 
 import torch
 import torch.distributed
+from torch.nn import CrossEntropyLoss
 
 from llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
 from torch.utils.data import Dataset
@@ -295,15 +296,33 @@ def train():
         train_dataset = CustomDataset(raw_data, tokenizer)
         
     def preprocess_logits_for_metrics(logits, labels):
+        print("test1")
+        shift_logits = logits[..., :-1, :].contiguous()
+        print("test2")
+        shift_labels = labels[..., 1:].contiguous()
+        print("test3")
+        loss_fct = CrossEntropyLoss()
+        shift_logits = shift_logits.view(-1, tokenizer.vocab_size)
+        print("test4")
+        shift_labels = shift_labels.view(-1)
+        print("test5")
+        loss = loss_fct(shift_logits, shift_labels)
+        print("test6")
         pred_ids = torch.argmax(logits, dim=-1)
-        return pred_ids
+        return pred_ids, loss
     
     def compute_metrics(eval_preds):
-        predictions = eval_preds.predictions[:, : -1].flatten().tolist()  # B x L
-        labels = eval_preds.label_ids[:, 1:].flatten().tolist()  #  B x L
+        loss = eval_preds.predictions[1]
+        predictions = eval_preds.predictions[0][:, : -1]  # B x L
+        labels = eval_preds.label_ids[:, 1:]  #  B x L
         acc_count = 0
         total_num = 0
-        for pred, label in zip(predictions, labels):
+        # Calculate perplexity
+        logits = torch.from_numpy(pred)
+        labels = torch.from_numpy(pred.label_ids)
+        
+        # Calculate accuracy
+        for pred, label in zip(predictions.flatten().tolist(), labels.flatten().tolist()):
             if label != -100:
                 if label == pred:
                     acc_count += 1
