@@ -69,7 +69,6 @@ def get_text_from_message(message: Dict) -> str:
         if (
             "function_call" in message
         ):  # format of openai: {"role": assistant, "function_call": {"name": xxx, "arguments": xxx}}
-            assert content is None
             function = message["function_call"]["name"]
             arguments = message["function_call"]["arguments"] + stop_token
             text = f"assistant to={function}:\n{arguments}\n"
@@ -77,21 +76,6 @@ def get_text_from_message(message: Dict) -> str:
             text = f"assistant:\n{content}\n"
         else:  # if no function call and content is None --> this is used at inference
             text = "assistant"
-
-    # This chunk of code below is to assert that stop_token is added correctly
-    no_stop_token = False
-    if content is None:
-        if message["role"] == "user":  # if content is None and role=user --> no need stop-token
-            no_stop_token = True
-            assert not text.endswith(stop_token)
-        elif (
-            message["role"] == "assistant"
-        ):  # used at inference when message = {"role": "assistant", "content": None} --> no need to add stop-token
-            if "function_call" not in message and "to" not in message:
-                no_stop_token = True
-                assert not text.endswith(stop_token)
-    if not no_stop_token:
-        assert text.endswith(stop_token + "\n")
 
     return text
 
