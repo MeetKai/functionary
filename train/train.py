@@ -244,6 +244,27 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
         cpu_state_dict = {key: value.cpu() for key, value in state_dict.items()}
         del state_dict
         trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
+        
+        
+def split_data(raw_data, input_file, percentage):
+    # Calculate the split index
+    split_idx = int(len(raw_data) * percentage)
+    # Split the data into training and validation sets
+    train_data, val_data = raw_data[:split_idx], raw_data[split_idx:]
+    # Write the training data to a new JSONL file
+    with open(input_file.rstrip(".jsonl") + "_train.jsonl", 'w') as f:
+        for item in train_data:
+            json.dump(item, f)
+            f.write('\n')
+    # Write the validation data to a new JSONL file
+    with open(input_file.rstrip(".jsonl") + "_val.jsonl", 'w') as f:
+        for item in val_data:
+            json.dump(item, f)
+            f.write('\n')
+    if torch.distributed.get_rank() == 0:
+        print(f'Data split into training (size: {len(train_data)}) and validation (size: {len(val_data)}) sets.')
+    return train_data, val_data
+    
 
 
 def train():
@@ -289,7 +310,7 @@ def train():
 
     if training_args.do_eval:
         # Take 90:10 train-validation split
-        raw_train_data, raw_eval_data = raw_data[:int(len(raw_data) * 0.9)], raw_data[int(len(raw_data) * 0.9):]
+        raw_train_data, raw_eval_data = split_data(raw_data, data_args.data_path, 0.9)
         train_dataset = CustomDataset(raw_train_data, tokenizer)
         eval_dataset = CustomDataset(raw_eval_data, tokenizer)
     else:
