@@ -296,38 +296,32 @@ def train():
         train_dataset = CustomDataset(raw_data, tokenizer)
         
     def preprocess_logits_for_metrics(logits, labels):
-        print("test1")
-        shift_logits = logits[..., :-1, :].contiguous()
-        print("test2")
-        shift_labels = labels[..., 1:].contiguous()
-        print("test3")
-        loss_fct = CrossEntropyLoss()
-        shift_logits = shift_logits.view(-1, tokenizer.vocab_size)
-        print("test4")
-        shift_labels = shift_labels.view(-1)
-        print("test5")
-        loss = loss_fct(shift_logits, shift_labels)
-        print("test6")
         pred_ids = torch.argmax(logits, dim=-1)
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = labels[..., 1:].contiguous()
+        loss_fct = CrossEntropyLoss(reduction="none")
+        shift_logits = shift_logits.view(-1, tokenizer.vocab_size)
+        shift_labels = shift_labels.view(-1)
+        loss = loss_fct(shift_logits, shift_labels)
+        loss = torch.mean(loss.view(logits.shape[0], -1), dim=-1)
         return pred_ids, loss
     
     def compute_metrics(eval_preds):
-        loss = eval_preds.predictions[1]
         predictions = eval_preds.predictions[0][:, : -1]  # B x L
         labels = eval_preds.label_ids[:, 1:]  #  B x L
         acc_count = 0
         total_num = 0
-        # Calculate perplexity
-        logits = torch.from_numpy(pred)
-        labels = torch.from_numpy(pred.label_ids)
-        
         # Calculate accuracy
         for pred, label in zip(predictions.flatten().tolist(), labels.flatten().tolist()):
             if label != -100:
                 if label == pred:
                     acc_count += 1
                 total_num += 1
-        return {"accuracy": acc_count / total_num}
+        # Calculate perplexity
+        loss = eval_preds.predictions[1].tolist()
+        loss = sum(loss) / len(loss)
+        perplexity = math.exp(loss)
+        return {"accuracy": acc_count / total_num, "perplexity": perplexity}
 
     trainer = Trainer(
         model=model,
