@@ -131,6 +131,22 @@ def get_token_id_to_end_token(tokenizer: Any) -> Dict[int, EndToken]:
     return result
 
 
+def get_number_token_of_assistant(tokenizer: Any) -> int:
+    """This function is used to compute the number of tokens of "\nassistant" in full prompt
+
+    Args:
+        tokenizer (_type_): The tokenizer used for tokenizing
+
+    Returns:
+        _type_: number of tokens of "\nassistant" in full prompt
+    """
+    text1 = "<|END_OF_USER|>\nassistant"
+    tok_ids1 = tokenizer.encode(text1, add_special_tokens=False)
+    text2 = "<|END_OF_USER|>"
+    tok_ids2 = tokenizer.encode(text2, add_special_tokens=False)
+    return len(tok_ids1) - len(tok_ids2)
+
+
 def prepare_training_inputs(
     messages: List[Dict],
     tokenizer: Any,
@@ -170,13 +186,18 @@ def prepare_training_inputs(
     # Now we find the positions where role=assistant and copy the value from input_token_ids
     # this is done by finding the chunk (previous_stop_token_index + 1, current_stop_token_index + 1)
     # where current_stop_token is EndToken.assistant or EndToken.function_call
+    assistant_tok_len = get_number_token_of_assistant(
+        tokenizer
+    )  # get the number of tokens for "\nassistant" in full prompt
     for index, tok_id in enumerate(input_token_ids):
         if tok_id in id_to_endtoken:  # Find position of end_token in final_prompt
             end_token = id_to_endtoken[tok_id]
             if (
                 end_token == EndToken.assistant or end_token == EndToken.function_call
             ):  # only compute loss from tokens of assistant
-                for i in range(start + 2, index + 1):  # The reason for start + 2 is to ignore: "\nassistant" (2 tokens)
+                for i in range(
+                    start + assistant_tok_len, index + 1
+                ):  # The reason for start + assistant_tok_len is to ignore: "\nassistant" in computing loss
                     labels[i] = input_token_ids[i]  # overwrite -100 to compute the loss
                 if verbose:
                     chunk = input_token_ids[start + 2 : index + 1]
