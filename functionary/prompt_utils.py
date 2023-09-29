@@ -131,7 +131,7 @@ def get_token_id_to_end_token(tokenizer: Any) -> Dict[int, EndToken]:
     return result
 
 
-def get_number_token_of_assistant(tokenizer: Any) -> int:
+def get_number_of_tokens_of_prefix_assistant(tokenizer: Any) -> int:
     """This function is used to compute the number of tokens of "\nassistant" in full prompt
 
     Args:
@@ -186,9 +186,9 @@ def prepare_training_inputs(
     # Now we find the positions where role=assistant and copy the value from input_token_ids
     # this is done by finding the chunk (previous_stop_token_index + 1, current_stop_token_index + 1)
     # where current_stop_token is EndToken.assistant or EndToken.function_call
-    assistant_tok_len = get_number_token_of_assistant(
+    assistant_tok_len = get_number_of_tokens_of_prefix_assistant(
         tokenizer
-    )  # get the number of tokens for "\nassistant" in full prompt
+    )  # get the number of tokens for "\nassistant" in full prompt, these tokens remain -100
     for index, tok_id in enumerate(input_token_ids):
         if tok_id in id_to_endtoken:  # Find position of end_token in final_prompt
             end_token = id_to_endtoken[tok_id]
