@@ -3,7 +3,7 @@ import math
 import pathlib
 import random
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Dict, Optional
 
 import torch
 import torch.distributed
@@ -11,6 +11,7 @@ import transformers
 from torch.nn import CrossEntropyLoss
 from transformers import LlamaTokenizer, Trainer
 
+from functionary.prompt import EndToken
 from train.custom_datasets import CustomDataset, split_data
 from train.llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
 
@@ -56,30 +57,58 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
         trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
 
 
+def smart_tokenizer_and_embedding_resize(
+    special_tokens_dict: Dict,
+    tokenizer: transformers.PreTrainedTokenizer,
+    model: transformers.PreTrainedModel,
+):
+    """Resize tokenizer and embedding.
+    Note: This is the unoptimized version that may make your embedding size not be divisible by 64.
+    """
+    num_new_tokens = tokenizer.add_special_tokens(special_tokens_dict)
+    model.resize_token_embeddings(len(tokenizer))
+
+    if num_new_tokens > 0:
+        input_embeddings = model.get_input_embeddings().weight.data
+        output_embeddings = model.get_output_embeddings().weight.data
+
+        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(
+            dim=0, keepdim=True
+        )
+        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(
+            dim=0, keepdim=True
+        )
+
+        input_embeddings[-num_new_tokens:] = input_embeddings_avg
+        output_embeddings[-num_new_tokens:] = output_embeddings_avg
+
+
 def train():
     argument_parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments)
     )
     model_args, data_args, training_args = argument_parser.parse_args_into_dataclasses()
 
-    # Set RoPE scaling factor
-    config = transformers.AutoConfig.from_pretrained(
-        model_args.model_name_or_path,
-        cache_dir=training_args.cache_dir,
-    )
-    orig_ctx_len = getattr(config, "max_position_embeddings", None)
-    if orig_ctx_len and training_args.model_max_length > orig_ctx_len:
-        scaling_factor = float(math.ceil(training_args.model_max_length / orig_ctx_len))
-        config.rope_scaling = {"type": "linear", "factor": scaling_factor}
-    config.use_cache = False
+    # # Set RoPE scaling factor
+    # config = transformers.AutoConfig.from_pretrained(
+    #     model_args.model_name_or_path,
+    #     cache_dir=training_args.cache_dir,
+    # )
+    # orig_ctx_len = getattr(config, "max_position_embeddings", None)
+    # if orig_ctx_len and training_args.model_max_length > orig_ctx_len:
+    #     scaling_factor = float(math.ceil(training_args.model_max_length / orig_ctx_len))
+    #     config.rope_scaling = {"type": "linear", "factor": scaling_factor}
+    # config.use_cache = False
 
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
-        config=config,
+        # config=config,
         cache_dir=training_args.cache_dir,
     )
     model.config.use_cache = False
-    tokenizer = LlamaTokenizer.from_pretrained(
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
         model_max_length=training_args.model_max_length,
@@ -88,6 +117,11 @@ def train():
         # legacy=False,  # See: https://github.com/huggingface/transformers/pull/24565
     )
     tokenizer.pad_token = tokenizer.unk_token
+    added_tokens = [e.value for e in EndToken]
+    special_tokens_dict = {"additional_special_tokens": added_tokens}
+    smart_tokenizer_and_embedding_resize(
+        special_tokens_dict=special_tokens_dict, tokenizer=tokenizer, model=model
+    )
 
     with open(data_args.data_path, "r") as file:
         raw_data = [json.loads(line) for line in file]
