@@ -7,14 +7,14 @@ from typing import Optional
 
 import torch
 import torch.distributed
-from llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
+import transformers
 from torch.nn import CrossEntropyLoss
+from transformers import LlamaTokenizer, Trainer
+
+from train.custom_datasets import CustomDataset, split_data
+from train.llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
 
 replace_llama_attn_with_flash_attn()
-
-import transformers
-from custom_datasets import CustomDataset, split_data
-from transformers import LlamaTokenizer, Trainer
 
 
 @dataclass

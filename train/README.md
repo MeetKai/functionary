@@ -11,8 +11,8 @@ pip install accelerate==0.23.0 transformers==4.33.3 sentencepiece==0.1.99 packag
 # Install Flash Attention 2
 pip install flash-attn==2.3.0 --no-build-isolation
 
-# 2xA100 80GB
-torchrun --nproc_per_node=2 --master_port=20001 train.py \
+# 2xA100 80GB, from the root directory of the repository
+torchrun --nproc_per_node=2 --master_port=20001 train/train.py \
     --model_name_or_path meta-llama/Llama-2-7b-hf  \
     --data_path llama_training_dataset.jsonl \
     --train_valid_split 0.9 \
