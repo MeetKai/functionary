@@ -59,7 +59,7 @@ def prepare_messages_for_inference(
     return torch.cat(all_input_ids, dim=-1)
 
 
-def remove_hitting_sequence(token_ids: List[int], stop_sequences: List[List[int]]) -> List[int]:
+def remove_stop_tokens_from_end(token_ids: List[int], stop_sequences: List[List[int]]) -> List[int]:
     """This function is used to remove the hitting stop-sequence of id at the end of generated token_ids
 
     Args:
@@ -104,7 +104,7 @@ def generate_message(
     )
     token_ids = generate_ids[:, inputs.shape[1] :][0].tolist()
 
-    token_ids = remove_hitting_sequence(token_ids, stop_words_ids)
+    token_ids = remove_stop_tokens_from_end(token_ids, stop_words_ids)
 
     generated_content = tokenizer.decode(token_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
     # If it's a function call:
