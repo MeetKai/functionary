@@ -1,3 +1,4 @@
+import pdb
 from copy import deepcopy
 from typing import Any, Dict, List
 
@@ -107,12 +108,15 @@ def generate_schema_from_openapi(
                 schema += f"  = (_: {{\n"
                 # Body
                 if "requestBody" in method_info:
-                    body_schema = (
-                        method_info.get("requestBody", {})
-                        .get("content", {})
-                        .get("application/json", {})
-                        .get("schema", {})
-                    )
+                    try:
+                        body_schema = (
+                            method_info.get("requestBody", {})
+                            .get("content", {})
+                            .get("application/json", {})
+                            .get("schema", {})
+                        )
+                    except AttributeError:
+                        body_schema = {}
                     for param_name, param in body_schema.get("properties", {}).items():
                         # Param Description
                         description = param.get("description")
