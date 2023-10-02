@@ -1,0 +1,22 @@
+system:
+This is the conversation between Human and AI<|END_OF_SYSTEM|>
+user:
+who is the president of US<|END_OF_USER|>
+assistant:
+Biden is the president of US<|END_OF_ASSISTANT|>
+user:
+is the car Song more expensive than car Tang?<|END_OF_USER|>
+assistant to=get_car_price:
+{
+  "car_name": "Song"
+}<|END_OF_FUNCTION_CALL|>
+function name=get_car_price:
+{'price': {'price': '$25000'}}<|END_OF_FUNCTION_RESULT|>
+assistant to=get_car_price:
+{
+  "car_name": "Tang"
+}<|END_OF_FUNCTION_CALL|>
+function name=get_car_price:
+{'price': {'price': '$20000'}}<|END_OF_FUNCTION_RESULT|>
+assistant:
+No, the car Tang is less expensive than the car Song. The car Song is priced at $25,000, while the car Tang is priced at $20,000.<|END_OF_ASSISTANT|>

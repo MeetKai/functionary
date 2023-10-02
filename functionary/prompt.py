@@ -1,6 +1,9 @@
-from typing import List, Dict, Any, Optional, Tuple
-import torch
+from __future__ import annotations
+
 from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
+
+import torch
 
 
 class EndToken(str, Enum):
@@ -10,30 +13,30 @@ class EndToken(str, Enum):
     function = "<|END_OF_FUNCTION_RESULT|>"
     function_call = "<|END_OF_FUNCTION_CALL|>"
 
+    @classmethod
+    def from_message(cls, message: Dict) -> EndToken:
+        """this function is used for getting the end token for each message.
+        For example, if message["role"] == "user" --> return EndToken.user
+        if message["role"] == "assistant" and "function_call" in message --> EndTOken.function_call
 
-def get_end_token_for_message(message: Dict) -> EndToken:
-    """this function is used for getting the end token for each message.
-    For example, if message["role"] == "user" --> return EndToken.user
-    if message["role"] == "assistant" and "function_call" in message --> EndTOken.function_call
+        Args:
+            message (Dict): A dictionary containing: role, content, function_call(optional)
 
-    Args:
-        message (Dict): A dictionary containing: role, content, function_call(optional)
-
-    Returns:
-        EndToken: End Token for this message, this will be appended to the end of the prompt for this message
-    """
-    role = message["role"]
-    if role == "user":
-        return EndToken.user
-    elif role == "system":
-        return EndToken.system
-    elif role == "function":
-        return EndToken.function
-    else:  # role = assistant
-        if "function_call" in message:
-            return EndToken.function_call
-        else:
-            return EndToken.assistant
+        Returns:
+            EndToken: End Token for this message, this will be appended to the end of the prompt for this message
+        """
+        role = message["role"]
+        if role == "user":
+            return EndToken.user
+        elif role == "system":
+            return EndToken.system
+        elif role == "function":
+            return EndToken.function
+        else:  # role = assistant
+            if "function_call" in message:
+                return EndToken.function_call
+            else:
+                return EndToken.assistant
 
 
 def get_text_from_message(message: Dict) -> str:
@@ -45,7 +48,7 @@ def get_text_from_message(message: Dict) -> str:
     Returns:
         str: the string used in the final prompt of this message
     """
-    stop_token = get_end_token_for_message(message).value
+    stop_token = EndToken.from_message(message).value
     content = message.get("content", "")
 
     if content is not None:
