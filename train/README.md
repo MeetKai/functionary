@@ -3,23 +3,27 @@
 python3 -m venv venv && source venv/bin/activate
 
 # Install Torch 2.0.1
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip3 install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
 
-# Install Dependencies, (Latest main version of huggingface is critical as its giving OOM without it, We need to use this until 4.32 is out)
-pip install accelerate==0.21.0 git+https://github.com/huggingface/transformers sentencepiece packaging ninja einops wandb
+# Install Dependencies
+pip install accelerate==0.23.0 transformers==4.33.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11
 
 # Install Flash Attention 2
-git clone https://github.com/Dao-AILab/flash-attention && cd flash-attention && python setup.py install && cd ..
+pip install flash-attn==2.3.0 --no-build-isolation
 
 # 2xA100 80GB
 torchrun --nproc_per_node=2 --master_port=20001 train.py \
     --model_name_or_path meta-llama/Llama-2-7b-hf  \
     --data_path llama_training_dataset.jsonl \
+    --train_valid_split 0.9 \
     --bf16 True \
     --num_train_epochs 2 \
     --per_device_train_batch_size 2 \
     --gradient_accumulation_steps 16 \
-    --evaluation_strategy "no" \
+    --per_device_eval_batch_size 4 \
+    --eval_accumulation_steps 16 \
+    --evaluation_strategy "steps" \
+    --eval_steps 400 \
     --save_strategy "steps" \
     --save_steps 200 \
     --save_total_limit 5 \
