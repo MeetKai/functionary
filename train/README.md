@@ -5,8 +5,8 @@ python3 -m venv venv && source venv/bin/activate
 # Install Torch 2.0.1
 pip3 install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
 
-# Install Dependencies, (huggingface version 4.32.1 as versions earlier than 4.32.0 result in OOM)
-pip install accelerate==0.21.0 transformers==4.32.1 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11
+# Install Dependencies
+pip install accelerate==0.23.0 transformers==4.33.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11
 
 # Install Flash Attention 2
 pip install flash-attn==2.3.0 --no-build-isolation
