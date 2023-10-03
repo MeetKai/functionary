@@ -67,7 +67,7 @@ def prepare_training_inputs(
     prompt_str = (
         "system:\n"
         + generate_schema_from_functions(functions=messages["functions"])
-        + "\nsystem:\nA chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary\n"
+        + f"\nsystem:\nA chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary{EndToken.system.value}\n"
     )
     prompt_str += get_prompt_from_messages(
         messages["messages"]
