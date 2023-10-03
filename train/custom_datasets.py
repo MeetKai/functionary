@@ -11,6 +11,7 @@ from functionary.prompt import (
     get_prompt_from_messages,
     get_token_id_to_end_token,
 )
+from functionary.schema import generate_schema_from_functions
 
 
 def split_data(raw_data, input_file, percentage):
@@ -230,8 +231,12 @@ def prepare_training_inputs(
     """
     # a dictionary mapping from token_id --> end_token
     id_to_endtoken = get_token_id_to_end_token(tokenizer)
-    # prompt_str =
-    prompt_str = get_prompt_from_messages(
+    prompt_str = (
+        "system:\n"
+        + generate_schema_from_functions(functions=messages["functions"])
+        + "\nsystem:\nA chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary\n"
+    )
+    prompt_str += get_prompt_from_messages(
         messages["messages"]
     )  # prompt_str is the concatenation of all prompts from messages
     max_length = max_length if max_length is not None else tokenizer.model_max_length
@@ -297,13 +302,11 @@ class CustomDataset(Dataset):
         if i in self.cached_data_dict:
             return self.cached_data_dict[i]
 
-        breakpoint()
         ret = prepare_training_inputs(self.raw_data[i], self.tokenizer)
-        # ret = prepare_messages_for_model(self.raw_data[i], self.tokenizer)
         ret = {
-            "input_ids": ret["input_ids"],
-            "labels": ret["labels"],
-            "attention_mask": ret["attention_mask"],
+            "input_ids": ret[1]["input_ids"],
+            "labels": ret[1]["labels"],
+            "attention_mask": ret[1]["attention_mask"],
         }
         self.cached_data_dict[i] = ret
         return ret

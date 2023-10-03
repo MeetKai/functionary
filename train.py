@@ -89,26 +89,25 @@ def train():
     )
     model_args, data_args, training_args = argument_parser.parse_args_into_dataclasses()
 
-    # # Set RoPE scaling factor
-    # config = transformers.AutoConfig.from_pretrained(
-    #     model_args.model_name_or_path,
-    #     cache_dir=training_args.cache_dir,
-    # )
-    # orig_ctx_len = getattr(config, "max_position_embeddings", None)
-    # if orig_ctx_len and training_args.model_max_length > orig_ctx_len:
-    #     scaling_factor = float(math.ceil(training_args.model_max_length / orig_ctx_len))
-    #     config.rope_scaling = {"type": "linear", "factor": scaling_factor}
-    # config.use_cache = False
+    # Set RoPE scaling factor
+    config = transformers.AutoConfig.from_pretrained(
+        model_args.model_name_or_path,
+        cache_dir=training_args.cache_dir,
+    )
+    orig_ctx_len = getattr(config, "max_position_embeddings", None)
+    if orig_ctx_len and training_args.model_max_length > orig_ctx_len:
+        scaling_factor = float(math.ceil(training_args.model_max_length / orig_ctx_len))
+        config.rope_scaling = {"type": "linear", "factor": scaling_factor}
+    config.use_cache = False
 
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
-        # config=config,
+        config=config,
         cache_dir=training_args.cache_dir,
     )
     model.config.use_cache = False
-    from transformers import AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(
+    tokenizer = LlamaTokenizer.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
         model_max_length=training_args.model_max_length,
@@ -154,7 +153,7 @@ def train():
         loss_fn = CrossEntropyLoss(reduction="none")
         shift_logits = logits[..., :-1, :].contiguous()
         shift_labels = labels[..., 1:].contiguous()
-        shift_logits = shift_logits.view(-1, tokenizer.vocab_size)
+        shift_logits = shift_logits.view(-1, len(tokenizer))
         shift_labels = shift_labels.view(-1)
         loss = loss_fn(shift_logits, shift_labels)
         loss = torch.mean(loss.view(logits.shape[0], -1), dim=-1)
