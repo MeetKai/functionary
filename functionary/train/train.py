@@ -12,8 +12,8 @@ from torch.nn import CrossEntropyLoss
 from transformers import LlamaTokenizer, Trainer
 
 from functionary.prompt import EndToken
-from train.custom_datasets import CustomDataset, split_data
-from train.llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
+from functionary.train.custom_datasets import CustomDataset, split_data
+from functionary.train.llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
 
 replace_llama_attn_with_flash_attn()
 

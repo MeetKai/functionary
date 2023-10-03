@@ -298,7 +298,7 @@ We use transformers after this [commit](https://github.com/huggingface/transform
 - Max length: 4096
 - Weight decay: 0.3
 
-More on training: [README.md](train/README.md) 
+More on training: [README.md](functionary/train/README.md) 
 
 ## How it Works?
 

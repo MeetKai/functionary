@@ -1,6 +1,5 @@
 import os
 import re
-import sys
 import unittest
 from typing import List
 
@@ -8,7 +7,7 @@ from transformers import LlamaTokenizer
 
 from functionary.prompt import EndToken, get_prompt_from_messages, get_text_from_message
 from functionary.schema import generate_schema_from_functions
-from train.custom_datasets import prepare_training_inputs
+from functionary.train.custom_datasets import prepare_training_inputs
 
 
 def extract_unmasked_chunks(labels: List[int]) -> List[List[int]]:
