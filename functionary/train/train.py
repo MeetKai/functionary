@@ -9,13 +9,16 @@ import torch
 import torch.distributed
 import transformers
 from torch.nn import CrossEntropyLoss
-from transformers import LlamaTokenizer, Trainer
 
 from functionary.prompt import EndToken
 from functionary.train.custom_datasets import CustomDataset, split_data
-from functionary.train.llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
+from functionary.train.llama_flash_attn_monkey_patch import (
+    replace_llama_attn_with_flash_attn,
+)
 
 replace_llama_attn_with_flash_attn()
+
+from transformers import LlamaTokenizer, Trainer
 
 
 @dataclass
@@ -55,6 +58,31 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
         cpu_state_dict = {key: value.cpu() for key, value in state_dict.items()}
         del state_dict
         trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
+
+
+def initialize_tokenizer(
+    model: transformers.AutoModelForCausalLM,
+    model_args: transformers.HfArgumentParser,
+    training_args: transformers.HfArgumentParser,
+):
+    """Initialize tokenizer and add special tokens, resizing vocab and embedding"""
+    tokenizer = LlamaTokenizer.from_pretrained(
+        model_args.model_name_or_path,
+        cache_dir=training_args.cache_dir,
+        model_max_length=training_args.model_max_length,
+        padding_side="right",
+        use_fast=False,
+        # legacy=False,  # See: https://github.com/huggingface/transformers/pull/24565
+    )
+    tokenizer.pad_token = tokenizer.unk_token
+
+    added_tokens = [e.value for e in EndToken]
+    special_tokens_dict = {"additional_special_tokens": added_tokens}
+    smart_tokenizer_and_embedding_resize(
+        special_tokens_dict=special_tokens_dict, tokenizer=tokenizer, model=model
+    )
+
+    return tokenizer
 
 
 def smart_tokenizer_and_embedding_resize(
@@ -107,20 +135,7 @@ def train():
     )
     model.config.use_cache = False
 
-    tokenizer = LlamaTokenizer.from_pretrained(
-        model_args.model_name_or_path,
-        cache_dir=training_args.cache_dir,
-        model_max_length=training_args.model_max_length,
-        padding_side="right",
-        use_fast=False,
-        # legacy=False,  # See: https://github.com/huggingface/transformers/pull/24565
-    )
-    tokenizer.pad_token = tokenizer.unk_token
-    added_tokens = [e.value for e in EndToken]
-    special_tokens_dict = {"additional_special_tokens": added_tokens}
-    smart_tokenizer_and_embedding_resize(
-        special_tokens_dict=special_tokens_dict, tokenizer=tokenizer, model=model
-    )
+    tokenizer = initialize_tokenizer(model, model_args, training_args)
 
     with open(data_args.data_path, "r") as file:
         raw_data = [json.loads(line) for line in file]
