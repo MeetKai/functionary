@@ -1,12 +1,16 @@
 from typing import List, Optional
 
 import torch
-from transformers import LlamaForCausalLM, LlamaTokenizer
-from transformers import StoppingCriteria, StoppingCriteriaList
-from functionary.openai_types import ChatMessage, Function, FunctionCall
-from functionary.schema import generate_schema_from_functions
+from transformers import (
+    LlamaForCausalLM,
+    LlamaTokenizer,
+    StoppingCriteria,
+    StoppingCriteriaList,
+)
 
-SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
+from functionary.openai_types import ChatMessage, Function, FunctionCall
+from functionary.prompt import SYSTEM_MESSAGE
+from functionary.schema import generate_schema_from_functions
 
 
 class StopWordsCriteria(StoppingCriteria):
@@ -24,7 +28,9 @@ class StopWordsCriteria(StoppingCriteria):
 
 def tokenize(message: ChatMessage, tokenizer: LlamaTokenizer, device="cuda:0"):
     text = str(message)
-    return tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids.to(device)
+    return tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids.to(
+        device
+    )
 
 
 def prepare_messages_for_inference(
@@ -35,7 +41,11 @@ def prepare_messages_for_inference(
 ) -> torch.Tensor:
     all_messages = []
     if functions is not None:
-        all_messages.append(ChatMessage(role="system", content=generate_schema_from_functions(functions)))
+        all_messages.append(
+            ChatMessage(
+                role="system", content=generate_schema_from_functions(functions)
+            )
+        )
 
     all_messages.append(ChatMessage(role="system", content=SYSTEM_MESSAGE))
 
@@ -53,13 +63,18 @@ def prepare_messages_for_inference(
     # ! should this be done as concatting strings and then tokenizing?
     # ! >>> text = "".join([str(msg) for msg in all_messages]
     # ! >>> return tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids.to("cuda:0")
-    all_input_ids = [tokenize(tokenizer=tokenizer, message=message, device=device) for message in all_messages]
+    all_input_ids = [
+        tokenize(tokenizer=tokenizer, message=message, device=device)
+        for message in all_messages
+    ]
     # text = "".join([str(msg) for msg in all_messages])
     # print(text)
     return torch.cat(all_input_ids, dim=-1)
 
 
-def remove_stop_tokens_from_end(token_ids: List[int], stop_sequences: List[List[int]]) -> List[int]:
+def remove_stop_tokens_from_end(
+    token_ids: List[int], stop_sequences: List[List[int]]
+) -> List[int]:
     """This function is used to remove the hitting stop-sequence of id at the end of generated token_ids
 
     Args:
@@ -88,7 +103,9 @@ def generate_message(
     device="cuda:0",
     **kwargs,
 ) -> ChatMessage:
-    inputs = prepare_messages_for_inference(tokenizer=tokenizer, messages=messages, functions=functions, device=device)
+    inputs = prepare_messages_for_inference(
+        tokenizer=tokenizer, messages=messages, functions=functions, device=device
+    )
     stop_words_ids = []
     for stop in kwargs.get("stops", []) + ["\n user:\n"]:
         tok_ids = tokenizer.encode(stop, add_special_tokens=False)
@@ -100,13 +117,18 @@ def generate_message(
 
     stopping_criteria = StoppingCriteriaList([StopWordsCriteria(stops=stop_words_ids)])
     generate_ids = model.generate(
-        inputs, max_new_tokens=max_new_tokens, temperature=temperature, stopping_criteria=stopping_criteria
+        inputs,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        stopping_criteria=stopping_criteria,
     )
     token_ids = generate_ids[:, inputs.shape[1] :][0].tolist()
 
     token_ids = remove_stop_tokens_from_end(token_ids, stop_words_ids)
 
-    generated_content = tokenizer.decode(token_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+    generated_content = tokenizer.decode(
+        token_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
+    )
     # If it's a function call:
     if generated_content.startswith("to=functions."):
         function_call_content = generated_content[len("to=functions.") :]
@@ -115,7 +137,9 @@ def generate_message(
             role="assistant",
             function_call=FunctionCall(name=function_name, arguments=arguments),
         )
-    return ChatMessage(role="assistant", content=generated_content.lstrip("assistant:\n"))
+    return ChatMessage(
+        role="assistant", content=generated_content.lstrip("assistant:\n")
+    )
 
 
 if __name__ == "__main__":
@@ -146,7 +170,9 @@ if __name__ == "__main__":
         ChatMessage(role="assistant", content="Hi there!"),
         ChatMessage(role="user", content="How are you?"),
         ChatMessage(role="assistant", content="I'm good thanks!"),
-        ChatMessage(role="user", content="What's the weather like today in san francisco?"),
+        ChatMessage(
+            role="user", content="What's the weather like today in san francisco?"
+        ),
         ChatMessage(
             role="assistant",
             content="I can help you find out! Lets call the get_current_weather function.",
@@ -155,13 +181,19 @@ if __name__ == "__main__":
                 arguments='{"location": "San Francisco, CA", "format": "celsius"}',
             ),
         ),
-        ChatMessage(role="function", name="get_current_weather", content='{"value": 32}'),
-        ChatMessage(role="assistant", content="It's 32 degrees celsius in San Francisco today."),
+        ChatMessage(
+            role="function", name="get_current_weather", content='{"value": 32}'
+        ),
+        ChatMessage(
+            role="assistant", content="It's 32 degrees celsius in San Francisco today."
+        ),
         ChatMessage(role="user", content="Thanks!"),
         ChatMessage(role="assistant", content="No problem!"),
     ]
 
     # Now Lets prepare the messages for inference
     tokenizer = LlamaTokenizer.from_pretrained("musabgultekin/functionary-7b-v1")
-    inputs = prepare_messages_for_inference(tokenizer=tokenizer, messages=messages, functions=functions, device="cpu")
+    inputs = prepare_messages_for_inference(
+        tokenizer=tokenizer, messages=messages, functions=functions, device="cpu"
+    )
     print(inputs.shape)

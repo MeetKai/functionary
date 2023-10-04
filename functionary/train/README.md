@@ -6,13 +6,13 @@ python3 -m venv venv && source venv/bin/activate
 pip3 install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
 
 # Install Dependencies
-pip install accelerate==0.23.0 transformers==4.33.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11
+pip install accelerate==0.23.0 transformers==4.33.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0
 
 # Install Flash Attention 2
 pip install flash-attn==2.3.0 --no-build-isolation
 
-# 2xA100 80GB
-torchrun --nproc_per_node=2 --master_port=20001 train.py \
+# 2xA100 80GB, from the root directory of the repository
+torchrun --nproc_per_node=2 --master_port=20001 -m functionary.train.train \
     --model_name_or_path meta-llama/Llama-2-7b-hf  \
     --data_path llama_training_dataset.jsonl \
     --train_valid_split 0.9 \

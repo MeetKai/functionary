@@ -3,17 +3,21 @@ import math
 import pathlib
 import random
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Dict, Optional
 
 import torch
 import torch.distributed
-from llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
 from torch.nn import CrossEntropyLoss
+
+from functionary.prompt import EndToken
+from functionary.train.datasets import CustomDataset, split_data
+from functionary.train.llama_flash_attn_monkey_patch import (
+    replace_llama_attn_with_flash_attn,
+)
 
 replace_llama_attn_with_flash_attn()
 
 import transformers
-from custom_datasets import CustomDataset, split_data
 from transformers import LlamaTokenizer, Trainer
 
 
@@ -56,6 +60,57 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
         trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
 
 
+def initialize_tokenizer(
+    model: transformers.AutoModelForCausalLM,
+    model_args: transformers.HfArgumentParser,
+    training_args: transformers.HfArgumentParser,
+):
+    """Initialize tokenizer and add special tokens, resizing vocab and embedding"""
+    # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
+    tokenizer = LlamaTokenizer.from_pretrained(
+        model_args.model_name_or_path,
+        cache_dir=training_args.cache_dir,
+        model_max_length=training_args.model_max_length,
+        padding_side="right",
+        legacy=True,
+    )
+    tokenizer.pad_token = tokenizer.unk_token
+
+    added_tokens = [e.value for e in EndToken]
+    special_tokens_dict = {"additional_special_tokens": added_tokens}
+    smart_tokenizer_and_embedding_resize(
+        special_tokens_dict=special_tokens_dict, tokenizer=tokenizer, model=model
+    )
+
+    return tokenizer
+
+
+def smart_tokenizer_and_embedding_resize(
+    special_tokens_dict: Dict,
+    tokenizer: transformers.PreTrainedTokenizer,
+    model: transformers.PreTrainedModel,
+):
+    """Resize tokenizer and embedding.
+    Note: This is the unoptimized version that may make your embedding size not be divisible by 64.
+    """
+    num_new_tokens = tokenizer.add_special_tokens(special_tokens_dict)
+    model.resize_token_embeddings(len(tokenizer))
+
+    if num_new_tokens > 0:
+        input_embeddings = model.get_input_embeddings().weight.data
+        output_embeddings = model.get_output_embeddings().weight.data
+
+        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(
+            dim=0, keepdim=True
+        )
+        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(
+            dim=0, keepdim=True
+        )
+
+        input_embeddings[-num_new_tokens:] = input_embeddings_avg
+        output_embeddings[-num_new_tokens:] = output_embeddings_avg
+
+
 def train():
     argument_parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments)
@@ -79,15 +134,8 @@ def train():
         cache_dir=training_args.cache_dir,
     )
     model.config.use_cache = False
-    tokenizer = LlamaTokenizer.from_pretrained(
-        model_args.model_name_or_path,
-        cache_dir=training_args.cache_dir,
-        model_max_length=training_args.model_max_length,
-        padding_side="right",
-        use_fast=False,
-        # legacy=False,  # See: https://github.com/huggingface/transformers/pull/24565
-    )
-    tokenizer.pad_token = tokenizer.unk_token
+
+    tokenizer = initialize_tokenizer(model, model_args, training_args)
 
     with open(data_args.data_path, "r") as file:
         raw_data = [json.loads(line) for line in file]
@@ -120,7 +168,7 @@ def train():
         loss_fn = CrossEntropyLoss(reduction="none")
         shift_logits = logits[..., :-1, :].contiguous()
         shift_labels = labels[..., 1:].contiguous()
-        shift_logits = shift_logits.view(-1, tokenizer.vocab_size)
+        shift_logits = shift_logits.view(-1, len(tokenizer))
         shift_labels = shift_labels.view(-1)
         loss = loss_fn(shift_logits, shift_labels)
         loss = torch.mean(loss.view(logits.shape[0], -1), dim=-1)
