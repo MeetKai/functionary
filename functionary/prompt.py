@@ -5,6 +5,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
+from functionary.schema import generate_schema_from_functions
+
+SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
+
 
 class EndToken(str, Enum):
     system = "<|END_OF_SYSTEM|>"
@@ -103,15 +107,26 @@ def convert_old_format_to_openai_format(message: Dict) -> Dict:
     }
 
 
-def get_prompt_from_messages(messages: List[Dict]) -> str:
+def get_prompt_from_messages(
+    messages: List[Dict], functions: Optional[List[Dict]]
+) -> str:
     """return the final prompt that will be used.
     Args:
         messages (List[Dict]): list of messages where each message is in the format of OpenAI
+        functions (Optional[List[Dict]]): list of functions where each function is in the format of OpenAI
 
     Returns:
         str: the final prompt that will be used.
     """
     result = ""
+    if functions is None:
+        functions = []
+    if len(messages) > 0 and messages[0]["role"] != "system":
+        messages.insert(
+            0, {"role": "system", "content": generate_schema_from_functions(functions)}
+        )
+        messages.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
+
     for mess in messages:
         result += get_text_from_message(mess)
     return result

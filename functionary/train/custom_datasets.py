@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 import transformers
@@ -38,13 +38,13 @@ def split_data(raw_data, input_file, percentage):
 
 
 def prepare_training_inputs(
-    messages: List[Dict],
+    messages: Dict[str, List],
     tokenizer: Any,
     padding: str = "max_length",
     max_length: Optional[int] = None,
     return_tensor: bool = True,
     verbose=False,
-) -> Tuple[str, Dict]:
+) -> Dict[str, Union[str, Dict]]:
     """This function is used for when you want to get a dictionary input for the model.forward.
     The dictionary will contain: input_ids, attention_maks, labels.
     labels is like input_ids except that content from user, system, function will be set as -100, only content from assistant remains
@@ -58,19 +58,14 @@ def prepare_training_inputs(
         verbose (bool, optional): to print some useful information or not. Defaults to False.
 
     Returns:
-        Tuple[str, Dict]: (final_prompt_str, inputs)
-            final_prompt_str: the final prompt to be used,
+        Dict[str, Union[str, Dict]]: {"final_prompt": str, "inputs": Dict}
+            final_prompt: the final prompt to be used,
             inputs: a dictionary containing: input_ids, attention_mask, labels. This will be used in model.forward(**inputs)
     """
     # a dictionary mapping from token_id --> end_token
     id_to_endtoken = get_token_id_to_end_token(tokenizer)
-    prompt_str = (
-        "system:\n"
-        + generate_schema_from_functions(functions=messages["functions"])
-        + f"\nsystem:\nA chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary{EndToken.system.value}\n"
-    )
-    prompt_str += get_prompt_from_messages(
-        messages["messages"]
+    prompt_str = get_prompt_from_messages(
+        messages["messages"], messages["functions"]
     )  # prompt_str is the concatenation of all prompts from messages
     max_length = max_length if max_length is not None else tokenizer.model_max_length
 
@@ -115,7 +110,8 @@ def prepare_training_inputs(
     if return_tensor:
         for key in input_dic:
             input_dic[key] = torch.tensor(input_dic[key])
-    return prompt_str, input_dic
+
+    return dict(final_prompt=prompt_str, inputs=input_dic)
 
 
 class CustomDataset(Dataset):
@@ -137,9 +133,9 @@ class CustomDataset(Dataset):
 
         ret = prepare_training_inputs(self.raw_data[i], self.tokenizer)
         ret = {
-            "input_ids": ret[1]["input_ids"],
-            "labels": ret[1]["labels"],
-            "attention_mask": ret[1]["attention_mask"],
+            "input_ids": ret["inputs"]["input_ids"],
+            "labels": ret["inputs"]["labels"],
+            "attention_mask": ret["inputs"]["attention_mask"],
         }
         self.cached_data_dict[i] = ret
         return ret
