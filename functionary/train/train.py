@@ -62,40 +62,27 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
 
 def initialize_tokenizer(
     model: transformers.AutoModelForCausalLM,
-    model_args: transformers.HfArgumentParser,
-    training_args: transformers.HfArgumentParser,
+    model_name_or_path: str,
+    model_max_length: int,
+    cache_dir: str,
 ):
     """Initialize tokenizer and add special tokens, resizing vocab and embedding"""
     # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
     tokenizer = LlamaTokenizer.from_pretrained(
-        model_args.model_name_or_path,
-        cache_dir=training_args.cache_dir,
-        model_max_length=training_args.model_max_length,
+        model_name_or_path,
+        cache_dir=cache_dir,
+        model_max_length=model_max_length,
         padding_side="right",
         legacy=True,
     )
+
+    # Add special tokens
     tokenizer.pad_token = tokenizer.unk_token
+    special_tokens = {"additional_special_tokens": [e.value for e in EndToken]}
+    num_new_tokens = tokenizer.add_special_tokens(special_tokens)
 
-    added_tokens = [e.value for e in EndToken]
-    special_tokens_dict = {"additional_special_tokens": added_tokens}
-    smart_tokenizer_and_embedding_resize(
-        special_tokens_dict=special_tokens_dict, tokenizer=tokenizer, model=model
-    )
-
-    return tokenizer
-
-
-def smart_tokenizer_and_embedding_resize(
-    special_tokens_dict: Dict,
-    tokenizer: transformers.PreTrainedTokenizer,
-    model: transformers.PreTrainedModel,
-):
-    """Resize tokenizer and embedding.
-    Note: This is the unoptimized version that may make your embedding size not be divisible by 64.
-    """
-    num_new_tokens = tokenizer.add_special_tokens(special_tokens_dict)
+    # Resize embedding
     model.resize_token_embeddings(len(tokenizer))
-
     if num_new_tokens > 0:
         input_embeddings = model.get_input_embeddings().weight.data
         output_embeddings = model.get_output_embeddings().weight.data
@@ -109,6 +96,8 @@ def smart_tokenizer_and_embedding_resize(
 
         input_embeddings[-num_new_tokens:] = input_embeddings_avg
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
+
+    return tokenizer
 
 
 def train():
@@ -135,7 +124,9 @@ def train():
     )
     model.config.use_cache = False
 
-    tokenizer = initialize_tokenizer(model, model_args, training_args)
+    tokenizer = initialize_tokenizer(
+        model, model_args.model_name_or_path, training_args.model_max_length
+    )
 
     with open(data_args.data_path, "r") as file:
         raw_data = [json.loads(line) for line in file]

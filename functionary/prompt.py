@@ -108,7 +108,7 @@ def convert_old_format_to_openai_format(message: Dict) -> Dict:
 
 
 def get_prompt_from_messages(
-    messages: List[Dict], functions: Optional[List[Dict]]
+    messages: List[Dict], functions: Optional[List[Dict]] = []
 ) -> str:
     """return the final prompt that will be used.
     Args:
@@ -118,18 +118,21 @@ def get_prompt_from_messages(
     Returns:
         str: the final prompt that will be used.
     """
-    result = ""
+    messages_clone = messages.copy()  # To avoid modifying the original list
+
     if functions is None:
         functions = []
-    if len(messages) > 0 and messages[0]["role"] != "system":
-        messages.insert(
+
+    if len(messages_clone) > 0 and messages_clone[0]["role"] != "system":
+        messages_clone.insert(
             0, {"role": "system", "content": generate_schema_from_functions(functions)}
         )
-        messages.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
+        messages_clone.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
 
-    for mess in messages:
-        result += get_text_from_message(mess)
-    return result.strip()
+    full_text = ""
+    for message in messages_clone:
+        full_text += get_text_from_message(message)
+    return full_text.strip()
 
 
 def get_token_id_to_end_token(tokenizer: Any) -> Dict[int, EndToken]:
