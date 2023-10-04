@@ -97,12 +97,9 @@ class TestInsertingEndToken(unittest.TestCase):
             self.final_prompt = f.read()
 
     def test_final_prompt_generation(self):
-        final_prompt = (
-            "system:\n"
-            + generate_schema_from_functions(functions=self.test_case["functions"])
-            + f"\nsystem:\nA chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary{EndToken.system.value}\n"
+        final_prompt = get_prompt_from_messages(
+            self.test_case["messages"], self.test_case["functions"]
         )
-        final_prompt += get_prompt_from_messages(self.test_case["messages"])
 
         self.assertEqual(
             final_prompt.strip(),
@@ -182,15 +179,15 @@ class TestInsertingEndToken(unittest.TestCase):
         # check if tokenizer added new stop tokens successfully
         self.assertEqual(length_before + len(added_tokens), length_after)
 
-        _, inputs = prepare_training_inputs(
+        inputs = prepare_training_inputs(
             self.test_case,
             tokenizer,
             padding="longest",
             max_length=512,
             return_tensor=False,
         )
-        input_ids = inputs["input_ids"]
-        labels = inputs["labels"]
+        input_ids = inputs["inputs"]["input_ids"]
+        labels = inputs["inputs"]["labels"]
         self.assertEqual(
             len(input_ids), len(labels), "length of inputs and labels are different"
         )

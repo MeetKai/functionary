@@ -8,7 +8,7 @@ type get_car_price = (_: {
 car_name?: string,
 }) => any;
 
-} // namespace functions
+} // namespace functions<|END_OF_SYSTEM|>
 system:
 A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary<|END_OF_SYSTEM|>
 user:
