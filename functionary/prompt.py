@@ -129,7 +129,7 @@ def get_prompt_from_messages(
 
     for mess in messages:
         result += get_text_from_message(mess)
-    return result
+    return result.strip()
 
 
 def get_token_id_to_end_token(tokenizer: Any) -> Dict[int, EndToken]:

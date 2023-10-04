@@ -7,17 +7,17 @@ from typing import Dict, Optional
 
 import torch
 import torch.distributed
-import transformers
 from torch.nn import CrossEntropyLoss
 
 from functionary.prompt import EndToken
-from functionary.train.custom_datasets import CustomDataset, split_data
+from functionary.train.datasets import CustomDataset, split_data
 from functionary.train.llama_flash_attn_monkey_patch import (
     replace_llama_attn_with_flash_attn,
 )
 
 replace_llama_attn_with_flash_attn()
 
+import transformers
 from transformers import LlamaTokenizer, Trainer
 
 
@@ -66,13 +66,13 @@ def initialize_tokenizer(
     training_args: transformers.HfArgumentParser,
 ):
     """Initialize tokenizer and add special tokens, resizing vocab and embedding"""
+    # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
     tokenizer = LlamaTokenizer.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
         model_max_length=training_args.model_max_length,
         padding_side="right",
-        use_fast=False,
-        # legacy=False,  # See: https://github.com/huggingface/transformers/pull/24565
+        legacy=True,
     )
     tokenizer.pad_token = tokenizer.unk_token
 

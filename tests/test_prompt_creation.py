@@ -7,7 +7,7 @@ from transformers import LlamaTokenizer
 
 from functionary.prompt import EndToken, get_prompt_from_messages, get_text_from_message
 from functionary.schema import generate_schema_from_functions
-from functionary.train.custom_datasets import prepare_training_inputs
+from functionary.train.datasets import prepare_training_inputs
 
 
 def extract_unmasked_chunks(labels: List[int]) -> List[List[int]]:
@@ -102,8 +102,8 @@ class TestInsertingEndToken(unittest.TestCase):
         )
 
         self.assertEqual(
-            final_prompt.strip(),
-            self.final_prompt.strip(),
+            final_prompt,
+            self.final_prompt,
             "wrong final prompt from: get_prompt_from_messages",
         )
 
