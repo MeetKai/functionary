@@ -125,7 +125,10 @@ def train():
     model.config.use_cache = False
 
     tokenizer = initialize_tokenizer(
-        model, model_args.model_name_or_path, training_args.model_max_length
+        model,
+        model_args.model_name_or_path,
+        training_args.model_max_length,
+        training_args.cache_dir,
     )
 
     with open(data_args.data_path, "r") as file:
