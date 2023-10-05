@@ -7,7 +7,7 @@ torchrun --nproc_per_node=2 --master_port=20001 -m functionary.train.train \
     --train_valid_split 0.9 \
     --bf16 True \
     --num_train_epochs 2 \
-    --per_device_train_batch_size 2 \
+    --per_device_train_batch_size 1 \
     --gradient_accumulation_steps 12 \
     --per_device_eval_batch_size 4 \
     --eval_accumulation_steps 16 \
