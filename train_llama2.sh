@@ -1,5 +1,5 @@
-%env WANDB_ENTITY=jeffreymeetkai
-%env WANDB_PROJECT=functionary-llama2-13b
+export WANDB_ENTITY=jeffreymeetkai
+export WANDB_PROJECT=functionary-llama2-13b
 
 torchrun --nproc_per_node=2 --master_port=20001 -m functionary.train.train \
     --model_name_or_path /workspace/Llama-2-13B-fp16  \
