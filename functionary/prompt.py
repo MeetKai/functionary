@@ -53,7 +53,7 @@ def get_text_from_message(message: Dict) -> str:
         str: the string used in the final prompt of this message
     """
     stop_token = EndToken.from_message(message).value
-    content = message.get("content", "")
+    content = message.get("content", None)
 
     if content is not None:
         content = f"{content}{stop_token}"
@@ -62,9 +62,7 @@ def get_text_from_message(message: Dict) -> str:
         text = "system:\n{content}\n".format(content=content)
 
     elif message["role"] == "function":
-        text = "function name={name}:\n{content}\n".format(
-            name=message.get("name", ""), content=content
-        )
+        text = "function name={name}:\n{content}\n".format(name=message.get("name", ""), content=content)
 
     elif message["role"] == "user" and content is None:
         text = "user:\n"
@@ -107,9 +105,7 @@ def convert_old_format_to_openai_format(message: Dict) -> Dict:
     }
 
 
-def get_prompt_from_messages(
-    messages: List[Dict], functions: Optional[List[Dict]] = []
-) -> str:
+def get_prompt_from_messages(messages: List[Dict], functions: Optional[List[Dict]] = []) -> str:
     """return the final prompt that will be used.
     Args:
         messages (List[Dict]): list of messages where each message is in the format of OpenAI
@@ -124,9 +120,7 @@ def get_prompt_from_messages(
         functions = []
 
     if len(messages_clone) > 0 and messages_clone[0]["role"] != "system":
-        messages_clone.insert(
-            0, {"role": "system", "content": generate_schema_from_functions(functions)}
-        )
+        messages_clone.insert(0, {"role": "system", "content": generate_schema_from_functions(functions)})
         messages_clone.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
 
     full_text = ""

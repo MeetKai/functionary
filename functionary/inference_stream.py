@@ -1,8 +1,9 @@
-from transformers import LlamaForCausalLM, LlamaTokenizer
-from typing import List, Optional, Tuple, Generator, Any, Dict
 import gc
-import torch
 import re
+from typing import Any, Dict, Generator, List, Optional, Tuple
+
+import torch
+from transformers import LlamaForCausalLM, LlamaTokenizer
 from transformers.generation.logits_process import (
     LogitsProcessorList,
     RepetitionPenaltyLogitsProcessor,
@@ -11,8 +12,9 @@ from transformers.generation.logits_process import (
     TopPLogitsWarper,
 )
 
-from functionary.openai_types import ChatMessage, Function
 from functionary.inference import prepare_messages_for_inference
+from functionary.openai_types import ChatMessage, Function
+from functionary.prompt import EndToken
 
 
 def prepare_logits_processor(
@@ -52,7 +54,9 @@ def generate_text_stream(
         stop_token_ids.append(tokenizer.eos_token_id)
 
     logits_processor = prepare_logits_processor(temperature, repetition_penalty, top_p, top_k)
-    input_ids = prepare_messages_for_inference(tokenizer=tokenizer, messages=messages, functions=functions, device=device)
+    input_ids = prepare_messages_for_inference(
+        tokenizer=tokenizer, messages=messages, functions=functions, device=device
+    )
     output_ids = input_ids.clone().detach()
     past_key_values = None  # KV cached
     token_ts = None  # next token
@@ -178,7 +182,7 @@ def generate_stream(
         **kwargs,
     )
     stop_list = kwargs.get("stops", [])
-    stop_list.append("\n user:\n")
+    stop_list.extend([EndToken.assistant, EndToken.function_call])
     stop_tokens_list = [tokenizer.encode(stop, add_special_tokens=False) for stop in stop_list]
     # We need to remove 29871 because sometimes Llamatokenizer automatically add: 29871
     # (take a loot at this: https://github.com/huggingface/transformers/issues/26273)
@@ -198,7 +202,7 @@ def generate_stream(
                 response = {"delta": {"content": "", "role": "assistant"}, "finish_reason": None}
                 yield response
             else:
-                match = re.search(r"to=functions\.(?P<f>.+?):", cur_text.strip())
+                match = re.search(r"to=(?P<f>.+?):", cur_text.strip())
                 if match is not None:
                     response_type = "function"
                     func_name = match.group("f").strip()
@@ -214,15 +218,24 @@ def generate_stream(
         elif response_type == "function":
             if finish_reason is None:
                 response = {
-                    "delta": {"role": "assistant", "function_call": {"arguments": item}},  # format of openAI at the second return, don't need to add function_name
+                    "delta": {
+                        "role": "assistant",
+                        "function_call": {"arguments": item},
+                    },  # format of openAI at the second return, don't need to add function_name
                     "finish_reason": None,
                 }
             else:
-                response = {"delta": {}, "finish_reason": "function_call"}  # format of openAI at the end, delta must be empty
+                response = {
+                    "delta": {},
+                    "finish_reason": "function_call",
+                }  # format of openAI at the end, delta must be empty
             yield response
         elif response_type == "text":
             if finish_reason is None:
                 response = {"delta": {"content": item, "role": "assistant"}, "finish_reason": None}
             else:
-                response = {"delta": {}, "finish_reason": finish_reason}  # format of openAI at the end, delta must be empty
+                response = {
+                    "delta": {},
+                    "finish_reason": finish_reason,
+                }  # format of openAI at the end, delta must be empty
             yield response
