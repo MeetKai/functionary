@@ -14,29 +14,6 @@ from functionary.prompt import (
 from functionary.schema import generate_schema_from_functions
 
 
-def split_data(raw_data, input_file, percentage):
-    """Splits the raw data into train and validation sets. Saves both into new jsonl files too."""
-    # Calculate the split index
-    split_idx = int(len(raw_data) * percentage)
-    # Split the data into training and validation sets
-    train_data, val_data = raw_data[:split_idx], raw_data[split_idx:]
-    # Write the training data to a new JSONL file
-    with open(input_file.rstrip(".jsonl") + "_train.jsonl", "w") as f:
-        for item in train_data:
-            json.dump(item, f)
-            f.write("\n")
-    # Write the validation data to a new JSONL file
-    with open(input_file.rstrip(".jsonl") + "_val.jsonl", "w") as f:
-        for item in val_data:
-            json.dump(item, f)
-            f.write("\n")
-    if torch.distributed.get_rank() == 0:
-        print(
-            f"Data split into training (size: {len(train_data)}) and validation (size: {len(val_data)}) sets."
-        )
-    return train_data, val_data
-
-
 def prepare_training_inputs(
     messages: Dict[str, List],
     tokenizer: Any,

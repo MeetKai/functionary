@@ -10,7 +10,7 @@ import torch.distributed
 from torch.nn import CrossEntropyLoss
 
 from functionary.prompt import EndToken
-from functionary.train.datasets import CustomDataset, split_data
+from functionary.train.datasets import CustomDataset
 from functionary.train.llama_flash_attn_monkey_patch import (
     replace_llama_attn_with_flash_attn,
 )
@@ -28,14 +28,11 @@ class ModelArguments:
 
 @dataclass
 class DataArguments:
-    data_path: str = field(
+    train_data_path: str = field(
         default=None, metadata={"help": "Path to the training data."}
     )
-    train_valid_split: float = field(
-        default=0.9,
-        metadata={
-            "help": "Ratio to split overall data into train-validation. Must be between 0.0 and 1.0."
-        },
+    eval_data_path: str = field(
+        default=None, metadata={"help": "Path to the eval data."}
     )
 
 
@@ -67,8 +64,10 @@ def initialize_tokenizer(
     cache_dir: str,
 ):
     """Initialize tokenizer and add special tokens, resizing vocab and embedding"""
+    from transformers import AutoTokenizer
+
     # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
-    tokenizer = LlamaTokenizer.from_pretrained(
+    tokenizer = AutoTokenizer.from_pretrained(
         model_name_or_path,
         cache_dir=cache_dir,
         model_max_length=model_max_length,
@@ -131,27 +130,27 @@ def train():
         training_args.cache_dir,
     )
 
-    with open(data_args.data_path, "r") as file:
-        raw_data = [json.loads(line) for line in file]
+    assert data_args.train_data_path is not None, "Please provide a training data file."
+
+    with open(data_args.train_data_path, "r") as file:
+        raw_train_data = [json.loads(line) for line in file]
+    random.shuffle(raw_train_data)
+
+    if data_args.eval_data_path is not None:
+        with open(data_args.eval_data_path, "r") as file:
+            raw_eval_data = [json.loads(line) for line in file]
+        random.shuffle(raw_eval_data)
+
+    train_dataset = CustomDataset(raw_train_data, tokenizer)
 
     if torch.distributed.get_rank() == 0:
-        print(f"Data Loaded: #{len(raw_data)}")
-
-    random.shuffle(raw_data)
+        print(f"Training Data Loaded: #{len(raw_train_data)}")
 
     if training_args.do_eval:
-        # Do train-validation split
-        assert (
-            0.0 < data_args.train_valid_split <= 1.0
-        ), f"The `train_valid_split` argument of `{data_args.train_valid_split}` is not between 0.0 and 1.0."
-
-        raw_train_data, raw_eval_data = split_data(
-            raw_data, data_args.data_path, data_args.train_valid_split
-        )
-        train_dataset = CustomDataset(raw_train_data, tokenizer)
         eval_dataset = CustomDataset(raw_eval_data, tokenizer)
-    else:
-        train_dataset = CustomDataset(raw_data, tokenizer)
+
+        if torch.distributed.get_rank() == 0:
+            print(f"Eval Data Loaded: #{len(raw_eval_data)}")
 
     def preprocess_logits_for_metrics(logits, labels):
         """Preprocesses the logits during evaluation by computing the greedy token predictions for
