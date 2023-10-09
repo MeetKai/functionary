@@ -12,6 +12,34 @@ pip install accelerate==0.23.0 transformers==4.33.3 sentencepiece==0.1.99 packag
 pip install flash-attn==2.3.0 --no-build-isolation
 
 # 2xA100 80GB, from the root directory of the repository
+accelerate launch --config_file "functionary/train/fsdp_config.yaml" -m functionary.train.train \
+    --model_name_or_path meta-llama/Llama-2-13b-hf  \
+    --train_data_path train_dataset.jsonl \
+    --eval_data_path eval_dataset.jsonl \
+    --bf16 True \
+    --num_train_epochs 2 \
+    --per_device_train_batch_size 1 \
+    --gradient_accumulation_steps 32 \
+    --per_device_eval_batch_size 1 \
+    --eval_accumulation_steps 1 \
+    --evaluation_strategy "steps" \
+    --eval_steps 400 \
+    --save_strategy "steps" \
+    --save_steps 200 \
+    --save_total_limit 5 \
+    --learning_rate 2e-5 \
+    --weight_decay 0.3 \
+    --warmup_ratio 0.03 \
+    --lr_scheduler_type "cosine" \
+    --logging_steps 1 \
+    --model_max_length 4096 \
+    --optim "paged_adamw_32bit" \
+    --gradient_checkpointing True \
+    --output_dir functionary-v1
+
+
+# Without accelerate:
+# 2xA100 80GB, from the root directory of the repository
 torchrun --nproc_per_node=2 --master_port=20001 -m functionary.train.train \
     --model_name_or_path meta-llama/Llama-2-7b-hf  \
     --train_data_path llama_train_dataset.jsonl \
@@ -36,8 +64,13 @@ torchrun --nproc_per_node=2 --master_port=20001 -m functionary.train.train \
     --fsdp_transformer_layer_cls_to_wrap 'LlamaDecoderLayer' \
     --tf32 True \
     --model_max_length 4096 \
+    --report_to all \
     --gradient_checkpointing True \
     --output_dir functionary-v1
 ```
 
-*Note: This training process might not work exactly as is. We've changed a couple of things in the training code and not tested yet.*  
+*If the training is stuck before training, run the following command before starting the training*:
+
+```shell
+export NCCL_P2P_DISABLE=1
+```
