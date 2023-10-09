@@ -64,10 +64,8 @@ def initialize_tokenizer(
     cache_dir: str,
 ):
     """Initialize tokenizer and add special tokens, resizing vocab and embedding"""
-    from transformers import AutoTokenizer
-
     # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
-    tokenizer = AutoTokenizer.from_pretrained(
+    tokenizer = LlamaTokenizer.from_pretrained(
         model_name_or_path,
         cache_dir=cache_dir,
         model_max_length=model_max_length,
