@@ -9,36 +9,52 @@ import yaml
 from functionary.openai_types import Function
 
 
-def normalize_data_type(param_type: str) -> str:
+def convert_data_type(param_type: str) -> str:
+    """convert data_type to typescript data type
+
+    Args:
+        param_type (str): param_type
+
+    Returns:
+        str: param type in typescript
+    """
     if param_type == "integer" or param_type == "float":
         return "number"
     return param_type
 
 
-def get_param_type(param: Dict) -> str:    
+def get_param_type(param: Dict) -> str:
+    """get param_type of parameter
+
+    Args:
+        param (Dict): param dict in properties
+
+    Returns:
+        str: _description_
+    """
     param_type = "any"
     if "type" in param:
         param_type = param["type"]
-        if param_type == "array":  # handle if param is an array 
-            item_type = None
-            if "items" in param and "type" in param["items"]:
-                item_type = param["items"]["type"]
-            if item_type is not None:
-                param_type = f"Array<{item_type}>"  # For examle, Array<string>
-            else:
-                param_type = f"Array"
-    else:
+    else:  # in many cases, the json schema contains: oneOf instead of "type"
         if "oneOf" in param:
             one_of_types = []
             for item in param["oneOf"]:
                 if "type" in item:
-                    one_of_types.append(normalize_data_type(item["type"]))
+                    one_of_types.append(convert_data_type(item["type"]))
             one_of_types = list(set(one_of_types))
             param_type = " | ".join(one_of_types)
-    return normalize_data_type(param_type)
+    return convert_data_type(param_type)
 
 
 def get_format_param(param: Dict) -> Optional[str]:
+    """Get "format" from param. There are cases where format is not directly in param but in oneOf
+
+    Args:
+        param (Dict): _description_
+
+    Returns:
+        Optional[str]: _description_
+    """
     if "format" in param:
         return param["format"]
     if "oneOf" in param:
@@ -52,32 +68,96 @@ def get_format_param(param: Dict) -> Optional[str]:
 
 
 def get_param_info(param: Dict) -> Optional[str]:
+    """get additional information about parameter such as: format, default value, min, max, ...
+
+    Args:
+        param (Dict): _description_
+
+    Returns:
+        Optional[str]: _description_
+    """
     param_type = param.get("type", "any")
     info_list = []
     if "description" in param:
-        info_list.append(param["description"])
-        
+        desc = param["description"]
+        if not desc.endswith("."):
+            desc += "."
+        info_list.append(desc)
+
     if "default" in param:
         default_value = param["default"]
         if param_type == "string":
             default_value = f'"{default_value}"'  # if string --> add ""
-        info_list.append(f"If not specified, use {default_value} as default.")
-        
+        info_list.append(f"Default value={default_value}.")
+
     format_param = get_format_param(param)
     if format_param is not None:
         info_list.append("The format is: " + format_param)
-    
-    for field, field_name in [("maximum", "maximum"), ("minimum", "minimum"), ("maxLength", "maximum length"), ("minLength", "minimum length")]:
+
+    for field, field_name in [
+        ("maximum", "Maximum"),
+        ("minimum", "Minimum"),
+        ("maxLength", "Maximum length"),
+        ("minLength", "Minimum length"),
+    ]:
         if field in param:
-            info_list.append(f"The {field_name} value is: " + str(param[field]) + ".")
-        
+            info_list.append(f"{field_name}=" + str(param[field]) + ".")
+
     if len(info_list) > 0:
-        return "// " + " ".join(info_list)
+        result = "// " + " ".join(info_list)
+        result = result.replace("\n", " ")
+        return result
     return None
 
 
-def get_parameter_typescript(properties, required_params, depth=0):
-    params = []
+def append_new_param_info(info_list: List[str], param_declaration: str, comment_info: Optional[str], depth: int):
+    """Append a new parameter with comment to the info_list
+
+    Args:
+        info_lines (List[str]): current info_list
+        param_declaration (str): param: type
+        comment_info (Optional[str]): information of comment
+        depth (int): level of nested param
+    """
+    offset = ""
+    if depth >= 1:
+        offset = "".join(["    " for _ in range(depth)])
+    if comment_info is not None:
+        if depth == 0:  # format: //comment\nparam: type
+            info_list.append(f"{offset}{comment_info}")
+            info_list.append(f"{offset}{param_declaration}")
+        else:  # format: param: type  // comment
+            info_list.append(f"{offset}{param_declaration}    {comment_info}")
+    else:
+        info_list.append(f"{offset}{param_declaration}")
+
+
+def get_enum_option_str(enum_options: List) -> str:
+    """get enum option separated by: "|"
+
+    Args:
+        enum_options (List): list of options
+
+    Returns:
+        _type_: concatenation of options separated by "|"
+    """
+    # if each option is string --> add quote
+    return " | ".join([f'"{v}"' if type(v) is str else str(v) for v in enum_options])
+
+
+def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
+    """Recursion, returning the information about parameters including data type, description and other information
+    These kinds of information will be put into the prompt
+
+    Args:
+        properties (_type_): properties in parameters
+        required_params (_type_): List of required parameters
+        depth (int, optional): the depth of params (nested level). Defaults to 0.
+
+    Returns:
+        _type_: list of lines containing information about all parameters
+    """
+    info_lines = []
     for param_name, param in properties.items():
         # Param Description
         comment_info = get_param_info(param)
@@ -85,37 +165,53 @@ def get_parameter_typescript(properties, required_params, depth=0):
         param_declaration = f"{param_name}"
         if param_name not in required_params:
             param_declaration += "?"
-        
         param_type = get_param_type(param)
-        if param_type == "object" and "properties" in param:
-            child_properties = param["properties"]
-            child_required_params = param.get("required", [])
-            description = param.get("description", "")
-            child_desc = get_parameter_typescript(child_properties, child_required_params, depth + 1)
-            if depth == 0:
-                comment_info = f"/*\n {description} This is an object with the following fields:\n{child_desc}\n*/"
+
+        offset = ""
+        if depth >= 1:
+            offset = "".join(["    " for _ in range(depth)])
+
+        if param_type == "object":  # param_type is object
+            child_lines = get_parameter_typescript(param.get("properties", {}), param.get("required", []), depth + 1)
+            if comment_info is not None:
+                info_lines.append(f"{offset}{comment_info}")
+
+            param_declaration += ": {"
+            info_lines.append(f"{offset}{param_declaration}")
+            info_lines.extend(child_lines)
+            info_lines.append(f"{offset}" + "}")
+
+        elif param_type == "array":  # param_type is an array
+            item_info = param.get("items", {})
+            if "type" not in item_info:  # don't know type of array
+                param_declaration += ": Array"
+                append_new_param_info(info_lines, param_declaration, comment_info, depth)
             else:
-                comment_info = f"// {description} This is an object with the following fields:\n{child_desc}"
-            param_declaration += ": object"
+                item_type = convert_data_type(item_info["type"])
+                if item_type == "object":  # format: var_name: Array<{object in here}>
+                    child_lines = get_parameter_typescript(
+                        item_info.get("properties", {}), item_info.get("required", []), depth + 1
+                    )
+                    if comment_info is not None:
+                        info_lines.append(f"{offset}{comment_info}")
+
+                    param_declaration += ": Array<{"
+                    info_lines.append(f"{offset}{param_declaration}")
+                    info_lines.extend(child_lines)
+                    info_lines.append(f"{offset}" + "}>")
+                else:
+                    if "enum" in item_info:
+                        item_type = get_enum_option_str(item_info["enum"])
+                    param_declaration += f": Array<{item_type}>"
+                    append_new_param_info(info_lines, param_declaration, comment_info, depth)
         else:
             if "enum" in param:
                 param_type = " | ".join([f'"{v}"' for v in param["enum"]])
             param_declaration += f": {param_type}"
-        params.append((comment_info, param_declaration))
-    result = ""
-    for comment_info, param_declaration in params:
-        offset = ""
-        if depth > 1:
-            offset = "".join(["    " for _ in range(depth)])
-        if comment_info is not None:
-            if depth == 0:
-                result += f"{offset}{comment_info}\n{offset}{param_declaration}\n"
-            else:
-                result += f"{offset}{param_declaration}  {comment_info}\n"
-        else:
-            result += f"{offset}{param_declaration}\n"
-    return result
-        
+            append_new_param_info(info_lines, param_declaration, comment_info, depth)
+
+    return info_lines
+
 
 def generate_schema_from_functions(functions: List[Function], namespace="functions"):
     """
@@ -128,7 +224,7 @@ def generate_schema_from_functions(functions: List[Function], namespace="functio
     for function in functions:
         # Convert a Function object to dict, if necessary
         if not isinstance(function, dict):
-            function = function.dict()
+            function = function.model_dump()
         function_name = function.get("name", None)
         if function_name is None:
             continue
@@ -141,23 +237,9 @@ def generate_schema_from_functions(functions: List[Function], namespace="functio
         if parameters is not None:
             schema += " = (_: {\n"
             required_params = parameters.get("required", [])
-            argument_info = get_parameter_typescript(parameters.get("properties"), required_params, 0)
-            # for param_name, param in parameters.get("properties", {}).items():
-            #     # Param Description
-            #     comment_info = get_param_info(param)
-            #     if comment_info is not None:
-            #         schema += comment_info
-            #     # Param Name
-            #     schema += f"{param_name}"
-            #     if param_name not in required_params:
-            #         schema += "?"
-                
-            #     param_type = get_param_type(param)
-            #     if "enum" in param:
-            #         param_type = " | ".join([f'"{v}"' for v in param["enum"]])
-            #     schema += f": {param_type},\n"
-            schema += argument_info
-            schema += "}) => any;\n\n"
+            info_lines = get_parameter_typescript(parameters.get("properties"), required_params, 0)
+            schema += "\n".join(info_lines)
+            schema += "\n}) => any;\n\n"
         else:
             # Doesn't have any parameters
             schema += " = () => any;\n\n"
@@ -167,9 +249,7 @@ def generate_schema_from_functions(functions: List[Function], namespace="functio
     return schema
 
 
-def generate_schema_from_openapi(
-    specification: Dict[str, Any], description: str, namespace: str
-) -> str:
+def generate_schema_from_openapi(specification: Dict[str, Any], description: str, namespace: str) -> str:
     """
     Convert OpenAPI specification object to a schema that language models can understand.
 
@@ -207,9 +287,7 @@ def generate_schema_from_openapi(
             schema += f"// {description}\n"
             schema += f"type {operationId}"
 
-            if ("requestBody" in method_info) or (
-                method_info.get("parameters") is not None
-            ):
+            if ("requestBody" in method_info) or (method_info.get("parameters") is not None):
                 schema += f"  = (_: {{\n"
                 # Body
                 if "requestBody" in method_info:
@@ -253,9 +331,7 @@ def generate_schema_from_openapi(
 
                     # Param Name
                     schema += f"{param['name']}"
-                    if (not param.get("required", False)) or (
-                        param.get("nullable", False)
-                    ):
+                    if (not param.get("required", False)) or (param.get("nullable", False)):
                         schema += "?"
                     if param.get("schema") is None:
                         continue
@@ -264,9 +340,7 @@ def generate_schema_from_openapi(
                     if param_type == "integer":
                         param_type = "number"
                     if "enum" in param["schema"]:
-                        param_type = " | ".join(
-                            [f'"{v}"' for v in param["schema"]["enum"]]
-                        )
+                        param_type = " | ".join([f'"{v}"' for v in param["schema"]["enum"]])
                     schema += f": {param_type},\n"
 
                 schema += f"}}) => any;\n\n"
@@ -279,14 +353,10 @@ def generate_schema_from_openapi(
     return schema
 
 
-def generate_specification_from_openapi_url(
-    openapi_url: str, proxies: dict = None
-) -> str:
+def generate_specification_from_openapi_url(openapi_url: str, proxies: dict = None) -> str:
     # Make Request
     headers = {"Accept": "application/x-yaml, text/yaml, text/x-yaml, application/json"}
-    response = requests.get(
-        openapi_url, verify=False, headers=headers, timeout=60, proxies=proxies
-    )
+    response = requests.get(openapi_url, verify=False, headers=headers, timeout=60, proxies=proxies)
 
     if response.status_code == 200:
         # Trust content-type first
