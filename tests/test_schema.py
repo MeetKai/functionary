@@ -102,47 +102,47 @@ namespace functions {
 
 // This is a test function
 type test_function = (_: {
-param1: string
+param1: string,
 // description of param 2.
-param2: string
+param2: string,
 // description of param 3. Default value="option1".
-param3?: "option1" | "option2"
+param3?: "option1" | "option2",
 // list of ids.
-param4?: Array<string>
+param4?: Array<string>,
 // from datetime. The format is: date-time
-param5?: string
+param5?: string,
 // The format is: date-time
-param6?: string
+param6?: string,
 // Description of param 7. The format is: date-time or date
-param7?: string
+param7?: string,
 // description of param8. Maximum=36.
-param8?: number
+param8?: number,
 // description of param 9. Minimum=1.
-param9?: number
+param9?: number,
 // Number of page that should be returned.
 person?: {
-    name?: string    // name of person.
-    age?: number    // age of person.
+    name?: string,    // name of person.
+    age?: number,    // age of person.
     // extra information of this person.
     extra_info?: {
-        school?: string    // school of this person.
+        school?: string,    // school of this person.
         // job of this person.
         job: {
-            salary: number    // salary per month.
-            title: string    // position in company.
-            full_time?: boolean    // is this person full-time or not. Default value=True.
-        }
-    }
-}
+            salary: number,    // salary per month.
+            title: string,    // position in company.
+            full_time?: boolean,    // is this person full-time or not. Default value=True.
+        },
+    },
+},
 // description of param 10.
 param10?: Array<{
-    search?: string    // this is search param.
-    category?: string
-}>
+    search?: string,    // this is search param.
+    category?: string,
+}>,
 // Description of param 11.
-param11?: Array<string>
-param12?: Array<"bungalow" | "detached" | "flat" | "land" | "park home" | "semi-detached" | "terraced">
-param13?: Array<1 | 2 | 3 | 4 | 5>
+param11?: Array<string>,
+param12?: Array<"bungalow" | "detached" | "flat" | "land" | "park home" | "semi-detached" | "terraced">,
+param13?: Array<1 | 2 | 3 | 4 | 5>,
 }) => any;
 
 } // namespace functions"""

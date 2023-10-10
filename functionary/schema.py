@@ -179,12 +179,12 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
             param_declaration += ": {"
             info_lines.append(f"{offset}{param_declaration}")
             info_lines.extend(child_lines)
-            info_lines.append(f"{offset}" + "}")
+            info_lines.append(f"{offset}" + "},")
 
         elif param_type == "array":  # param_type is an array
             item_info = param.get("items", {})
             if "type" not in item_info:  # don't know type of array
-                param_declaration += ": Array"
+                param_declaration += ": Array,"
                 append_new_param_info(info_lines, param_declaration, comment_info, depth)
             else:
                 item_type = convert_data_type(item_info["type"])
@@ -198,16 +198,16 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
                     param_declaration += ": Array<{"
                     info_lines.append(f"{offset}{param_declaration}")
                     info_lines.extend(child_lines)
-                    info_lines.append(f"{offset}" + "}>")
+                    info_lines.append(f"{offset}" + "}>,")
                 else:
                     if "enum" in item_info:
                         item_type = get_enum_option_str(item_info["enum"])
-                    param_declaration += f": Array<{item_type}>"
+                    param_declaration += f": Array<{item_type}>,"
                     append_new_param_info(info_lines, param_declaration, comment_info, depth)
         else:
             if "enum" in param:
                 param_type = " | ".join([f'"{v}"' for v in param["enum"]])
-            param_declaration += f": {param_type}"
+            param_declaration += f": {param_type},"
             append_new_param_info(info_lines, param_declaration, comment_info, depth)
 
     return info_lines

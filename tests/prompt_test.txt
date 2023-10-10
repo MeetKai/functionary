@@ -4,7 +4,7 @@ namespace functions {
 
 // Get the price of a particular car model
 type get_car_price = (_: {
-// The name of the car model
+// The name of the car model.
 car_name?: string,
 }) => any;
 
