@@ -132,12 +132,10 @@ def train():
 
     with open(data_args.train_data_path, "r") as file:
         raw_train_data = [json.loads(line) for line in file]
-    random.shuffle(raw_train_data)
 
     if data_args.eval_data_path is not None:
         with open(data_args.eval_data_path, "r") as file:
             raw_eval_data = [json.loads(line) for line in file]
-        random.shuffle(raw_eval_data)
 
     train_dataset = CustomDataset(raw_train_data, tokenizer)
 
