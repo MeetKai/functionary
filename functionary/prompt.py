@@ -74,7 +74,7 @@ def get_text_from_message(message: Dict) -> str:
         function = None
         arguments = None
         if (
-            "function_call" in message
+            "function_call" in message and message["function_call"] is not None
         ):  # format of openai: {"role": assistant, "function_call": {"name": xxx, "arguments": xxx}}
             function = message["function_call"]["name"]
             arguments = message["function_call"]["arguments"] + stop_token

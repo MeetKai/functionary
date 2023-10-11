@@ -1,6 +1,6 @@
 import gc
 import re
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Tuple
 
 import torch
 from transformers import LlamaForCausalLM, LlamaTokenizer
@@ -163,6 +163,69 @@ def generate_with_check_stop(
         yield return_item[1:]
 
 
+def update_response_state_from_delta_text(
+    cur_text: str, func_name: Optional[str], response_type: Optional[str], delta_text: str, finish_reason: Optional[str]
+) -> Tuple[Optional[str], Optional[str], Optional[Dict]]:
+    cur_text += delta_text
+    response: Optional[Dict[str, Any]] = None
+    if response_type is None:
+        if cur_text.lstrip() == ":\n":
+            response_type = "text"
+            response = {"delta": {"content": "", "role": "assistant"}, "finish_reason": None}
+        else:
+            match = re.search(r"to=(?P<f>.+?):", cur_text.strip())
+            if match is not None:
+                response_type = "function"
+                func_name = match.group("f").strip()
+                response = {
+                    "delta": {
+                        "role": "assistant",
+                        "content": None,
+                        "function_call": {"arguments": "", "name": func_name},
+                    },
+                    "finish_reason": None,
+                }
+    elif response_type == "function":
+        if finish_reason is None:
+            response = {
+                "delta": {
+                    "role": "assistant",
+                    "function_call": {"arguments": delta_text},
+                },  # format of openAI at the second return, don't need to add function_name
+                "finish_reason": None,
+            }
+        else:
+            response = {
+                "delta": {},
+                "finish_reason": "function_call",
+            }  # format of openAI at the end, delta must be empty
+    elif response_type == "text":
+        if finish_reason is None:
+            response = {"delta": {"content": delta_text, "role": "assistant"}, "finish_reason": None}
+        else:
+            response = {
+                "delta": {},
+                "finish_reason": finish_reason,
+            }  # format of openAI at the end, delta must be empty
+    return func_name, response_type, response
+
+
+def generate_openai_format_from_stream(
+    generator: Generator[Tuple[str, Optional[str]], Any, Any]
+) -> Generator[Dict, Any, Any]:
+    cur_text = ""
+    func_name = None
+    response_type = None  # = function if it is function call; = text if it is chit-chat
+    for delta_text, finish_reason in generator:
+        # print(f"item:{item}, finish_reason: {finish_reason}; response_type: {response_type}")
+        func_name, response_type, response = update_response_state_from_delta_text(
+            cur_text, func_name, response_type, delta_text, finish_reason
+        )
+        cur_text += delta_text
+        if response is not None:
+            yield response
+
+
 def generate_stream(
     model: LlamaForCausalLM,
     tokenizer: LlamaTokenizer,
@@ -188,54 +251,21 @@ def generate_stream(
     # (take a loot at this: https://github.com/huggingface/transformers/issues/26273)
     stop_tokens_list = [item[1:] if len(item) > 1 and item[0] == 29871 else item for item in stop_tokens_list]
     checked_generator = generate_with_check_stop(generator, stop_tokens_list)
+    for item in generate_openai_format_from_stream(checked_generator):
+        yield item
 
+
+async def generate_openai_format_from_stream_async(
+    generator: AsyncGenerator[Tuple[str, Optional[str]], None]
+) -> AsyncGenerator[Dict, None]:
     cur_text = ""
     func_name = None
     response_type = None  # = function if it is function call; = text if it is chit-chat
-    response: Dict[str, Any] = {}
-    for item, finish_reason in checked_generator:
+    async for delta_text, finish_reason in generator:
         # print(f"item:{item}, finish_reason: {finish_reason}; response_type: {response_type}")
-        cur_text += item
-        if response_type is None:
-            if cur_text.lstrip() == ":\n":
-                response_type = "text"
-                response = {"delta": {"content": "", "role": "assistant"}, "finish_reason": None}
-                yield response
-            else:
-                match = re.search(r"to=(?P<f>.+?):", cur_text.strip())
-                if match is not None:
-                    response_type = "function"
-                    func_name = match.group("f").strip()
-                    response = {
-                        "delta": {
-                            "role": "assistant",
-                            "content": None,
-                            "function_call": {"arguments": "", "name": func_name},
-                        },
-                        "finish_reason": None,
-                    }
-                    yield response
-        elif response_type == "function":
-            if finish_reason is None:
-                response = {
-                    "delta": {
-                        "role": "assistant",
-                        "function_call": {"arguments": item},
-                    },  # format of openAI at the second return, don't need to add function_name
-                    "finish_reason": None,
-                }
-            else:
-                response = {
-                    "delta": {},
-                    "finish_reason": "function_call",
-                }  # format of openAI at the end, delta must be empty
-            yield response
-        elif response_type == "text":
-            if finish_reason is None:
-                response = {"delta": {"content": item, "role": "assistant"}, "finish_reason": None}
-            else:
-                response = {
-                    "delta": {},
-                    "finish_reason": finish_reason,
-                }  # format of openAI at the end, delta must be empty
+        func_name, response_type, response = update_response_state_from_delta_text(
+            cur_text, func_name, response_type, delta_text, finish_reason
+        )
+        cur_text += delta_text
+        if response is not None:
             yield response

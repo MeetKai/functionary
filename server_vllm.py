@@ -20,7 +20,7 @@ import asyncio
 import json
 import time
 from http import HTTPStatus
-from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Union
+from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
 
 import fastapi
 import uvicorn
@@ -46,7 +46,14 @@ from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
 from functionary.inference import prepare_messages_for_inference
-from functionary.openai_types import ChatMessage, Function, FunctionCall
+from functionary.inference_stream import generate_openai_format_from_stream_async
+from functionary.openai_types import (
+    ChatCompletionChunk,
+    ChatMessage,
+    Function,
+    FunctionCall,
+    StreamChoice,
+)
 from functionary.prompt import EndToken
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
@@ -243,61 +250,21 @@ async def create_chat_completion(raw_request: Request):
     async def abort_request() -> None:
         await engine.abort(request_id)
 
-    def create_stream_response_json(
-        index: int,
-        text: str,
-        finish_reason: Optional[str] = None,
-    ) -> str:
-        choice_data = ChatCompletionResponseStreamChoice(
-            index=index,
-            delta=DeltaMessage(content=text),
-            finish_reason=finish_reason,
-        )
-        response = ChatCompletionStreamResponse(
-            id=request_id,
-            created=created_time,
-            model=model_name,
-            choices=[choice_data],
-        )
-        response_json = response.model_dump_json()
-
-        return response_json
+    async def wrap_vllm_generator() -> AsyncGenerator[Tuple[str, Optional[str]], None]:
+        previous_texts = ""
+        async for res in result_generator:
+            for output in res.outputs:
+                delta_text = output.text[len(previous_texts) :]
+                previous_texts = output.text
+                finish_reason = output.finish_reason
+                yield delta_text, finish_reason
 
     async def completion_stream_generator() -> AsyncGenerator[str, None]:
-        # First chunk with role
-        for i in range(request.n):
-            choice_data = ChatCompletionResponseStreamChoice(
-                index=i,
-                delta=DeltaMessage(role="assistant"),
-                finish_reason=None,
-            )
-            chunk = ChatCompletionStreamResponse(id=request_id, choices=[choice_data], model=model_name)
-            data = chunk.model_dump_json(
-                exclude_unset=True,
-            )
-            yield f"data: {data}\n\n"
-
-        previous_texts = [""] * request.n
-        previous_num_tokens = [0] * request.n
-        async for res in result_generator:
-            res: RequestOutput
-            for output in res.outputs:
-                i = output.index
-                delta_text = output.text[len(previous_texts[i]) :]
-                previous_texts[i] = output.text
-                previous_num_tokens[i] = len(output.token_ids)
-                response_json = create_stream_response_json(
-                    index=i,
-                    text=delta_text,
-                )
-                yield f"data: {response_json}\n\n"
-                if output.finish_reason is not None:
-                    response_json = create_stream_response_json(
-                        index=i,
-                        text="",
-                        finish_reason=output.finish_reason,
-                    )
-                    yield f"data: {response_json}\n\n"
+        generator = wrap_vllm_generator()
+        async for response in generate_openai_format_from_stream_async(generator):
+            chunk = StreamChoice(**response)
+            result = ChatCompletionChunk(id=request_id, choices=[chunk])
+            yield f"data: {result.model_dump_json(exclude_unset=True)}\n\n"
         yield "data: [DONE]\n\n"
 
     # Streaming response
