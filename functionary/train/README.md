@@ -6,10 +6,10 @@ python3 -m venv venv && source venv/bin/activate
 pip3 install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
 
 # Install Dependencies
-pip install accelerate==0.23.0 transformers==4.33.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 pydantic==2.1.1
+pip install accelerate==0.23.0 transformers==4.34.0 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 pydantic==2.1.1
 
 # Install Flash Attention 2
-pip install flash-attn==2.3.0 --no-build-isolation
+pip install flash-attn==2.3.2 --no-build-isolation
 
 # 2xA100 80GB, from the root directory of the repository
 accelerate launch --config_file "functionary/train/fsdp_config.yaml" -m functionary.train.train \
@@ -18,14 +18,14 @@ accelerate launch --config_file "functionary/train/fsdp_config.yaml" -m function
     --eval_data_path eval_dataset.jsonl \
     --bf16 True \
     --num_train_epochs 2 \
-    --per_device_train_batch_size 1 \
-    --gradient_accumulation_steps 32 \
-    --per_device_eval_batch_size 1 \
-    --eval_accumulation_steps 1 \
+    --per_device_train_batch_size 2 \
+    --gradient_accumulation_steps 6 \
+    --per_device_eval_batch_size 2 \
+    --eval_accumulation_steps 6 \
     --evaluation_strategy "steps" \
-    --eval_steps 400 \
+    --eval_steps 200 \
     --save_strategy "steps" \
-    --save_steps 200 \
+    --save_steps 100 \
     --save_total_limit 5 \
     --learning_rate 2e-5 \
     --weight_decay 0.3 \
