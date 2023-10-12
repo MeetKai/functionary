@@ -1,0 +1,27 @@
+deepspeed train_lora.py \
+    --model_name_or_path Llama-2-13b-hf \
+    --train_data_path split/train.jsonl \
+    --eval_data_path split/validation.jsonl \
+    --q_lora True \
+    --bf16 True \
+    --output_dir ./checkpoints_13b \
+    --num_train_epochs 1 \
+    --per_device_train_batch_size 2 \
+    --per_device_eval_batch_size 2 \
+    --gradient_accumulation_steps 1 \
+    --eval_accumulation_steps 1 \
+    --evaluation_strategy "steps" \
+    --eval_steps 5 \
+    --save_strategy "epoch" \
+    --save_steps 4 \
+    --save_total_limit 3 \
+    --logging_steps 1 \
+    --learning_rate 2e-5 \
+    --weight_decay 0. \
+    --warmup_ratio 0.03 \
+    --lr_scheduler_type "cosine" \
+    --logging_steps 1 \
+    --tf32 True \
+    --model_max_length 4096 \
+    --gradient_checkpointing True \
+    --deepspeed ds_config/zero2.json
