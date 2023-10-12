@@ -1,9 +1,8 @@
 import json
 import math
 import pathlib
-import random
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 import torch.distributed
@@ -48,13 +47,12 @@ class TrainingArguments(transformers.TrainingArguments):
     )
 
 
-def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: str):
-    """Collects the state dict and dump to disk."""
-    state_dict = trainer.model.state_dict()
-    if trainer.args.should_save:
-        cpu_state_dict = {key: value.cpu() for key, value in state_dict.items()}
-        del state_dict
-        trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
+def trainer_save_model_safe(trainer: transformers.Trainer):
+    """Saves the model in fsdp.FULL_STATE_DICT mode to have the model weights
+    in .bin file format which is loadable by HF Transformers"""
+    if trainer.accelerator.state.fsdp_plugin.state_dict_type.name != "FULL_STATE_DICT":
+        trainer.accelerator.state.fsdp_plugin.set_state_dict_type("FULL_STATE_DICT")
+    trainer.save_model()
 
 
 def initialize_tokenizer(
@@ -209,8 +207,9 @@ def train():
         trainer.train(resume_from_checkpoint=True)
     else:
         trainer.train()
+
     trainer.save_state()
-    safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
+    trainer_save_model_safe(trainer=trainer)
 
 
 if __name__ == "__main__":
