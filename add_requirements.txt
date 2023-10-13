@@ -1,9 +1,10 @@
-bitsandbytes
-peft
+--find-links https://download.pytorch.org/whl/torch_stable.html
+torch==2.0.1+cu118
+bitsandbytes==0.41.1
+peft==0.5.0
 datasets==2.8.0
-torch
 transformers==4.34.0
 pydantic==2.4.2
 scipy==1.11.3
-typer
-# pip install flash-attn --no-build-isolation
+flash-attn --no-build-isolation
+deepspeed==0.11.1

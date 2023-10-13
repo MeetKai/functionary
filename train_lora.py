@@ -307,6 +307,8 @@ def train():
         training_args.cache_dir,
     )
     
+    print_rank0("tokenizer.model_max_length: ", tokenizer.model_max_length)
+    
     model = prepare_model_for_training(model, training_args, lora_args)
 
     assert data_args.train_data_path is not None, "Please provide a training data file."
