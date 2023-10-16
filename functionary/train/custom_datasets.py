@@ -11,7 +11,6 @@ from functionary.prompt import (
     get_prompt_from_messages,
     get_token_id_to_end_token,
 )
-from functionary.schema import generate_schema_from_functions
 
 
 def prepare_training_inputs(
