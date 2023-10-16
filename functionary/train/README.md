@@ -124,10 +124,10 @@ deepspeed functionary/train/train_lora.py \
     --deepspeed ds_config/zero2.json
 ```
 
-Using *--q_lora True* to use q_lora instead of *lora*
+Using **--q_lora True** to use q_lora instead of *lora*
 
 ### Merging Lora weights
 After finish training, you can merge the Lora weights with the pretrained weights by the following commmand:
 ```shell
-python functionary/train/merge_lora_weight.py
+python functionary/train/merge_lora_weight.py save_folder pretrained_path checkpoint
 ```
