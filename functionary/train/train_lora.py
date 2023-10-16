@@ -3,14 +3,19 @@ import math
 import pathlib
 import random
 from dataclasses import dataclass, field
-from typing import Dict, Optional, List, Optional
+from typing import Dict, Optional
 
 import torch
 import torch.distributed
 from torch.nn import CrossEntropyLoss
+import sys
+import os
 
+os.environ["WANDB_LOG_MODEL"] = "all"
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 from functionary.prompt import EndToken
-from functionary.train.datasets import CustomDataset
+from functionary.train.custom_datasets import CustomDataset
 
 from deepspeed import zero
 from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
@@ -19,14 +24,15 @@ import transformers
 from transformers import LlamaTokenizer, Trainer, BitsAndBytesConfig, deepspeed
 from transformers import LlamaForCausalLM
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-import os
 import bitsandbytes as bnb
+
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
 
 def print_rank0(*arg):
     if LOCAL_RANK == 0:
         print(*arg)
+
 
 @dataclass
 class ModelArguments:
@@ -35,12 +41,8 @@ class ModelArguments:
 
 @dataclass
 class DataArguments:
-    train_data_path: str = field(
-        default=None, metadata={"help": "Path to the training data."}
-    )
-    eval_data_path: str = field(
-        default=None, metadata={"help": "Path to the eval data."}
-    )
+    train_data_path: str = field(default=None, metadata={"help": "Path to the training data."})
+    eval_data_path: str = field(default=None, metadata={"help": "Path to the eval data."})
 
 
 @dataclass
@@ -48,9 +50,7 @@ class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
     model_max_length: int = field(
         default=4096,
-        metadata={
-            "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
-        },
+        metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
     )
 
 
@@ -65,14 +65,13 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
 
 @dataclass
 class LoraArguments:
-    lora_r: int = 8
-    lora_alpha: int = 16
-    lora_dropout: float = 0.05
-    lora_target_modules: str = "all"  #all for all linear; "q_proj v_proj"
+    lora_r: int = 16
+    lora_alpha: int = 64
+    lora_dropout: float = 0.1
+    lora_target_modules: str = "all"  # all for all linear; "q_proj v_proj"
     lora_weight_path: str = ""
     lora_bias: str = "none"
     q_lora: bool = False
-
 
 
 def initialize_tokenizer(
@@ -102,12 +101,8 @@ def initialize_tokenizer(
         input_embeddings = model.get_input_embeddings().weight.data
         output_embeddings = model.get_output_embeddings().weight.data
 
-        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(
-            dim=0, keepdim=True
-        )
-        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(
-            dim=0, keepdim=True
-        )
+        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
+        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
 
         input_embeddings[-num_new_tokens:] = input_embeddings_avg
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
@@ -119,11 +114,11 @@ def find_all_linear_names(model):
     lora_module_names = set()
     for name, module in model.named_modules():
         if isinstance(module, bnb.nn.Linear4bit) or isinstance(module, torch.nn.Linear):
-            names = name.split('.')
+            names = name.split(".")
             lora_module_names.add(names[0] if len(names) == 1 else names[-1])
 
-    if 'lm_head' in lora_module_names:  # needed for 16-bit
-        lora_module_names.remove('lm_head')
+    if "lm_head" in lora_module_names:  # needed for 16-bit
+        lora_module_names.remove("lm_head")
     return list(lora_module_names)
 
 
@@ -154,16 +149,7 @@ def print_trainable_parameters(model):
     print_rank0(
         f"embedding_lm_head_param_count: {embedding_lm_head_param_count} = {embedding_lm_head_param_count * 100 / all_param} %"
     )
-    print_rank0(f"loara_param: {lora_param_count} = {lora_param_count * 100 / all_param} = ")
-
-
-def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: str):
-    """Collects the state dict and dump to disk."""
-    state_dict = trainer.model.state_dict()
-    if trainer.args.should_save:
-        cpu_state_dict = {key: value.cpu() for key, value in state_dict.items()}
-        del state_dict
-        trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
+    print_rank0(f"loara_param: {lora_param_count} = {lora_param_count * 100 / all_param} %")
 
 
 def get_device_map(training_args: TrainingArguments, lora_args: LoraArguments) -> Optional[Dict]:
@@ -175,13 +161,13 @@ def get_device_map(training_args: TrainingArguments, lora_args: LoraArguments) -
             print("FSDP is incompatible with QLORA")
         device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)} if ddp else None
         if len(training_args.fsdp) > 0 or deepspeed.is_deepspeed_zero3_enabled():
-            logging.warning(
-                "FSDP and ZeRO3 are both currently incompatible with QLoRA."
-            )
+            print("FSDP and ZeRO3 are both currently incompatible with QLoRA.")
     return device_map
 
 
-def load_model_with_rope_scaling(model_args: ModelArguments, training_args: TrainingArguments, lora_args: LoraArguments) -> transformers.AutoModelForCausalLM:
+def load_model_with_rope_scaling(
+    model_args: ModelArguments, training_args: TrainingArguments, lora_args: LoraArguments
+) -> transformers.AutoModelForCausalLM:
     config = transformers.AutoConfig.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
@@ -191,12 +177,8 @@ def load_model_with_rope_scaling(model_args: ModelArguments, training_args: Trai
         scaling_factor = float(math.ceil(training_args.model_max_length / orig_ctx_len))
         config.rope_scaling = {"type": "linear", "factor": scaling_factor}
     config.use_cache = False
-    
-    compute_dtype = (
-        torch.float16
-        if training_args.fp16
-        else (torch.bfloat16 if training_args.bf16 else torch.float32)
-    )
+
+    compute_dtype = torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32)
 
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
@@ -213,17 +195,19 @@ def load_model_with_rope_scaling(model_args: ModelArguments, training_args: Trai
         if lora_args.q_lora
         else None,
     )
-    return model 
+    return model
 
 
-def prepare_model_for_training(model: transformers.AutoModelForCausalLM, training_args: TrainingArguments, lora_args: LoraArguments):
+def prepare_model_for_training(
+    model: transformers.AutoModelForCausalLM, training_args: TrainingArguments, lora_args: LoraArguments
+):
     if lora_args.lora_target_modules == "all":
         target_modules = find_all_linear_names(model)
-    else: 
+    else:
         modules = lora_args.lora_target_modules.split(" ")
         target_modules = [mod.strip() for mod in modules if len(mod.strip()) > 0]
-    
-    print("target_modules: ", target_modules)
+
+    print_rank0("target_modules: ", target_modules)
     lora_config = LoraConfig(
         r=lora_args.lora_r,
         lora_alpha=lora_args.lora_alpha,
@@ -231,19 +215,17 @@ def prepare_model_for_training(model: transformers.AutoModelForCausalLM, trainin
         lora_dropout=lora_args.lora_dropout,
         bias=lora_args.lora_bias,
         task_type="CAUSAL_LM",
-        modules_to_save=["lm_head", "embed_tokens"]  # because we retrain the embedding 
+        modules_to_save=["lm_head", "embed_tokens"],  # because we retrain the embedding
     )
 
     if lora_args.q_lora:
-        model = prepare_model_for_kbit_training(
-            model, use_gradient_checkpointing=training_args.gradient_checkpointing
-        )
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=training_args.gradient_checkpointing)
 
     model = get_peft_model(model, lora_config)
-        
+
     if training_args.gradient_checkpointing:
         model.enable_input_require_grads()
-        
+
     model.config.use_cache = False
     print_trainable_parameters(model)
     return model
@@ -286,29 +268,27 @@ def get_peft_state_maybe_zero_3(named_params, bias):
 
 
 def train():
-    argument_parser = transformers.HfArgumentParser(
-        (ModelArguments, DataArguments, TrainingArguments, LoraArguments)
-    )
+    argument_parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments, LoraArguments))
     model_args, data_args, training_args, lora_args = argument_parser.parse_args_into_dataclasses()
 
     # Set RoPE scaling factor
-    
-    print("lora args: ", lora_args)
-    
-    print("training args: ", training_args)
-    
+
+    print_rank0("lora args: ", lora_args)
+
+    print_rank0("training args: ", training_args)
+
     model = load_model_with_rope_scaling(model_args, training_args, lora_args)
-    print(model)
-    
+    print_rank0(model)
+
     tokenizer = initialize_tokenizer(
         model,
         model_args.model_name_or_path,
         training_args.model_max_length,
         training_args.cache_dir,
     )
-    
+
     print_rank0("tokenizer.model_max_length: ", tokenizer.model_max_length)
-    
+
     model = prepare_model_for_training(model, training_args, lora_args)
 
     assert data_args.train_data_path is not None, "Please provide a training data file."
@@ -322,15 +302,15 @@ def train():
             raw_eval_data = [json.loads(line) for line in file]
         random.shuffle(raw_eval_data)
 
-    train_dataset = CustomDataset(raw_train_data[: 100], tokenizer)
+    train_dataset = CustomDataset(raw_train_data[:100], tokenizer)
 
-    #if torch.distributed.get_rank() == 0:
+    # if torch.distributed.get_rank() == 0:
     #    print(f"Training Data Loaded: #{len(raw_train_data)}")
 
     if training_args.do_eval:
-        eval_dataset = CustomDataset(raw_eval_data[: 5], tokenizer)
+        eval_dataset = CustomDataset(raw_eval_data[:5], tokenizer)
 
-        #if torch.distributed.get_rank() == 0:
+        # if torch.distributed.get_rank() == 0:
         #    print(f"Eval Data Loaded: #{len(raw_eval_data)}")
 
     def preprocess_logits_for_metrics(logits, labels):
@@ -357,9 +337,7 @@ def train():
         # Calculate accuracy
         acc_count = 0
         total_num = 0
-        for pred, label in zip(
-            predictions.flatten().tolist(), labels.flatten().tolist()
-        ):
+        for pred, label in zip(predictions.flatten().tolist(), labels.flatten().tolist()):
             if label != -100:
                 if label == pred:
                     acc_count += 1
@@ -395,8 +373,7 @@ def train():
     else:
         trainer.train()
     trainer.save_state()
-    
-    
+
     # check if zero3 mode enabled
     if deepspeed.is_deepspeed_zero3_enabled():
         # use deepspeed engine internal function to gather state dict
@@ -409,12 +386,11 @@ def train():
             state_dict = state_dict_zero3
     else:
         # in other mode we use original code from fastchat team, to make sure our change is minimum
-        state_dict = get_peft_state_maybe_zero_3(
-            model.named_parameters(), lora_args.lora_bias
-        )
+        state_dict = get_peft_state_maybe_zero_3(model.named_parameters(), lora_args.lora_bias)
 
     if training_args.local_rank == 0:
         model.save_pretrained(training_args.output_dir, state_dict=state_dict)
+
 
 if __name__ == "__main__":
     train()

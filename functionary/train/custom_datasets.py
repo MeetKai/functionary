@@ -46,9 +46,7 @@ def prepare_training_inputs(
     )  # prompt_str is the concatenation of all prompts from messages
     max_length = max_length if max_length is not None else tokenizer.model_max_length
 
-    input_dic = tokenizer(
-        prompt_str, padding=padding, max_length=max_length, truncation=True
-    )
+    input_dic = tokenizer(prompt_str, padding=padding, max_length=max_length, truncation=True)
     input_token_ids = input_dic["input_ids"]
     # first we initialize labels with all positions as -100,
     # then we will fill in positions where role=assistant as we only include these in computing the loss
@@ -73,16 +71,12 @@ def prepare_training_inputs(
                 if verbose:
                     chunk = input_token_ids[start + 2 : index + 1]
                     print("----------------------------")
-                    print(
-                        "+++ chunk assistant to compute loss: ", tokenizer.decode(chunk)
-                    )
+                    print("+++ chunk assistant to compute loss: ", tokenizer.decode(chunk))
                     print("chunk tokens: ", chunk)
             start = index + 1
 
     input_dic["labels"] = labels
-    assert (
-        len(labels) == len(input_dic["input_ids"]) == len(input_dic["attention_mask"])
-    )
+    assert len(labels) == len(input_dic["input_ids"]) == len(input_dic["attention_mask"])
 
     if return_tensor:
         for key in input_dic:
