@@ -34,7 +34,12 @@ def get_param_type(param: Dict) -> str:
     """
     param_type = "any"
     if "type" in param:
-        param_type = param["type"]
+        raw_param_type = param["type"]
+        if type(raw_param_type) is list:
+            param_type = " | ".join(raw_param_type)
+        else:
+            param_type = raw_param_type
+
     else:  # in many cases, the json schema contains: oneOf instead of "type"
         if "oneOf" in param:
             one_of_types = []
@@ -123,11 +128,11 @@ def append_new_param_info(info_list: List[str], param_declaration: str, comment_
     if depth >= 1:
         offset = "".join(["    " for _ in range(depth)])
     if comment_info is not None:
-        if depth == 0:  # format: //comment\nparam: type
-            info_list.append(f"{offset}{comment_info}")
-            info_list.append(f"{offset}{param_declaration}")
-        else:  # format: param: type  // comment
-            info_list.append(f"{offset}{param_declaration}    {comment_info}")
+        # if depth == 0:  # format: //comment\nparam: type
+        info_list.append(f"{offset}{comment_info}")
+        info_list.append(f"{offset}{param_declaration}")
+    # else:  # format: param: type  // comment
+    #     info_list.append(f"{offset}{param_declaration}    {comment_info}")
     else:
         info_list.append(f"{offset}{param_declaration}")
 
@@ -143,6 +148,63 @@ def get_enum_option_str(enum_options: List) -> str:
     """
     # if each option is string --> add quote
     return " | ".join([f'"{v}"' if type(v) is str else str(v) for v in enum_options])
+
+
+def get_array_typescript(param_name: Optional[str], param_dic: dict, depth: int = 0) -> str:
+    """recursive implementation for generating type script of array
+
+    Args:
+        param_name (Optional[str]): name of param, optional
+        param_dic (dict): param_dic
+        depth (int, optional): nested level. Defaults to 0.
+
+    Returns:
+        _type_: typescript of array
+    """
+    offset = ""
+    if depth >= 1:
+        offset = "".join(["    " for _ in range(depth)])
+    items_info = param_dic.get("items", {})
+
+    if len(items_info) == 0:
+        if param_name is not None:
+            return f"{offset}{param_name}: []"
+        else:
+            return "[]"
+    array_type = get_param_type(items_info)
+    if array_type == "object":
+        info_lines = []
+        child_lines = get_parameter_typescript(
+            items_info.get("properties", {}), items_info.get("required", []), depth + 1
+        )
+        # if comment_info is not None:
+        #    info_lines.append(f"{offset}{comment_info}")
+        if param_name is not None:
+            info_lines.append(f"{offset}{param_name}" + ": {")
+        else:
+            info_lines.append(f"{offset}" + "{")
+        info_lines.extend(child_lines)
+        info_lines.append(f"{offset}" + "}[]")
+        return "\n".join(info_lines)
+
+    elif array_type == "array":
+        item_info = get_array_typescript(None, items_info, depth + 1)
+        if param_name is None:
+            return f"{item_info}[]"
+        return f"{offset}{param_name}: {item_info.strip()}[]"
+
+    else:
+        if "enum" in items_info:
+            item_type = get_enum_option_str(items_info["enum"])
+            if param_name is None:
+                return f"({item_type})[]"
+            else:
+                return f"{offset}{param_name}: ({item_type})[]"
+        else:
+            if param_name is None:
+                return f"{array_type}[]"
+            else:
+                return f"{offset}{param_name}: {array_type}[],"
 
 
 def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
@@ -184,26 +246,15 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
         elif param_type == "array":  # param_type is an array
             item_info = param.get("items", {})
             if "type" not in item_info:  # don't know type of array
-                param_declaration += ": Array,"
+                param_declaration += ": [],"
                 append_new_param_info(info_lines, param_declaration, comment_info, depth)
             else:
-                item_type = convert_data_type(item_info["type"])
-                if item_type == "object":  # format: var_name: Array<{object in here}>
-                    child_lines = get_parameter_typescript(
-                        item_info.get("properties", {}), item_info.get("required", []), depth + 1
-                    )
-                    if comment_info is not None:
-                        info_lines.append(f"{offset}{comment_info}")
-
-                    param_declaration += ": Array<{"
-                    info_lines.append(f"{offset}{param_declaration}")
-                    info_lines.extend(child_lines)
-                    info_lines.append(f"{offset}" + "}>,")
-                else:
-                    if "enum" in item_info:
-                        item_type = get_enum_option_str(item_info["enum"])
-                    param_declaration += f": Array<{item_type}>,"
-                    append_new_param_info(info_lines, param_declaration, comment_info, depth)
+                array_declaration = get_array_typescript(param_declaration, param, depth)
+                if not array_declaration.endswith(","):
+                    array_declaration += ","
+                if comment_info is not None:
+                    info_lines.append(f"{offset}{comment_info}")
+                info_lines.append(array_declaration)
         else:
             if "enum" in param:
                 param_type = " | ".join([f'"{v}"' for v in param["enum"]])
@@ -213,7 +264,7 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
     return info_lines
 
 
-def generate_schema_from_functions(functions: List[Function], namespace="functions"):
+def generate_schema_from_functions(functions: List[Function], namespace="functions") -> str:
     """
     Convert functions schema to a schema that language models can understand.
     """

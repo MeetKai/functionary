@@ -44,10 +44,30 @@ class TestSchemaGenerator(unittest.TestCase):
                                             "properties": {
                                                 "salary": {"type": "number", "description": "salary per month"},
                                                 "title": {"type": "string", "description": "position in company"},
+                                                "positions": {"type": "array", "items": {"type": "string"}},
                                                 "full_time": {
                                                     "type": "boolean",
                                                     "description": "is this person full-time or not",
                                                     "default": True,
+                                                },
+                                                "ids": {
+                                                    "type": "array",
+                                                    "description": "ids of this job",
+                                                    "items": {"type": "number", "description": "ids for this job hehe"},
+                                                },
+                                                "params": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "a1": {"type": "string", "description": "a1"},
+                                                                "a2": {"type": "string", "description": "a2"},
+                                                                "a3": {"type": "string", "description": "a3"},
+                                                            },
+                                                        },
+                                                    },
                                                 },
                                             },
                                             "required": ["salary", "title"],
@@ -91,8 +111,27 @@ class TestSchemaGenerator(unittest.TestCase):
                             },
                         },
                         "param13": {"type": "array", "items": {"type": "integer", "enum": [1, 2, 3, 4, 5]}},
+                        "param140": {"type": ["number", "null"]},
+                        "param14": {
+                            "type": "array",
+                            "items": {"type": "array", "items": {"type": "string", "description": "array of array"}},
+                        },
+                        "param15": {
+                            "type": "array",
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "description": "array of array",
+                                    "properties": {
+                                        "att1": {"type": "string", "description": "desc 1"},
+                                        "att2": {"type": "number", "description": "desc 2"},
+                                    },
+                                },
+                            },
+                        },
                     },
-                    "required": ["param1", "param2"],
+                    "required": ["param1", "param2", "param15"],
                 },
             }
         ]
@@ -108,7 +147,7 @@ param2: string,
 // description of param 3. Default value="option1".
 param3?: "option1" | "option2",
 // list of ids.
-param4?: Array<string>,
+param4?: string[],
 // from datetime. The format is: date-time
 param5?: string,
 // The format is: date-time
@@ -121,28 +160,54 @@ param8?: number,
 param9?: number,
 // Number of page that should be returned.
 person?: {
-    name?: string,    // name of person.
-    age?: number,    // age of person.
+    // name of person.
+    name?: string,
+    // age of person.
+    age?: number,
     // extra information of this person.
     extra_info?: {
-        school?: string,    // school of this person.
+        // school of this person.
+        school?: string,
         // job of this person.
         job: {
-            salary: number,    // salary per month.
-            title: string,    // position in company.
-            full_time?: boolean,    // is this person full-time or not. Default value=True.
+            // salary per month.
+            salary: number,
+            // position in company.
+            title: string,
+            positions?: string[],
+            // is this person full-time or not. Default value=True.
+            full_time?: boolean,
+            // ids of this job.
+            ids?: number[],
+            params?: {
+                    // a1.
+                    a1?: string,
+                    // a2.
+                    a2?: string,
+                    // a3.
+                    a3?: string,
+                }[][],
         },
     },
 },
 // description of param 10.
-param10?: Array<{
-    search?: string,    // this is search param.
+param10?: {
+    // this is search param.
+    search?: string,
     category?: string,
-}>,
+}[],
 // Description of param 11.
-param11?: Array<string>,
-param12?: Array<"bungalow" | "detached" | "flat" | "land" | "park home" | "semi-detached" | "terraced">,
-param13?: Array<1 | 2 | 3 | 4 | 5>,
+param11?: string[],
+param12?: ("bungalow" | "detached" | "flat" | "land" | "park home" | "semi-detached" | "terraced")[],
+param13?: (1 | 2 | 3 | 4 | 5)[],
+param140?: number | null,
+param14?: string[][],
+param15: {
+        // desc 1.
+        att1?: string,
+        // desc 2.
+        att2?: number,
+    }[][],
 }) => any;
 
 } // namespace functions"""
