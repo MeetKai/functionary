@@ -9,8 +9,8 @@ import torch
 import torch.distributed
 from torch.nn import CrossEntropyLoss
 
-from functionary.prompt import EndToken
-from functionary.functionary.train.custom_datasets import CustomDataset
+from functionary.prompt import get_added_tokens
+from functionary.train.custom_datasets import CustomDataset
 from functionary.train.llama_flash_attn_monkey_patch import (
     replace_llama_attn_with_flash_attn,
 )
@@ -75,7 +75,7 @@ def initialize_tokenizer(
 
     # Add special tokens
     tokenizer.pad_token = tokenizer.unk_token
-    special_tokens = {"additional_special_tokens": [e.value for e in EndToken]}
+    special_tokens = {"additional_special_tokens": get_added_tokens()}
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
 
     # Resize embedding

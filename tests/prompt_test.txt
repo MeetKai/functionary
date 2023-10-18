@@ -17,13 +17,14 @@ assistant:
 Biden is the president of US<|END_OF_ASSISTANT|>
 user:
 is the car Song more expensive than car Tang?<|END_OF_USER|>
-assistant to=get_car_price:
+assistant:
+I need to get the price of of the car Song<|BEGIN_OF_FUNCTION_CALL|>to=get_car_price:
 {
   "car_name": "Song"
 }<|END_OF_FUNCTION_CALL|>
 function name=get_car_price:
 {'price': {'price': '$25000'}}<|END_OF_FUNCTION_RESULT|>
-assistant to=get_car_price:
+assistant <|BEGIN_OF_FUNCTION_CALL|>to=get_car_price:
 {
   "car_name": "Tang"
 }<|END_OF_FUNCTION_CALL|>

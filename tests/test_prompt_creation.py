@@ -5,7 +5,7 @@ from typing import List
 
 from transformers import LlamaTokenizer
 
-from functionary.prompt import EndToken, get_prompt_from_messages, get_text_from_message
+from functionary.prompt import EndToken, get_prompt_from_messages, get_text_from_message, get_added_tokens
 from functionary.schema import generate_schema_from_functions
 from functionary.train.custom_datasets import prepare_training_inputs
 
@@ -62,7 +62,7 @@ class TestInsertingEndToken(unittest.TestCase):
                 },
                 {
                     "role": "assistant",
-                    "content": None,
+                    "content": "I need to get the price of of the car Song",
                     "function_call": {
                         "name": "get_car_price",
                         "arguments": '{\n  "car_name": "Song"\n}',
@@ -98,7 +98,6 @@ class TestInsertingEndToken(unittest.TestCase):
 
     def test_final_prompt_generation(self):
         final_prompt = get_prompt_from_messages(self.test_case["messages"], self.test_case["functions"])
-
         self.assertEqual(
             final_prompt,
             self.final_prompt,
@@ -167,7 +166,7 @@ class TestInsertingEndToken(unittest.TestCase):
         tokenizer = LlamaTokenizer.from_pretrained("musabgultekin/functionary-7b-v1", legacy=True)
         # first we add stop_tokens to the tokenizer
         length_before = len(tokenizer)
-        added_tokens = [e.value for e in EndToken]
+        added_tokens = get_added_tokens()
         tokenizer.add_special_tokens({"additional_special_tokens": added_tokens})
         length_after = len(tokenizer)
         # check if tokenizer added new stop tokens successfully
@@ -179,6 +178,7 @@ class TestInsertingEndToken(unittest.TestCase):
             padding="longest",
             max_length=512,
             return_tensor=False,
+            verbose=True,
         )
         input_ids = inputs["inputs"]["input_ids"]
         labels = inputs["inputs"]["labels"]
@@ -201,7 +201,7 @@ class TestInsertingEndToken(unittest.TestCase):
             "number of unmasked chunks in labels is different from number of messages where role=assistant",
         )
         for chunk, message in zip(chunks, assistant_message):
-            decoded_content = "\nassistant" + tokenizer.decode(
+            decoded_content = "assistant" + tokenizer.decode(
                 chunk
             )  # note that need to add: "\nassistant" because we mask this, see line 194 in prompt_utils.py
             prompt = get_text_from_message(message)

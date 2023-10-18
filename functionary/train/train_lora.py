@@ -14,7 +14,7 @@ import os
 os.environ["WANDB_LOG_MODEL"] = "all"
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-from functionary.prompt import EndToken
+from functionary.prompt import get_added_tokens
 from functionary.train.custom_datasets import CustomDataset
 
 from deepspeed import zero
@@ -83,7 +83,7 @@ def initialize_tokenizer(
 
     # Add special tokens
     tokenizer.pad_token = tokenizer.unk_token
-    special_tokens = {"additional_special_tokens": [e.value for e in EndToken]}
+    special_tokens = {"additional_special_tokens": get_added_tokens()}
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
 
     # Resize embedding
