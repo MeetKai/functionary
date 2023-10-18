@@ -144,15 +144,15 @@ type test_function = (_: {
 param1: string,
 // description of param 2.
 param2: string,
-// description of param 3. Default value="option1".
+// description of param 3. Default="option1".
 param3?: "option1" | "option2",
 // list of ids.
 param4?: string[],
-// from datetime. The format is: date-time
+// from datetime. Format:date-time
 param5?: string,
-// The format is: date-time
+// Format:date-time
 param6?: string,
-// Description of param 7. The format is: date-time or date
+// Description of param 7. Format:date-time or date
 param7?: string,
 // description of param8. Maximum=36.
 param8?: number,
@@ -175,7 +175,7 @@ person?: {
             // position in company.
             title: string,
             positions?: string[],
-            // is this person full-time or not. Default value=True.
+            // is this person full-time or not. Default=True.
             full_time?: boolean,
             // ids of this job.
             ids?: number[],

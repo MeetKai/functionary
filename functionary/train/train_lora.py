@@ -54,15 +54,6 @@ class TrainingArguments(transformers.TrainingArguments):
     )
 
 
-def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: str):
-    """Collects the state dict and dump to disk."""
-    state_dict = trainer.model.state_dict()
-    if trainer.args.should_save:
-        cpu_state_dict = {key: value.cpu() for key, value in state_dict.items()}
-        del state_dict
-        trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
-
-
 @dataclass
 class LoraArguments:
     lora_r: int = 16
@@ -231,6 +222,7 @@ def prepare_model_for_training(
     return model
 
 
+# Borrowed from: https://github.com/lm-sys/FastChat/blob/main/fastchat/train/train_lora.py#L68
 def maybe_zero_3(param):
     if hasattr(param, "ds_id"):
         assert param.ds_status == ZeroParamStatus.NOT_AVAILABLE
@@ -242,6 +234,7 @@ def maybe_zero_3(param):
 
 
 # Borrowed from peft.utils.get_peft_model_state_dict
+# Borrowed from: https://github.com/lm-sys/FastChat/blob/main/fastchat/train/train_lora.py#L68
 def get_peft_state_maybe_zero_3(named_params, bias):
     if bias == "none":
         to_return = {k: t for k, t in named_params if "lora_" in k}
@@ -295,20 +288,18 @@ def train():
 
     with open(data_args.train_data_path, "r") as file:
         raw_train_data = [json.loads(line) for line in file]
-    random.shuffle(raw_train_data)
 
     if data_args.eval_data_path is not None:
         with open(data_args.eval_data_path, "r") as file:
             raw_eval_data = [json.loads(line) for line in file]
-        random.shuffle(raw_eval_data)
 
-    train_dataset = CustomDataset(raw_train_data[:100], tokenizer)
+    train_dataset = CustomDataset(raw_train_data, tokenizer)
 
     # if torch.distributed.get_rank() == 0:
     #    print(f"Training Data Loaded: #{len(raw_train_data)}")
 
     if training_args.do_eval:
-        eval_dataset = CustomDataset(raw_eval_data[:5], tokenizer)
+        eval_dataset = CustomDataset(raw_eval_data, tokenizer)
 
         # if torch.distributed.get_rank() == 0:
         #    print(f"Eval Data Loaded: #{len(raw_eval_data)}")

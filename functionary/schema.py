@@ -93,11 +93,11 @@ def get_param_info(param: Dict) -> Optional[str]:
         default_value = param["default"]
         if param_type == "string":
             default_value = f'"{default_value}"'  # if string --> add ""
-        info_list.append(f"Default value={default_value}.")
+        info_list.append(f"Default={default_value}.")
 
     format_param = get_format_param(param)
     if format_param is not None:
-        info_list.append("The format is: " + format_param)
+        info_list.append("Format:" + format_param)
 
     for field, field_name in [
         ("maximum", "Maximum"),
@@ -219,7 +219,7 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
     Returns:
         _type_: list of lines containing information about all parameters
     """
-    info_lines = []
+    tp_lines = []
     for param_name, param in properties.items():
         # Param Description
         comment_info = get_param_info(param)
@@ -236,32 +236,32 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
         if param_type == "object":  # param_type is object
             child_lines = get_parameter_typescript(param.get("properties", {}), param.get("required", []), depth + 1)
             if comment_info is not None:
-                info_lines.append(f"{offset}{comment_info}")
+                tp_lines.append(f"{offset}{comment_info}")
 
             param_declaration += ": {"
-            info_lines.append(f"{offset}{param_declaration}")
-            info_lines.extend(child_lines)
-            info_lines.append(f"{offset}" + "},")
+            tp_lines.append(f"{offset}{param_declaration}")
+            tp_lines.extend(child_lines)
+            tp_lines.append(f"{offset}" + "},")
 
         elif param_type == "array":  # param_type is an array
             item_info = param.get("items", {})
             if "type" not in item_info:  # don't know type of array
                 param_declaration += ": [],"
-                append_new_param_info(info_lines, param_declaration, comment_info, depth)
+                append_new_param_info(tp_lines, param_declaration, comment_info, depth)
             else:
                 array_declaration = get_array_typescript(param_declaration, param, depth)
                 if not array_declaration.endswith(","):
                     array_declaration += ","
                 if comment_info is not None:
-                    info_lines.append(f"{offset}{comment_info}")
-                info_lines.append(array_declaration)
+                    tp_lines.append(f"{offset}{comment_info}")
+                tp_lines.append(array_declaration)
         else:
             if "enum" in param:
                 param_type = " | ".join([f'"{v}"' for v in param["enum"]])
             param_declaration += f": {param_type},"
-            append_new_param_info(info_lines, param_declaration, comment_info, depth)
+            append_new_param_info(tp_lines, param_declaration, comment_info, depth)
 
-    return info_lines
+    return tp_lines
 
 
 def generate_schema_from_functions(functions: List[Function], namespace="functions") -> str:
@@ -288,8 +288,8 @@ def generate_schema_from_functions(functions: List[Function], namespace="functio
         if parameters is not None:
             schema += " = (_: {\n"
             required_params = parameters.get("required", [])
-            info_lines = get_parameter_typescript(parameters.get("properties"), required_params, 0)
-            schema += "\n".join(info_lines)
+            tp_lines = get_parameter_typescript(parameters.get("properties"), required_params, 0)
+            schema += "\n".join(tp_lines)
             schema += "\n}) => any;\n\n"
         else:
             # Doesn't have any parameters
