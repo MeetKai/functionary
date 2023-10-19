@@ -97,7 +97,7 @@ def get_param_info(param: Dict) -> Optional[str]:
 
     format_param = get_format_param(param)
     if format_param is not None:
-        info_list.append("Format:" + format_param)
+        info_list.append("Format=" + format_param)
 
     for field, field_name in [
         ("maximum", "Maximum"),
@@ -106,7 +106,7 @@ def get_param_info(param: Dict) -> Optional[str]:
         ("minLength", "Minimum length"),
     ]:
         if field in param:
-            info_list.append(f"{field_name}=" + str(param[field]) + ".")
+            info_list.append(f"{field_name}=" + str(param[field]))
 
     if len(info_list) > 0:
         result = "// " + " ".join(info_list)

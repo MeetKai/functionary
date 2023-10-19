@@ -43,19 +43,19 @@ class EndToken(str, Enum):
                 return EndToken.assistant
 
 
-class BeginToken(str, Enum):
-    function = "<|BEGIN_OF_FUNCTION_CALL|>"
-    
+class StartToken(str, Enum):
+    function = "<|START_OF_FUNCTION_CALL|>"
 
-def get_added_tokens() -> List[str]:
+
+def get_additional_tokens() -> List[str]:
     """Return list of addional tokens, at training, you should use this function to get list of added tokens
 
     Returns:
         List[str]: List of added tokens
     """
     end_tokens = [e.value for e in EndToken]
-    begin_tokens = [e.value for e in BeginToken]
-    return begin_tokens + end_tokens
+    start_tokens = [e.value for e in StartToken]
+    return start_tokens + end_tokens
 
 
 def get_text_from_message(message: Dict) -> str:
@@ -67,36 +67,36 @@ def get_text_from_message(message: Dict) -> str:
     Returns:
         str: the string used in the final prompt of this message
     """
-    stop_token = EndToken.from_message(message).value
+    end_token = EndToken.from_message(message).value
     content = message.get("content", None)
 
     if message["role"] == "system":
-        text = f"system:\n{content}{stop_token}\n"
+        text = f"system:\n{content}{end_token}\n"
 
     elif message["role"] == "function":
         func_name = message.get("name", "")
-        text = f"function name={func_name}:\n{content}{stop_token}\n"
+        text = f"function name={func_name}:\n{content}{end_token}\n"
 
     elif message["role"] == "user" and content is None:
         text = "user:\n"
 
     elif message["role"] == "user":
-        text = f"user:\n{content}{stop_token}\n"
+        text = f"user:\n{content}{end_token}\n"
 
     elif message["role"] == "assistant":
         if (
-            "function_call" in message and message["function_call"] is not None
+            message.get("function_call", None) is not None
         ):  # format of openai: {"role": assistant, "function_call": {"name": xxx, "arguments": xxx}}
             function = message["function_call"]["name"]
-            arguments = message["function_call"]["arguments"] + stop_token
+            arguments = message["function_call"]["arguments"] + end_token
             if content is not None:
-                text = f"assistant:\n{content}{BeginToken.function}to={function}:\n{arguments}\n"
+                text = f"assistant:\n{content}\n{StartToken.function}{function}:\n{arguments}\n"
             else:
-                text = f"assistant {BeginToken.function}to={function}:\n{arguments}\n"
+                text = f"assistant:\n{StartToken.function}{function}:\n{arguments}\n"
         elif content is not None:  # this is text content
-            text = f"assistant:\n{content}{stop_token}\n"
+            text = f"assistant:\n{content}{end_token}\n"
         else:  # if no function call and content is None --> this is used at inference
-            text = "assistant"
+            text = "assistant:"
 
     return text
 
@@ -119,9 +119,7 @@ def convert_old_format_to_openai_format(message: Dict) -> Dict:
     }
 
 
-def get_prompt_from_messages(
-    messages: List[Dict], functions: Optional[List[Dict]] = []
-) -> str:
+def get_prompt_from_messages(messages: List[Dict], functions: Optional[List[Dict]] = []) -> str:
     """return the final prompt that will be used.
     Args:
         messages (List[Dict]): list of messages where each message is in the format of OpenAI
@@ -136,9 +134,7 @@ def get_prompt_from_messages(
         functions = []
 
     if len(messages_clone) > 0 and messages_clone[0]["role"] != "system":
-        messages_clone.insert(
-            0, {"role": "system", "content": generate_schema_from_functions(functions)}
-        )
+        messages_clone.insert(0, {"role": "system", "content": generate_schema_from_functions(functions)})
         messages_clone.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
 
     full_text = ""

@@ -16,10 +16,10 @@ from functionary.prompt import (
 def get_prefix_assistant_token_ids(tokenizer: Any):
     result = []
     for e in EndToken:
-        prefix = f"{e.value}\nassistant"
+        prefix = f"{e.value}\nassistant:"
         token_ids = tokenizer.encode(prefix, add_special_tokens=False)
         if token_ids[0] == 29871:
-            token_ids = token_ids[1: ]
+            token_ids = token_ids[1:]
         result.append(token_ids)
     return result
 
@@ -70,7 +70,7 @@ def prepare_training_inputs(
     # then we will fill in positions where role=assistant as we only include these in computing the loss
     labels = [-100 for _ in range(len(input_token_ids))]
     start = 0
-    
+
     # now we will unmask labels by positions that was from assistant
     # we will find the chunks: "<endtoken>assistant ...(<end_of_function>|<end_of_assistant>) from input_token_ids
     # and unmask: this part: "...(<end_of_function>|<end_of_assistant>"
@@ -82,13 +82,16 @@ def prepare_training_inputs(
     total_input_leng = len(input_token_ids)
     while index < total_input_leng:
         # finding the index that start with: "<endtoken>assistant" --> we will unmask labels from this position
-        matched_prefix = get_matching_prefix(prefix_token_ids, input_token_ids[index: ])
-        if matched_prefix is not None:  
+        matched_prefix = get_matching_prefix(prefix_token_ids, input_token_ids[index:])
+        if matched_prefix is not None:
             end_index = -1
             # unmask until reach <end_of_function> or <end_of_assistant>
-            for i in range(index + len(matched_prefix), total_input_leng): 
+            for i in range(index + len(matched_prefix), total_input_leng):
                 tok_id = input_token_ids[i]
-                if tok_id in [endtoken_2_id[EndToken.assistant], endtoken_2_id[EndToken.function_call]]: # check if this is end of turn
+                if tok_id in [
+                    endtoken_2_id[EndToken.assistant],
+                    endtoken_2_id[EndToken.function_call],
+                ]:  # check if this is end of turn
                     labels[i] = input_token_ids[i]  # unmask labels at this position
                     end_index = i
                     break
@@ -97,12 +100,17 @@ def prepare_training_inputs(
             if verbose:
                 print("------------------------")
                 start = index + len(matched_prefix)
-                chunk_ids = input_token_ids[start: end_index + 1] if end_index > -1 else input_token_ids[start:]
+                chunk_ids = input_token_ids[start : end_index + 1] if end_index > -1 else input_token_ids[start:]
                 print("chunk_ids: ", chunk_ids)
-                print("longer chunk: ", input_token_ids[index: end_index + 1] if end_index > 1 else input_token_ids[index: ])
+                print(
+                    "longer chunk: ",
+                    input_token_ids[index : end_index + 1] if end_index > 1 else input_token_ids[index:],
+                )
                 print(f"chunk:{tokenizer.decode(chunk_ids)}")
                 print("-------------------")
-            if end_index == -1:  # if at the end, cannot find EndToken.assistant or EndToken.function_call --> this data point was truncated
+            if (
+                end_index == -1
+            ):  # if at the end, cannot find EndToken.assistant or EndToken.function_call --> this data point was truncated
                 break
             index = end_index
         else:

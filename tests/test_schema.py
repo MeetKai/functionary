@@ -1,4 +1,5 @@
 import unittest
+
 from functionary.schema import generate_schema_from_functions
 
 
@@ -148,15 +149,15 @@ param2: string,
 param3?: "option1" | "option2",
 // list of ids.
 param4?: string[],
-// from datetime. Format:date-time
+// from datetime. Format=date-time
 param5?: string,
-// Format:date-time
+// Format=date-time
 param6?: string,
-// Description of param 7. Format:date-time or date
+// Description of param 7. Format=date-time or date
 param7?: string,
-// description of param8. Maximum=36.
+// description of param8. Maximum=36
 param8?: number,
-// description of param 9. Minimum=1.
+// description of param 9. Minimum=1
 param9?: number,
 // Number of page that should be returned.
 person?: {

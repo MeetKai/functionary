@@ -5,7 +5,12 @@ from typing import List
 
 from transformers import LlamaTokenizer
 
-from functionary.prompt import EndToken, get_prompt_from_messages, get_text_from_message, get_added_tokens
+from functionary.prompt import (
+    EndToken,
+    get_additional_tokens,
+    get_prompt_from_messages,
+    get_text_from_message,
+)
 from functionary.schema import generate_schema_from_functions
 from functionary.train.custom_datasets import prepare_training_inputs
 
@@ -166,7 +171,7 @@ class TestInsertingEndToken(unittest.TestCase):
         tokenizer = LlamaTokenizer.from_pretrained("musabgultekin/functionary-7b-v1", legacy=True)
         # first we add stop_tokens to the tokenizer
         length_before = len(tokenizer)
-        added_tokens = get_added_tokens()
+        added_tokens = get_additional_tokens()
         tokenizer.add_special_tokens({"additional_special_tokens": added_tokens})
         length_after = len(tokenizer)
         # check if tokenizer added new stop tokens successfully
@@ -201,7 +206,7 @@ class TestInsertingEndToken(unittest.TestCase):
             "number of unmasked chunks in labels is different from number of messages where role=assistant",
         )
         for chunk, message in zip(chunks, assistant_message):
-            decoded_content = "assistant" + tokenizer.decode(
+            decoded_content = "assistant:\n" + tokenizer.decode(
                 chunk
             )  # note that need to add: "\nassistant" because we mask this, see line 194 in prompt_utils.py
             prompt = get_text_from_message(message)

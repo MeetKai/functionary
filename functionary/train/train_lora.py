@@ -1,30 +1,35 @@
 import json
 import math
+import os
 import pathlib
 import random
+import sys
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
 import torch
 import torch.distributed
 from torch.nn import CrossEntropyLoss
-import sys
-import os
 
 os.environ["WANDB_LOG_MODEL"] = "all"
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-from functionary.prompt import get_added_tokens
-from functionary.train.custom_datasets import CustomDataset
-
+import bitsandbytes as bnb
+import transformers
 from deepspeed import zero
 from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
-
-import transformers
-from transformers import LlamaTokenizer, Trainer, BitsAndBytesConfig, deepspeed
-from transformers import LlamaForCausalLM
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-import bitsandbytes as bnb
+from transformers import (
+    BitsAndBytesConfig,
+    LlamaForCausalLM,
+    LlamaTokenizer,
+    Trainer,
+    deepspeed,
+)
+
+from functionary.prompt import get_additional_tokens
+from functionary.train.custom_datasets import CustomDataset
+from functionary.train.train import initialize_tokenizer
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
@@ -63,42 +68,6 @@ class LoraArguments:
     lora_weight_path: str = ""
     lora_bias: str = "none"
     q_lora: bool = False
-
-
-def initialize_tokenizer(
-    model: transformers.AutoModelForCausalLM,
-    model_name_or_path: str,
-    model_max_length: int,
-    cache_dir: str,
-):
-    """Initialize tokenizer and add special tokens, resizing vocab and embedding"""
-    # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
-    tokenizer = LlamaTokenizer.from_pretrained(
-        model_name_or_path,
-        cache_dir=cache_dir,
-        model_max_length=model_max_length,
-        padding_side="right",
-        legacy=True,
-    )
-
-    # Add special tokens
-    tokenizer.pad_token = tokenizer.unk_token
-    special_tokens = {"additional_special_tokens": get_added_tokens()}
-    num_new_tokens = tokenizer.add_special_tokens(special_tokens)
-
-    # Resize embedding
-    model.resize_token_embeddings(len(tokenizer))
-    if num_new_tokens > 0:
-        input_embeddings = model.get_input_embeddings().weight.data
-        output_embeddings = model.get_output_embeddings().weight.data
-
-        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
-        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
-
-        input_embeddings[-num_new_tokens:] = input_embeddings_avg
-        output_embeddings[-num_new_tokens:] = output_embeddings_avg
-
-    return tokenizer
 
 
 def find_all_linear_names(model):
