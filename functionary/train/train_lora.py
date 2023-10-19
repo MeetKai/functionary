@@ -9,6 +9,7 @@ from typing import Dict, Optional
 
 import torch
 import torch.distributed
+from torch.utils.data import DataLoader
 from torch.nn import CrossEntropyLoss
 
 os.environ["WANDB_LOG_MODEL"] = "all"
@@ -229,6 +230,34 @@ def get_peft_state_maybe_zero_3(named_params, bias):
     return to_return
 
 
+def print_some_examples(ds, tokenizer):
+    data_loader = DataLoader(ds, batch_size=3)
+    count = 0
+    for batch in data_loader:
+        if count == 0:
+            print_rank0("keys in batch: ", batch.keys())
+        print_rank0("--------------****Example data point****---------------")
+        print("device: ", batch["input_ids"].device)
+        print_rank0("shape of input_ids: ", batch["input_ids"].shape)  # B x L
+        print_rank0("shape of labels: ", batch["labels"].shape)
+        print_rank0("shape of attention_mask: ", batch["attention_mask"].shape)
+        # print_rank0('input_ids: ', batch["input_ids"].tolist())
+        # print_rank0('labels: ', batch["labels"].tolist())
+        print_rank0("attention mask: ", batch["attention_mask"])
+        input_ids = batch["input_ids"][0].tolist()
+        labels = batch["labels"][0].tolist()
+        for i in range(len(labels)):
+            if labels[i] == -100:
+                labels[i] = tokenizer.pad_token_id
+        print_rank0("++++input_ids: ")
+        print_rank0(tokenizer.decode(input_ids))
+        print_rank0("++++labels: ")
+        print_rank0(tokenizer.decode(labels))
+        count += 1
+        if count == 3:
+            break
+
+
 def train():
     argument_parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments, LoraArguments))
     model_args, data_args, training_args, lora_args = argument_parser.parse_args_into_dataclasses()
@@ -263,6 +292,7 @@ def train():
             raw_eval_data = [json.loads(line) for line in file]
 
     train_dataset = CustomDataset(raw_train_data, tokenizer)
+    print_some_examples(train_dataset, tokenizer)
 
     # if torch.distributed.get_rank() == 0:
     #    print(f"Training Data Loaded: #{len(raw_train_data)}")

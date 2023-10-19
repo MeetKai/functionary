@@ -90,9 +90,9 @@ def get_text_from_message(message: Dict) -> str:
             function = message["function_call"]["name"]
             arguments = message["function_call"]["arguments"] + end_token
             if content is not None:
-                text = f"assistant:\n{content}\n{StartToken.function}{function}:\n{arguments}\n"
+                text = f"assistant:\n{content}\n{StartToken.function.value}{function}:\n{arguments}\n"
             else:
-                text = f"assistant:\n{StartToken.function}{function}:\n{arguments}\n"
+                text = f"assistant:\n{StartToken.function.value}{function}:\n{arguments}\n"
         elif content is not None:  # this is text content
             text = f"assistant:\n{content}{end_token}\n"
         else:  # if no function call and content is None --> this is used at inference

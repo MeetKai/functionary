@@ -183,7 +183,7 @@ class TestInsertingEndToken(unittest.TestCase):
             padding="longest",
             max_length=512,
             return_tensor=False,
-            verbose=True,
+            verbose=False,
         )
         input_ids = inputs["inputs"]["input_ids"]
         labels = inputs["inputs"]["labels"]
