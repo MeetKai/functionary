@@ -30,7 +30,6 @@ from transformers import (
 
 from functionary.prompt import get_additional_tokens
 from functionary.train.custom_datasets import CustomDataset
-from functionary.train.train import initialize_tokenizer
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
@@ -256,6 +255,42 @@ def print_some_examples(ds, tokenizer):
         count += 1
         if count == 3:
             break
+
+
+def initialize_tokenizer(
+    model: transformers.AutoModelForCausalLM,
+    model_name_or_path: str,
+    model_max_length: int,
+    cache_dir: str,
+):
+    """Initialize tokenizer and add special tokens, resizing vocab and embedding"""
+    # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
+    tokenizer = LlamaTokenizer.from_pretrained(
+        model_name_or_path,
+        cache_dir=cache_dir,
+        model_max_length=model_max_length,
+        padding_side="right",
+        legacy=True,
+    )
+
+    # Add special tokens
+    tokenizer.pad_token = tokenizer.unk_token
+    special_tokens = {"additional_special_tokens": get_additional_tokens()}
+    num_new_tokens = tokenizer.add_special_tokens(special_tokens)
+
+    # Resize embedding
+    model.resize_token_embeddings(len(tokenizer))
+    if num_new_tokens > 0:
+        input_embeddings = model.get_input_embeddings().weight.data
+        output_embeddings = model.get_output_embeddings().weight.data
+
+        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
+        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
+
+        input_embeddings[-num_new_tokens:] = input_embeddings_avg
+        output_embeddings[-num_new_tokens:] = output_embeddings_avg
+
+    return tokenizer
 
 
 def train():
