@@ -68,7 +68,7 @@ def initialize_tokenizer(
     )
 
     # Add special tokens
-    tokenizer.pad_token = tokenizer.unk_token
+    tokenizer.pad_token = tokenizer.eos_token
     special_tokens = {"additional_special_tokens": get_additional_tokens()}
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
 

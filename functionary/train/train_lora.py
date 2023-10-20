@@ -5,7 +5,7 @@ import pathlib
 import random
 import sys
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 import torch
 import torch.distributed
@@ -229,6 +229,29 @@ def get_peft_state_maybe_zero_3(named_params, bias):
     return to_return
 
 
+def extract_unmasked_chunks(labels: List[int], masked_value) -> List[List[int]]:
+    """This function is used to extract unmasked chunks of integer
+    For example, labels = [-100, -100, 1, 2, 3, -100, -100, 4, 5] --> chunks = [[1,2,3], [4,5]]
+    Args:
+        labels (List[int]): list of integer containing token_id and -100
+
+    Returns:
+        List[List[int]]: list of chunk, for example: [[1,2,3], [4,5]]
+    """
+    chunks = []
+    chunk = []
+    for token_id in labels:
+        if token_id != masked_value:
+            chunk.append(token_id)
+        else:
+            if len(chunk) > 0:
+                chunks.append(chunk)
+                chunk = []
+    if len(chunk) > 0:
+        chunks.append(chunk)
+    return chunks
+
+
 def print_some_examples(ds, tokenizer):
     data_loader = DataLoader(ds, batch_size=3)
     count = 0
@@ -244,16 +267,18 @@ def print_some_examples(ds, tokenizer):
         # print_rank0('labels: ', batch["labels"].tolist())
         print_rank0("attention mask: ", batch["attention_mask"])
         input_ids = batch["input_ids"][0].tolist()
+        input_chunk = extract_unmasked_chunks(input_ids, tokenizer.pad_token_id)
+        assert len(input_chunk) == 1
+        print_rank0("+ inputs: ")
+        print_rank0(tokenizer.decode(input_chunk[0]))
         labels = batch["labels"][0].tolist()
-        for i in range(len(labels)):
-            if labels[i] == -100:
-                labels[i] = tokenizer.pad_token_id
-        print_rank0("++++input_ids: ")
-        print_rank0(tokenizer.decode(input_ids))
-        print_rank0("++++labels: ")
-        print_rank0(tokenizer.decode(labels))
+        label_chunks = extract_unmasked_chunks(labels, -100)
+        print_rank0("----------")
+        for chunk in label_chunks:
+            print_rank0("+ chunk: ")
+            print_rank0(tokenizer.decode(chunk))
         count += 1
-        if count == 3:
+        if count == 5:
             break
 
 
@@ -269,7 +294,6 @@ def initialize_tokenizer(
         model_name_or_path,
         cache_dir=cache_dir,
         model_max_length=model_max_length,
-        padding_side="right",
         legacy=True,
     )
 
@@ -312,22 +336,25 @@ def train():
         training_args.model_max_length,
         training_args.cache_dir,
     )
+    
+    assert data_args.train_data_path is not None, "Please provide a training data file."
+
+    with open(data_args.train_data_path, "r") as file:
+        raw_train_data = [json.loads(line) for line in file]
+    
+    train_dataset = CustomDataset(raw_train_data, tokenizer)
+    print_some_examples(train_dataset, tokenizer)
 
     print_rank0("tokenizer.model_max_length: ", tokenizer.model_max_length)
 
     model = prepare_model_for_training(model, training_args, lora_args)
 
-    assert data_args.train_data_path is not None, "Please provide a training data file."
 
-    with open(data_args.train_data_path, "r") as file:
-        raw_train_data = [json.loads(line) for line in file]
 
     if data_args.eval_data_path is not None:
         with open(data_args.eval_data_path, "r") as file:
             raw_eval_data = [json.loads(line) for line in file]
 
-    train_dataset = CustomDataset(raw_train_data, tokenizer)
-    print_some_examples(train_dataset, tokenizer)
 
     # if torch.distributed.get_rank() == 0:
     #    print(f"Training Data Loaded: #{len(raw_train_data)}")

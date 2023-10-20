@@ -32,7 +32,7 @@ async def chat_endpoint(chat_input: ChatInput):
         if response_message.function_call is not None:
             finish_reason = "function_call"  # need to add this to follow the format of openAI function calling
         result = ChatCompletion(id=request_id, choices=[Choice.from_message(response_message, finish_reason)])
-        return result.model_dump(exclude_none=True)
+        return result.dict(exclude_none=True)
     else:
         response_generator = generate_stream(
             messages=chat_input.messages,
@@ -45,7 +45,7 @@ async def chat_endpoint(chat_input: ChatInput):
             for response in response_generator:
                 chunk = StreamChoice(**response)
                 result = ChatCompletionChunk(id=request_id, choices=[chunk])
-                yield f"data: {result.model_dump_json(exclude_unset=True)}\n\n"
+                yield f"data: {result.json(exclude_unset=True)}\n\n"
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(get_response_stream(), media_type="text/event-stream")
