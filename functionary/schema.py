@@ -223,14 +223,15 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
     for param_name, param in properties.items():
         # Sometimes properties have "required" field as a list of string. 
         # Even though its supposed to be not under properties. So we skip it
-        if isinstance(param, list):
+        if not isinstance(param, dict):
             continue
         # Param Description
         comment_info = get_param_info(param)
         # Param Name declaration
         param_declaration = f"{param_name}"
-        if param_name not in required_params:
-            param_declaration += "?"
+        if isinstance(param, list):
+            if param_name not in required_params:
+                param_declaration += "?"
         param_type = get_param_type(param)
 
         offset = ""
