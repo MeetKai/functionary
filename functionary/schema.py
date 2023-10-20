@@ -221,6 +221,10 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
     """
     tp_lines = []
     for param_name, param in properties.items():
+        # Sometimes properties have "required" field as a list of string. 
+        # Even though its supposed to be not under properties. So we skip it
+        if isinstance(param, list):
+            continue
         # Param Description
         comment_info = get_param_info(param)
         # Param Name declaration
@@ -285,7 +289,7 @@ def generate_schema_from_functions(functions: List[Function], namespace="functio
         schema += f"type {function_name}"
 
         parameters = function.get("parameters", None)
-        if parameters is not None:
+        if parameters is not None and parameters.get("properties") is not None:
             schema += " = (_: {\n"
             required_params = parameters.get("required", [])
             tp_lines = get_parameter_typescript(parameters.get("properties"), required_params, 0)
