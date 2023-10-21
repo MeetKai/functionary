@@ -229,7 +229,7 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
         comment_info = get_param_info(param)
         # Param Name declaration
         param_declaration = f"{param_name}"
-        if isinstance(param, list):
+        if isinstance(required_params, list):
             if param_name not in required_params:
                 param_declaration += "?"
         param_type = get_param_type(param)
