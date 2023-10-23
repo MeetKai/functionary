@@ -341,30 +341,24 @@ def train():
 
     with open(data_args.train_data_path, "r") as file:
         raw_train_data = [json.loads(line) for line in file]
-    
+        
+    print_rank0(f"train_size: {len(raw_train_data)}")
     train_dataset = CustomDataset(raw_train_data, tokenizer)
     print_some_examples(train_dataset, tokenizer)
+    
+    if data_args.eval_data_path is not None:
+        with open(data_args.eval_data_path, "r") as file:
+            raw_eval_data = [json.loads(line) for line in file]
+    
+    print_rank0(f"validation_size: {len(raw_eval_data)}")
+    if training_args.do_eval:
+        eval_dataset = CustomDataset(raw_eval_data, tokenizer)
+    
 
     print_rank0("tokenizer.model_max_length: ", tokenizer.model_max_length)
 
     model = prepare_model_for_training(model, training_args, lora_args)
-
-
-
-    if data_args.eval_data_path is not None:
-        with open(data_args.eval_data_path, "r") as file:
-            raw_eval_data = [json.loads(line) for line in file]
-
-
-    # if torch.distributed.get_rank() == 0:
-    #    print(f"Training Data Loaded: #{len(raw_train_data)}")
-
-    if training_args.do_eval:
-        eval_dataset = CustomDataset(raw_eval_data, tokenizer)
-
-        # if torch.distributed.get_rank() == 0:
-        #    print(f"Eval Data Loaded: #{len(raw_eval_data)}")
-
+    
     def preprocess_logits_for_metrics(logits, labels):
         """Preprocesses the logits during evaluation by computing the greedy token predictions for
         accuracy calculation and loss values for perplexity calculation. Both pred_ids and loss are

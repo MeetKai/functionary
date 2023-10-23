@@ -1,17 +1,18 @@
-from typing import Union
 import argparse
+import json
 import uuid
+from typing import Union
 
 import torch
 import uvicorn
 from fastapi import FastAPI
-from transformers import LlamaTokenizer, LlamaForCausalLM
-import json
+from fastapi.responses import JSONResponse, StreamingResponse
+from transformers import LlamaForCausalLM, LlamaTokenizer
 
-from functionary.openai_types import ChatCompletion, ChatInput, Choice, StreamChoice, ChatCompletionChunk
 from functionary.inference import generate_message
 from functionary.inference_stream import generate_stream
-from fastapi.responses import StreamingResponse, JSONResponse
+from functionary.openai_types import (ChatCompletion, ChatCompletionChunk,
+                                      ChatInput, Choice, StreamChoice)
 
 app = FastAPI(title="Functionary API")
 
@@ -45,7 +46,7 @@ async def chat_endpoint(chat_input: ChatInput):
             for response in response_generator:
                 chunk = StreamChoice(**response)
                 result = ChatCompletionChunk(id=request_id, choices=[chunk])
-                yield f"data: {result.json(exclude_unset=True)}\n\n"
+                yield f"data: {result.dict(exclude_unset=True)}\n\n"
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(get_response_stream(), media_type="text/event-stream")

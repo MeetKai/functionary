@@ -1,15 +1,12 @@
 from typing import List, Optional
 
 import torch
-from transformers import (
-    LlamaForCausalLM,
-    LlamaTokenizer,
-    StoppingCriteria,
-    StoppingCriteriaList,
-)
+from transformers import (LlamaForCausalLM, LlamaTokenizer, StoppingCriteria,
+                          StoppingCriteriaList)
 
 from functionary.openai_types import ChatMessage, Function, FunctionCall
-from functionary.prompt import SYSTEM_MESSAGE, EndToken, get_prompt_from_messages, StartToken
+from functionary.prompt import (SYSTEM_MESSAGE, EndToken, StartToken,
+                                get_prompt_from_messages)
 from functionary.schema import generate_schema_from_functions
 
 
@@ -44,13 +41,8 @@ def prepare_messages_for_inference(
         for item in functions:
             func_list.append(item.dict())
     final_prompt = get_prompt_from_messages(dic_messages, func_list)
-    print("final prompt: ")
-    print("------------------")
-    print(final_prompt)
-    print("--------------------")
     input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
     input_ids = input_ids.to(device)
-    print("input_ids: ", input_ids)
     return input_ids
 
 
@@ -82,6 +74,11 @@ def parse_generated_content(generated_content: str) -> ChatMessage:
     Returns:
         ChatMessage: _description_
     """
+    # strip end_of_function_call and end_of_assistant
+    generated_content = generated_content.strip()
+    for endtoken in [EndToken.function_call, EndToken.assistant]:
+        if generated_content.endswith(endtoken):
+            generated_content = generated_content[: - len(endtoken)].strip()
     # First we need to check if llm_output contains start_token or not
     start_function_index = generated_content.find(StartToken.function.value)
     text_content = generated_content
@@ -123,17 +120,16 @@ def generate_message(
     generate_ids = model.generate(
         inputs,
         max_new_tokens=max_new_tokens,
-        temperature=temperature,
-        #stopping_criteria=stopping_criteria,
+        temperature=0.001 if temperature == 0 else temperature,
+        stopping_criteria=stopping_criteria,
     )
     token_ids = generate_ids[:, inputs.shape[1] :][0].tolist()
 
-    token_ids = remove_stop_tokens_from_end(token_ids, stop_words_ids)
+    #token_ids = remove_stop_tokens_from_end(token_ids, stop_words_ids)
 
     generated_content = tokenizer.decode(
-        token_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False, max_new_tokens=max_new_tokens
+        token_ids, skip_special_tokens=False, clean_up_tokenization_spaces=False, max_new_tokens=max_new_tokens
     ).strip()
-    print("generated_content: ", generated_content)
     return parse_generated_content(generated_content)
 
 

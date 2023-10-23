@@ -20,7 +20,8 @@ import asyncio
 import json
 import time
 from http import HTTPStatus
-from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
+from typing import (Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple,
+                    Union)
 
 import fastapi
 import uvicorn
@@ -31,29 +32,21 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
-from vllm.entrypoints.openai.protocol import (
-    ErrorResponse,
-    LogProbs,
-    ModelCard,
-    ModelList,
-    ModelPermission,
-    UsageInfo,
-)
+from vllm.entrypoints.openai.protocol import (ErrorResponse, LogProbs,
+                                              ModelCard, ModelList,
+                                              ModelPermission, UsageInfo)
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
-from functionary.inference import prepare_messages_for_inference
-from functionary.inference_stream import generate_openai_format_from_stream_async
-from functionary.openai_types import (
-    ChatCompletionChunk,
-    ChatMessage,
-    Function,
-    FunctionCall,
-    StreamChoice,
-)
+from functionary.inference import (parse_generated_content,
+                                   prepare_messages_for_inference)
+from functionary.inference_stream import \
+    generate_openai_format_from_stream_async
+from functionary.openai_types import (ChatCompletionChunk, ChatMessage,
+                                      Function, FunctionCall, StreamChoice)
 from functionary.prompt import EndToken
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
@@ -241,6 +234,7 @@ async def create_chat_completion(raw_request: Request):
             top_k=request.top_k,
             ignore_eos=request.ignore_eos,
             use_beam_search=request.use_beam_search,
+            skip_special_tokens=False,
         )
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
@@ -288,24 +282,12 @@ async def create_chat_completion(raw_request: Request):
     choices = []
     for output in final_res.outputs:
         text_response = output.text.strip()
-        if text_response.startswith("to="):
-            function_call_content = text_response[len("to=") :]
-            function_name, arguments = function_call_content.split(":\n")
-            choice_data = ChatCompletionResponseChoice(
-                index=output.index,
-                message=ChatMessage(
-                    role="assistant", function_call=FunctionCall(name=function_name, arguments=arguments)
-                ),
-                finish_reason="function_call" if output.finish_reason == "stop" else output.finish_reason,
-            )
-        else:
-            if text_response.startswith(":"):  # generated prefix: ":\n"
-                text_response = text_response[1:].strip()
-            choice_data = ChatCompletionResponseChoice(
-                index=output.index,
-                message=ChatMessage(role="assistant", content=text_response),
-                finish_reason=output.finish_reason,
-            )
+        chat_mess = parse_generated_content(text_response)
+        choice_data = ChatCompletionResponseChoice(
+            index=output.index,
+            message=chat_mess,
+            finish_reason=output.finish_reason,
+        )
         choices.append(choice_data)
 
     num_prompt_tokens = len(final_res.prompt_token_ids)
