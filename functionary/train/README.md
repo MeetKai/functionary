@@ -78,7 +78,10 @@ export NCCL_P2P_DISABLE=1
 
 ### Compute requirements
 
-
+| Model    | Number of GPUs (A100-80GB) |
+| :--------: | :-------: |
+| Llama-2-7b  | 2 |
+| Llama-2-13b | 4 |
 
 ## Lora Finetuning
 ### Finetuning
