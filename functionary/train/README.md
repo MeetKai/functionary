@@ -84,7 +84,7 @@ For Lora fintuning, you need to install additional requirements:
 bitsandbytes==0.41.1
 peft==0.5.0
 datasets==2.8.0
-transformers=4.34.0
+transformers==4.34.0
 scipy==1.11.3
 deepspeed==0.11.1
 typer==0.9.0
