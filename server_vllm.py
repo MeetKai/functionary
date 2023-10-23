@@ -216,7 +216,7 @@ async def create_chat_completion(raw_request: Request):
 
     # compute stop_token_ids
     stop_token_ids = []
-    for stop_tok in [EndToken.assistant, EndToken.function_call]:
+    for stop_tok in [EndToken.assistant.value, EndToken.function_call.value]:
         tok_ids = tokenizer.encode(stop_tok, add_special_tokens=False)
         stop_token_ids.append(tok_ids[-1])
 
@@ -251,14 +251,18 @@ async def create_chat_completion(raw_request: Request):
                 delta_text = output.text[len(previous_texts) :]
                 previous_texts = output.text
                 finish_reason = output.finish_reason
-                yield delta_text, finish_reason
+                if delta_text not in [EndToken.assistant.value, EndToken.function_call.value]:
+                    yield delta_text, finish_reason
+        yield "", "stop"
 
     async def completion_stream_generator() -> AsyncGenerator[str, None]:
         generator = wrap_vllm_generator()
         async for response in generate_openai_format_from_stream_async(generator):
             chunk = StreamChoice(**response)
             result = ChatCompletionChunk(id=request_id, choices=[chunk])
-            yield f"data: {result.model_dump_json(exclude_unset=True)}\n\n"
+            chunk_dic = result.dict(exclude_unset=True)
+            chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
+            yield f"data: {chunk_data}\n\n"
         yield "data: [DONE]\n\n"
 
     # Streaming response

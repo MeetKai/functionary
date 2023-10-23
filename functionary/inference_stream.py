@@ -14,7 +14,7 @@ from transformers.generation.logits_process import (
 
 from functionary.inference import prepare_messages_for_inference
 from functionary.openai_types import ChatMessage, Function
-from functionary.prompt import EndToken
+from functionary.prompt import EndToken, StartToken
 
 
 def prepare_logits_processor(
@@ -40,8 +40,9 @@ def generate_text_stream(
     functions: Optional[List[Function]] = None,
     temperature: float = 0.7,
     max_new_tokens=256,
+    stop_token_ids=[],
     **kwargs,
-) -> Generator[Tuple[int, str, Optional[str]], Any, Any]:
+) -> Generator[Tuple[str, Optional[str]], Any, Any]:
     if hasattr(model, "device"):
         device = model.device
     else:
@@ -49,9 +50,9 @@ def generate_text_stream(
     repetition_penalty = float(kwargs.get("repetition_penalty", 1.0))
     top_p = float(kwargs.get("top_p", 1.0))
     top_k = int(kwargs.get("top_k", -1))  # -1 means disable
-    stop_token_ids = []
-    if tokenizer.eos_token_id not in stop_token_ids:
-        stop_token_ids.append(tokenizer.eos_token_id)
+    _stop_token_ids = list(stop_token_ids)
+    if tokenizer.eos_token_id not in _stop_token_ids:
+        _stop_token_ids.append(tokenizer.eos_token_id)
 
     logits_processor = prepare_logits_processor(temperature, repetition_penalty, top_p, top_k)
     input_ids = prepare_messages_for_inference(
@@ -106,18 +107,17 @@ def generate_text_stream(
         )
         output = next_output_text[len(current_output_text) :]
         words += output
-        if token_int in stop_token_ids:
+        if token_int in _stop_token_ids:
             reach_stop_token = True
             break
-        yield (token_int, output, finish_reason)
+        yield (output, finish_reason)
 
     # Finish stream event, which contains finish reason
     if reach_stop_token:
         finish_reason = "stop"
     else:
-        finish_reason = "lenghth"
-
-    yield (token_int, "", finish_reason)
+        finish_reason = "length"
+    yield ("", finish_reason)
 
     # Clean
     del past_key_values, out
@@ -145,6 +145,7 @@ def generate_with_check_stop(
         return False, None
 
     for item in generator:
+        print("gen item: ", item)
         temp_list.append(item)
         stop_now, stop = check_stop_criteria()
         if stop_now:
@@ -169,14 +170,10 @@ def update_response_state_from_delta_text(
     cur_text += delta_text
     response: Optional[Dict[str, Any]] = None
     if response_type is None:
-        if cur_text.lstrip() == ":\n":
-            response_type = "text"
-            response = {"delta": {"content": "", "role": "assistant"}, "finish_reason": None}
-        else:
-            match = re.search(r"to=(?P<f>.+?):", cur_text.strip())
-            if match is not None:
-                response_type = "function"
-                func_name = match.group("f").strip()
+        if cur_text.strip().startswith(StartToken.function.value):  # if text_response
+            if cur_text.endswith(":"):
+                f_index = cur_text.find(StartToken.function.value)
+                func_name = cur_text[f_index + len(StartToken.function.value): -1].strip()
                 response = {
                     "delta": {
                         "role": "assistant",
@@ -185,6 +182,11 @@ def update_response_state_from_delta_text(
                     },
                     "finish_reason": None,
                 }
+                response_type = "function"
+        else:  # if function_response
+            response_type = "text"
+            response = {"delta": {"content": "", "role": "assistant"}, "finish_reason": None}
+            
     elif response_type == "function":
         if finish_reason is None:
             response = {
@@ -199,15 +201,22 @@ def update_response_state_from_delta_text(
                 "delta": {},
                 "finish_reason": "function_call",
             }  # format of openAI at the end, delta must be empty
+            
     elif response_type == "text":
         if finish_reason is None:
-            response = {"delta": {"content": delta_text, "role": "assistant"}, "finish_reason": None}
-        else:
+            # need to check if call a function or not
+            if cur_text.endswith(StartToken.function.value):  # if call another function
+                print("call another function in the mean time")
+                cur_text = StartToken.function.value
+                response_type = None
+            else:
+                response = {"delta": {"content": delta_text, "role": "assistant"}, "finish_reason": None}
+        else:  # finish generating
             response = {
                 "delta": {},
                 "finish_reason": finish_reason,
             }  # format of openAI at the end, delta must be empty
-    return func_name, response_type, response
+    return func_name, response_type, response, cur_text
 
 
 def generate_openai_format_from_stream(
@@ -217,11 +226,11 @@ def generate_openai_format_from_stream(
     func_name = None
     response_type = None  # = function if it is function call; = text if it is chit-chat
     for delta_text, finish_reason in generator:
+        #print(f"delta_text: {delta_text}, finish_reason: {finish_reason}")
         # print(f"item:{item}, finish_reason: {finish_reason}; response_type: {response_type}")
-        func_name, response_type, response = update_response_state_from_delta_text(
+        func_name, response_type, response, cur_text = update_response_state_from_delta_text(
             cur_text, func_name, response_type, delta_text, finish_reason
         )
-        cur_text += delta_text
         if response is not None:
             yield response
 
@@ -235,6 +244,11 @@ def generate_stream(
     max_new_tokens=256,
     **kwargs,
 ) -> Generator[Dict, Any, Any]:
+    stop_tokens = [EndToken.assistant, EndToken.function_call]
+    stop_token_lists = []
+    for stop in stop_tokens:
+        token_ids = tokenizer.encode(stop)
+        stop_token_lists.append(token_ids[-1])
     generator = generate_text_stream(
         model=model,
         tokenizer=tokenizer,
@@ -242,16 +256,11 @@ def generate_stream(
         functions=functions,
         temperature=temperature,
         max_new_tokens=max_new_tokens,
+        stop_token_ids=stop_token_lists,
         **kwargs,
     )
-    stop_list = kwargs.get("stops", [])
-    stop_list.extend([EndToken.assistant, EndToken.function_call])
-    stop_tokens_list = [tokenizer.encode(stop, add_special_tokens=False) for stop in stop_list]
-    # We need to remove 29871 because sometimes Llamatokenizer automatically add: 29871
-    # (take a loot at this: https://github.com/huggingface/transformers/issues/26273)
-    stop_tokens_list = [item[1:] if len(item) > 1 and item[0] == 29871 else item for item in stop_tokens_list]
-    checked_generator = generate_with_check_stop(generator, stop_tokens_list)
-    for item in generate_openai_format_from_stream(checked_generator):
+    #checked_generator = generate_with_check_stop(generator, stop_tokens_list)
+    for item in generate_openai_format_from_stream(generator):
         yield item
 
 
@@ -262,10 +271,9 @@ async def generate_openai_format_from_stream_async(
     func_name = None
     response_type = None  # = function if it is function call; = text if it is chit-chat
     async for delta_text, finish_reason in generator:
-        # print(f"item:{item}, finish_reason: {finish_reason}; response_type: {response_type}")
-        func_name, response_type, response = update_response_state_from_delta_text(
+        #""print(f"delta_text:{delta_text}, finish_reason: {finish_reason}; response_type:{response_type}")
+        func_name, response_type, response, cur_text = update_response_state_from_delta_text(
             cur_text, func_name, response_type, delta_text, finish_reason
         )
-        cur_text += delta_text
         if response is not None:
             yield response
