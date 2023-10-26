@@ -9,9 +9,27 @@ from functionary.prompt import (
     EndToken,
     get_number_of_tokens_of_prefix_assistant,
     get_prompt_from_messages,
-    get_token_id_to_end_token,
+    get_end_token_to_token_id,
 )
-from functionary.schema import generate_schema_from_functions
+
+
+def get_prefix_assistant_token_ids(tokenizer: Any):
+    result = []
+    for e in EndToken:
+        prefix = f"{e.value}\nassistant:"
+        token_ids = tokenizer.encode(prefix, add_special_tokens=False)
+        if token_ids[0] == 29871:
+            token_ids = token_ids[1:]
+        result.append(token_ids)
+    return result
+
+
+def get_matching_prefix(prefix_tokens, sequence_ids):
+    for prefix in prefix_tokens:
+        if len(sequence_ids) >= len(prefix):
+            if sequence_ids[: len(prefix)] == prefix:
+                return prefix
+    return None
 
 
 def prepare_training_inputs(
@@ -40,49 +58,66 @@ def prepare_training_inputs(
             inputs: a dictionary containing: input_ids, attention_mask, labels. This will be used in model.forward(**inputs)
     """
     # a dictionary mapping from token_id --> end_token
-    id_to_endtoken = get_token_id_to_end_token(tokenizer)
+    endtoken_2_id = get_end_token_to_token_id(tokenizer)
     prompt_str = get_prompt_from_messages(
         messages["messages"], messages["functions"]
     )  # prompt_str is the concatenation of all prompts from messages
     max_length = max_length if max_length is not None else tokenizer.model_max_length
 
-    input_dic = tokenizer(
-        prompt_str, padding=padding, max_length=max_length, truncation=True
-    )
+    input_dic = tokenizer(prompt_str, padding=padding, max_length=max_length, truncation=True)
     input_token_ids = input_dic["input_ids"]
     # first we initialize labels with all positions as -100,
     # then we will fill in positions where role=assistant as we only include these in computing the loss
     labels = [-100 for _ in range(len(input_token_ids))]
     start = 0
-    # Now we find the positions where role=assistant and copy the value from input_token_ids
-    # this is done by finding the chunk (previous_stop_token_index + 1, current_stop_token_index + 1)
-    # where current_stop_token is EndToken.assistant or EndToken.function_call
-    assistant_tok_len = get_number_of_tokens_of_prefix_assistant(
-        tokenizer
-    )  # get the number of tokens for "\nassistant" in full prompt, these tokens remain -100
-    for index, tok_id in enumerate(input_token_ids):
-        if tok_id in id_to_endtoken:  # Find position of end_token in final_prompt
-            end_token = id_to_endtoken[tok_id]
+
+    # now we will unmask labels by positions that was from assistant
+    # we will find the chunks: "<endtoken>assistant ...(<end_of_function>|<end_of_assistant>) from input_token_ids
+    # and unmask: this part: "...(<end_of_function>|<end_of_assistant>"
+    # find token_ids of: "<endtoken>assistant"
+    prefix_token_ids = get_prefix_assistant_token_ids(tokenizer)
+    if verbose:
+        print("prefix_token_ids: ", prefix_token_ids)
+    index = 0
+    total_input_leng = len(input_token_ids)
+    while index < total_input_leng:
+        # finding the index that start with: "<endtoken>assistant" --> we will unmask labels from this position
+        matched_prefix = get_matching_prefix(prefix_token_ids, input_token_ids[index:])
+        if matched_prefix is not None:
+            end_index = -1
+            # unmask until reach <end_of_function> or <end_of_assistant>
+            for i in range(index + len(matched_prefix), total_input_leng):
+                tok_id = input_token_ids[i]
+                if tok_id in [
+                    endtoken_2_id[EndToken.assistant],
+                    endtoken_2_id[EndToken.function_call],
+                ]:  # check if this is end of turn
+                    labels[i] = input_token_ids[i]  # unmask labels at this position
+                    end_index = i
+                    break
+                else:
+                    labels[i] = input_token_ids[i]  # unmask labels at this position
+            if verbose:
+                print("------------------------")
+                start = index + len(matched_prefix)
+                chunk_ids = input_token_ids[start : end_index + 1] if end_index > -1 else input_token_ids[start:]
+                print("chunk_ids: ", chunk_ids)
+                print(
+                    "longer chunk: ",
+                    input_token_ids[index : end_index + 1] if end_index > 1 else input_token_ids[index:],
+                )
+                print(f"chunk:{tokenizer.decode(chunk_ids)}")
+                print("-------------------")
             if (
-                end_token == EndToken.assistant or end_token == EndToken.function_call
-            ):  # only compute loss from tokens of assistant
-                for i in range(
-                    start + assistant_tok_len, index + 1
-                ):  # The reason for start + assistant_tok_len is to ignore: "\nassistant" in computing loss
-                    labels[i] = input_token_ids[i]  # overwrite -100 to compute the loss
-                if verbose:
-                    chunk = input_token_ids[start + 2 : index + 1]
-                    print("----------------------------")
-                    print(
-                        "+++ chunk assistant to compute loss: ", tokenizer.decode(chunk)
-                    )
-                    print("chunk tokens: ", chunk)
-            start = index + 1
+                end_index == -1
+            ):  # if at the end, cannot find EndToken.assistant or EndToken.function_call --> this data point was truncated
+                break
+            index = end_index
+        else:
+            index += 1
 
     input_dic["labels"] = labels
-    assert (
-        len(labels) == len(input_dic["input_ids"]) == len(input_dic["attention_mask"])
-    )
+    assert len(labels) == len(input_dic["input_ids"]) == len(input_dic["attention_mask"])
 
     if return_tensor:
         for key in input_dic:

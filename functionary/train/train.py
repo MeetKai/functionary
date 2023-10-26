@@ -8,8 +8,8 @@ import torch
 import torch.distributed
 from torch.nn import CrossEntropyLoss
 
-from functionary.prompt import EndToken
-from functionary.train.datasets import CustomDataset
+from functionary.prompt import get_additional_tokens
+from functionary.train.custom_datasets import CustomDataset
 from functionary.train.llama_flash_attn_monkey_patch import (
     replace_llama_attn_with_flash_attn,
 )
@@ -27,12 +27,8 @@ class ModelArguments:
 
 @dataclass
 class DataArguments:
-    train_data_path: str = field(
-        default=None, metadata={"help": "Path to the training data."}
-    )
-    eval_data_path: str = field(
-        default=None, metadata={"help": "Path to the eval data."}
-    )
+    train_data_path: str = field(default=None, metadata={"help": "Path to the training data."})
+    eval_data_path: str = field(default=None, metadata={"help": "Path to the eval data."})
 
 
 @dataclass
@@ -41,9 +37,7 @@ class TrainingArguments(transformers.TrainingArguments):
     optim: str = field(default="adamw_torch")
     model_max_length: int = field(
         default=4096,
-        metadata={
-            "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
-        },
+        metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
     )
 
 
@@ -72,8 +66,8 @@ def initialize_tokenizer(
     )
 
     # Add special tokens
-    tokenizer.pad_token = tokenizer.unk_token
-    special_tokens = {"additional_special_tokens": [e.value for e in EndToken]}
+    tokenizer.pad_token = tokenizer.eos_token
+    special_tokens = {"additional_special_tokens": get_additional_tokens()}
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
 
     # Resize embedding
@@ -82,12 +76,8 @@ def initialize_tokenizer(
         input_embeddings = model.get_input_embeddings().weight.data
         output_embeddings = model.get_output_embeddings().weight.data
 
-        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(
-            dim=0, keepdim=True
-        )
-        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(
-            dim=0, keepdim=True
-        )
+        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
+        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
 
         input_embeddings[-num_new_tokens:] = input_embeddings_avg
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
@@ -96,9 +86,7 @@ def initialize_tokenizer(
 
 
 def train():
-    argument_parser = transformers.HfArgumentParser(
-        (ModelArguments, DataArguments, TrainingArguments)
-    )
+    argument_parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = argument_parser.parse_args_into_dataclasses()
 
     # Set RoPE scaling factor
@@ -170,9 +158,7 @@ def train():
         # Calculate accuracy
         acc_count = 0
         total_num = 0
-        for pred, label in zip(
-            predictions.flatten().tolist(), labels.flatten().tolist()
-        ):
+        for pred, label in zip(predictions.flatten().tolist(), labels.flatten().tolist()):
             if label != -100:
                 if label == pred:
                     acc_count += 1

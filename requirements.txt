@@ -1,9 +1,9 @@
-git+https://github.com/huggingface/transformers@a6e6b1c622d8d08e2510a82cb6266d7b654f1cbf
+transformers==4.34.0
 accelerate~=0.21.0
 sentencepiece~=0.1.99
 fastapi~=0.100.0
 uvicorn~=0.23.1
-pydantic~=2.1.1
+pydantic~=1.10.13
 scipy~=1.11.1
 jsonref~=1.1.0
 requests~=2.31.0

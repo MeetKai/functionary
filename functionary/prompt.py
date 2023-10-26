@@ -37,10 +37,25 @@ class EndToken(str, Enum):
         elif role == "function":
             return EndToken.function
         else:  # role = assistant
-            if "function_call" in message:
+            if "function_call" in message and message["function_call"] is not None:
                 return EndToken.function_call
             else:
                 return EndToken.assistant
+
+
+class StartToken(str, Enum):
+    function = "<|START_OF_FUNCTION_CALL|>"
+
+
+def get_additional_tokens() -> List[str]:
+    """Return list of addional tokens, at training, you should use this function to get list of added tokens
+
+    Returns:
+        List[str]: List of added tokens
+    """
+    end_tokens = [e.value for e in EndToken]
+    start_tokens = [e.value for e in StartToken]
+    return start_tokens + end_tokens
 
 
 def get_text_from_message(message: Dict) -> str:
@@ -52,39 +67,36 @@ def get_text_from_message(message: Dict) -> str:
     Returns:
         str: the string used in the final prompt of this message
     """
-    stop_token = EndToken.from_message(message).value
-    content = message.get("content", "")
-
-    if content is not None:
-        content = f"{content}{stop_token}"
+    end_token = EndToken.from_message(message).value
+    content = message.get("content", None)
 
     if message["role"] == "system":
-        text = "system:\n{content}\n".format(content=content)
+        text = f"system:\n{content}{end_token}\n"
 
     elif message["role"] == "function":
-        text = "function name={name}:\n{content}\n".format(
-            name=message.get("name", ""), content=content
-        )
+        func_name = message.get("name", "")
+        text = f"function name={func_name}:\n{content}{end_token}\n"
 
     elif message["role"] == "user" and content is None:
         text = "user:\n"
 
     elif message["role"] == "user":
-        text = "user:\n{content}\n".format(content=content)
+        text = f"user:\n{content}{end_token}\n"
 
     elif message["role"] == "assistant":
-        function = None
-        arguments = None
         if (
-            "function_call" in message
+            message.get("function_call", None) is not None
         ):  # format of openai: {"role": assistant, "function_call": {"name": xxx, "arguments": xxx}}
             function = message["function_call"]["name"]
-            arguments = message["function_call"]["arguments"] + stop_token
-            text = f"assistant to={function}:\n{arguments}\n"
+            arguments = message["function_call"]["arguments"] + end_token
+            if content is not None:
+                text = f"assistant:\n{content}\n{StartToken.function.value}{function}:\n{arguments}\n"
+            else:
+                text = f"assistant:\n{StartToken.function.value}{function}:\n{arguments}\n"
         elif content is not None:  # this is text content
-            text = f"assistant:\n{content}\n"
+            text = f"assistant:\n{content}{end_token}\n"
         else:  # if no function call and content is None --> this is used at inference
-            text = "assistant"
+            text = "assistant:"
 
     return text
 
@@ -107,9 +119,7 @@ def convert_old_format_to_openai_format(message: Dict) -> Dict:
     }
 
 
-def get_prompt_from_messages(
-    messages: List[Dict], functions: Optional[List[Dict]] = []
-) -> str:
+def get_prompt_from_messages(messages: List[Dict], functions: Optional[List[Dict]] = []) -> str:
     """return the final prompt that will be used.
     Args:
         messages (List[Dict]): list of messages where each message is in the format of OpenAI
@@ -124,9 +134,7 @@ def get_prompt_from_messages(
         functions = []
 
     if len(messages_clone) > 0 and messages_clone[0]["role"] != "system":
-        messages_clone.insert(
-            0, {"role": "system", "content": generate_schema_from_functions(functions)}
-        )
+        messages_clone.insert(0, {"role": "system", "content": generate_schema_from_functions(functions)})
         messages_clone.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
 
     full_text = ""
@@ -135,8 +143,8 @@ def get_prompt_from_messages(
     return full_text.strip()
 
 
-def get_token_id_to_end_token(tokenizer: Any) -> Dict[int, EndToken]:
-    """return a dictionary mapping from token_id --> end_token
+def get_end_token_to_token_id(tokenizer: Any) -> Dict[EndToken, int]:
+    """return a dictionary mapping from end_token --> token_id
 
     Args:
         tokenizer (Any): tokenizer in transformers
@@ -150,7 +158,7 @@ def get_token_id_to_end_token(tokenizer: Any) -> Dict[int, EndToken]:
         assert len(tok_ids) <= 2
         if len(tok_ids) == 2:
             assert tok_ids[0] == 29871  # Llama tokenizer adds this token intentionally
-        result[tok_ids[-1]] = item
+        result[item] = tok_ids[-1]
     return result
 
 
