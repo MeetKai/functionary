@@ -14,7 +14,7 @@ pip install flash-attn==2.3.2 --no-build-isolation
 
 # 2xA100 80GB, from the root directory of the repository
 accelerate launch --config_file "functionary/train/fsdp_config.yaml" -m functionary.train.train \
-    --model_name_or_path meta-llama/Llama-2-13b-hf  \
+    --model_name_or_path meta-llama/Llama-2-7b-hf  \
     --train_data_path train_dataset.jsonl \
     --eval_data_path eval_dataset.jsonl \
     --bf16 True \
@@ -75,6 +75,13 @@ torchrun --nproc_per_node=2 --master_port=20001 -m functionary.train.train \
 ```shell
 export NCCL_P2P_DISABLE=1
 ```
+
+### Compute requirements
+
+| Model    | Number of GPUs (A100-80GB) |
+| :--------: | :-------: |
+| Llama-2-7b  | 2 |
+| Llama-2-13b | 4 |
 
 ## Lora Finetuning
 ### Finetuning
