@@ -22,14 +22,15 @@ from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import (
     BitsAndBytesConfig,
-    LlamaForCausalLM,
     LlamaTokenizer,
+    LlamaTokenizerFast,
     Trainer,
     deepspeed,
 )
 
 from functionary.prompt import get_additional_tokens
-from functionary.train.custom_datasets import CustomDataset
+from functionary.train.custom_datasets import CustomDataset, PackedDataset
+from functionary.train.llama_attention_mask_monkey_patch import LlamaForCausalLM
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
@@ -48,6 +49,8 @@ class ModelArguments:
 class DataArguments:
     train_data_path: str = field(default=None, metadata={"help": "Path to the training data."})
     eval_data_path: str = field(default=None, metadata={"help": "Path to the eval data."})
+    packing: bool = field(default=False, metadata={"help": "Whether use packing or not"})
+    max_packing_length: int = field(default=4096, metadata={"help": "maximum sequence length we can pack"})
 
 
 @dataclass
@@ -126,7 +129,7 @@ def get_device_map(training_args: TrainingArguments, lora_args: LoraArguments) -
 
 
 def load_model_with_rope_scaling(
-    model_args: ModelArguments, training_args: TrainingArguments, lora_args: LoraArguments
+    model_args: ModelArguments, training_args: TrainingArguments, lora_args: LoraArguments, data_args: DataArguments
 ) -> transformers.AutoModelForCausalLM:
     config = transformers.AutoConfig.from_pretrained(
         model_args.model_name_or_path,
@@ -139,8 +142,10 @@ def load_model_with_rope_scaling(
     config.use_cache = False
 
     compute_dtype = torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32)
-
-    model = transformers.AutoModelForCausalLM.from_pretrained(
+    use_flash_attention_2 = True
+    if data_args.packing:
+        use_flash_attention_2 = False # currently packing is only possible when use_flash_attention_2=False
+    model = LlamaForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         config=config,
         cache_dir=training_args.cache_dir,
@@ -149,7 +154,7 @@ def load_model_with_rope_scaling(
             load_in_4bit=True,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
-            use_flash_attention_2=True,
+            use_flash_attention_2=use_flash_attention_2,
             bnb_4bit_compute_dtype=compute_dtype,
         )
         if lora_args.q_lora
@@ -290,7 +295,7 @@ def initialize_tokenizer(
 ):
     """Initialize tokenizer and add special tokens, resizing vocab and embedding"""
     # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
-    tokenizer = LlamaTokenizer.from_pretrained(
+    tokenizer = LlamaTokenizerFast.from_pretrained(
         model_name_or_path,
         cache_dir=cache_dir,
         model_max_length=model_max_length,
@@ -341,20 +346,30 @@ def train():
 
     with open(data_args.train_data_path, "r") as file:
         raw_train_data = [json.loads(line) for line in file]
+        raw_train_data = raw_train_data[: 1000]
         
     print_rank0(f"train_size: {len(raw_train_data)}")
     train_dataset = CustomDataset(raw_train_data, tokenizer)
+    if data_args.packing:
+        print_rank0("packing data points for training")
+        print_rank0("max packing length: ", data_args.max_packing_length)
+        train_dataset = PackedDataset(train_dataset, data_args.max_packing_length, tokenizer.pad_token_id)
+        print_rank0(f"train_size after packing: {len(train_dataset)}")
     print_some_examples(train_dataset, tokenizer)
     
     if data_args.eval_data_path is not None:
         with open(data_args.eval_data_path, "r") as file:
             raw_eval_data = [json.loads(line) for line in file]
+            raw_eval_data = raw_eval_data[: 200]
     
     print_rank0(f"validation_size: {len(raw_eval_data)}")
     if training_args.do_eval:
         eval_dataset = CustomDataset(raw_eval_data, tokenizer)
+        if data_args.packing:
+            print_rank0("packing data points for eval_data")
+            eval_dataset = PackedDataset(eval_dataset, data_args.max_packing_length, tokenizer.pad_token_id)
+            print_rank0(f"validation_size after packing: {len(eval_dataset)}")
     
-
     print_rank0("tokenizer.model_max_length: ", tokenizer.model_max_length)
 
     model = prepare_model_for_training(model, training_args, lora_args)

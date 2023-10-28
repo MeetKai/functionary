@@ -1,0 +1,27 @@
+CUDA_VISIBLE_DEVICES=1 python functionary/train/train_lora.py \
+    --model_name_or_path models/Llama-2-7b-hf \
+    --train_data_path 2023-10-20_train.jsonl \
+    --eval_data_path 2023-10-20_val.jsonl \
+    --q_lora True \
+    --bf16 True \
+    --output_dir models/llama-2-7b-functionary-2023-10-20 \
+    --num_train_epochs 2 \
+    --per_device_train_batch_size 1 \
+    --per_device_eval_batch_size 1 \
+    --gradient_accumulation_steps 8 \
+    --eval_accumulation_steps 1 \
+    --evaluation_strategy "steps" \
+    --eval_steps 91 \
+    --save_strategy "steps" \
+    --save_steps 182 \
+    --save_total_limit 3 \
+    --logging_steps 1 \
+    --learning_rate 2e-5 \
+    --weight_decay 0. \
+    --warmup_ratio 0.03 \
+    --lr_scheduler_type "cosine" \
+    --tf32 True \
+    --model_max_length 4096 \
+    --gradient_checkpointing True  \
+    --packing \
+    --max_packing_length 4096

@@ -3,7 +3,7 @@ import re
 import unittest
 from typing import List
 
-from transformers import LlamaTokenizer
+from transformers import LlamaTokenizer, LlamaTokenizerFast
 
 from functionary.prompt import (
     EndToken,
@@ -165,10 +165,21 @@ class TestInsertingEndToken(unittest.TestCase):
             #  Check if prompt doesn't endswith stop_token
             self.assertFalse(prompt.endswith(stop_token), f"`{prompt}` ends with: `{stop_token}`")
 
-    def test_prepare_training_inputs(self):
+    def test_prepare_training_inputs_fast_tokenizer(self):
+        print("start testing fast tokenizer")
+        self.run_prepare_training_inputs(use_fast=True)
+    
+    def test_prepare_training_inputs_normal_tokenizer(self):
+        print("start testing normal tokenizer")
+        self.run_prepare_training_inputs(use_fast=False)
+
+    def run_prepare_training_inputs(self, use_fast: bool):
         """this function is used to test function: prepare_training_inputs"""
         # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
-        tokenizer = LlamaTokenizer.from_pretrained("musabgultekin/functionary-7b-v1", legacy=True)
+        tokenizer_class = LlamaTokenizer
+        if use_fast:
+            tokenizer_class = LlamaTokenizerFast
+        tokenizer = tokenizer_class.from_pretrained("musabgultekin/functionary-7b-v1", legacy=True)
         # first we add stop_tokens to the tokenizer
         length_before = len(tokenizer)
         added_tokens = get_additional_tokens()
