@@ -9,7 +9,7 @@ import random
 from functionary.train.llama_attention_mask_monkey_patch import LlamaForCausalLM
 
 
-data_path = "2023-10-20_val.jsonl"
+data_path = "2023-10-27_val.jsonl"
 model_path = "models/Llama-2-7b-hf"
 tokenizer = LlamaTokenizerFast.from_pretrained(model_path, legacy=True, model_max_length=1024)
 tokenizer.pad_token = tokenizer.unk_token
@@ -21,30 +21,31 @@ with open(data_path, "r") as f:
 raw_data = raw_data
 random.shuffle(raw_data)
 
-batch_size = 50
-return_tensor = True
-result = custom_datasets.prepare_training_inputs_batch(raw_data[: batch_size], tokenizer, padding="max_length", max_length=4096, return_tensor=return_tensor)
-for index, item in enumerate(raw_data[: batch_size]):
-    res = custom_datasets.prepare_training_inputs_old(item, tokenizer, padding="max_length", max_length=4096, return_tensor=return_tensor)
-    assert res["final_prompt"] == result["batch_prompts"][index]
-    inputs = res["inputs"]
-    b_inputs = result["batch_inputs"][index]
-    for key in b_inputs:
-        if not return_tensor:
-            assert b_inputs[key] == inputs[key]
-        else:
-            assert b_inputs[key].tolist() == inputs[key].tolist()
-    print("correct: ", index)
-print("Done !!!")
-    
+def assert_batch_processing():
+    batch_size = 50
+    return_tensor = True
+    result = custom_datasets.prepare_training_inputs_batch(raw_data[: batch_size], tokenizer, padding="max_length", max_length=4096, return_tensor=return_tensor)
+    for index, item in enumerate(raw_data[: batch_size]):
+        res = custom_datasets.prepare_training_inputs_old(item, tokenizer, padding="max_length", max_length=4096, return_tensor=return_tensor)
+        assert res["final_prompt"] == result["batch_prompts"][index]
+        inputs = res["inputs"]
+        b_inputs = result["batch_inputs"][index]
+        for key in b_inputs:
+            if not return_tensor:
+                assert b_inputs[key] == inputs[key]
+            else:
+                assert b_inputs[key].tolist() == inputs[key].tolist()
+        print("correct: ", index)
+    print("Done !!!")
 
-# customized_dataset = custom_datasets.CustomDataset(raw_data, tokenizer)
-# print("number of data-points before: ", len(customized_dataset))
-# t1 = datetime.datetime.now()
-# packed_dataset = custom_datasets.PackedDataset(customized_dataset, 1024, tokenizer.pad_token_id)
-# t2 = datetime.datetime.now()
-# print("total time for handling: ", (t2 - t1).total_seconds())
-# print("number of data points after: ", len(packed_dataset))
+
+customized_dataset = custom_datasets.CustomDataset(raw_data, tokenizer)
+print("number of data-points before: ", len(customized_dataset))
+t1 = datetime.datetime.now()
+packed_dataset = custom_datasets.PackedDataset(customized_dataset, 1024, tokenizer.pad_token_id)
+t2 = datetime.datetime.now()
+print("total time for handling: ", (t2 - t1).total_seconds())
+print("number of data points after: ", len(packed_dataset))
 
 # RUN_DEVICE = "cuda:1"
 

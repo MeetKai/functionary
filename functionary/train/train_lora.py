@@ -144,12 +144,14 @@ def load_model_with_rope_scaling(
     compute_dtype = torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32)
     use_flash_attention_2 = True
     if data_args.packing:
+        print_rank0("do not use flash attention because of using packing")
         use_flash_attention_2 = False # currently packing is only possible when use_flash_attention_2=False
     model = LlamaForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         config=config,
         cache_dir=training_args.cache_dir,
         device_map=get_device_map(training_args, lora_args),
+        use_flash_attention_2=use_flash_attention_2,
         quantization_config=BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_use_double_quant=True,

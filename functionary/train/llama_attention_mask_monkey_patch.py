@@ -1016,7 +1016,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        loss_reduction: [str] = "mean",
+        loss_reduction: str = "mean",
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:

@@ -1,10 +1,11 @@
-from transformers import LlamaTokenizer
+from transformers import LlamaTokenizerFast
 from functionary.prompt import get_additional_tokens
 from functionary.train.custom_datasets import get_prompt_from_messages
 import json 
 import typer
 import datetime
 import csv
+import os
 
 
 def save_json(data, path):
@@ -32,8 +33,10 @@ def get_batch_indices(batch_size: int, total_size: int):
     return result
 
 
-def compute_length_statistics(pretrained: str, train_path: str, valid_path: str, top: int = typer.Option(1000)):
-    tokenizer = LlamaTokenizer.from_pretrained(pretrained, legacy=True)
+def compute_length_statistics(pretrained: str, train_path: str, valid_path: str, save_folder: str):
+    if not os.path.exists(save_folder):
+        os.mkdir(save_folder)
+    tokenizer = LlamaTokenizerFast.from_pretrained(pretrained, legacy=True)
     tokenizer.pad_token = tokenizer.unk_token
     special_tokens = {"additional_special_tokens": get_additional_tokens()}
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
@@ -76,13 +79,15 @@ def compute_length_statistics(pretrained: str, train_path: str, valid_path: str,
         pairs.append((length, acc_count))
         rows.append((str(length), str(count)))
     rows.reverse()
-    save_csv([["length", "count"]] + rows, "length_dic_count.csv")
+    save_csv([["length", "count"]] + rows, f"{save_folder}/length_dic_count.csv")
     total_count = acc_count
     assert total_count == len(total_data)
     pairs.reverse()
-    for i in range(min(len(pairs), top)):
+    rows = [["length", "accumulated_count", "percentage"]]
+    for i in range(len(pairs)):
         length, count = pairs[i]
-        print(f"+ length: {length}, acc_count: {count}, percentage: {count / total_count}")
+        rows.append([str(length), str(count), str(count/total_count)])
+    save_csv(rows, f"{save_folder}/accumulated.csv")
  
 
 if __name__ == "__main__":
