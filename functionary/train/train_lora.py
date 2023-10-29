@@ -29,7 +29,7 @@ from transformers import (
 )
 
 from functionary.prompt import get_additional_tokens
-from functionary.train.custom_datasets import CustomDataset, PackedDataset
+from functionary.train.custom_datasets import CustomDataset, DirectPackedDataset
 from functionary.train.llama_attention_mask_monkey_patch import LlamaForCausalLM
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
@@ -266,7 +266,7 @@ def print_some_examples(ds, tokenizer):
         if count == 0:
             print_rank0("keys in batch: ", batch.keys())
         print_rank0("--------------****Example data point****---------------")
-        print("device: ", batch["input_ids"].device)
+        print_rank0("device: ", batch["input_ids"].device)
         print_rank0("shape of input_ids: ", batch["input_ids"].shape)  # B x L
         print_rank0("shape of labels: ", batch["labels"].shape)
         print_rank0("shape of attention_mask: ", batch["attention_mask"].shape)
@@ -324,6 +324,30 @@ def initialize_tokenizer(
     return tokenizer
 
 
+def get_dataset(data_args, training_args, tokenizer, dtype):
+    ds_class = CustomDataset
+    if data_args.packing:
+        ds_class = DirectPackedDataset
+    cached_path = os.path.join(training_args.output_dir, f"{dtype}_cached.jsonl")
+    raw_train_data = None
+    if training_args.local_rank > 0:
+        print(f"process: {LOCAL_RANK} wait for main process to prepare the training data")
+        torch.distributed.barrier()
+    else:    
+        if not os.path.exists(training_args.output_dir):
+            os.mkdir(training_args.output_dir)
+        data_path = data_args.train_data_path if dtype == "train" else data_args.eval_data_path
+        with open(data_path, "r") as file:
+            raw_train_data = [json.loads(line) for line in file]
+        print_rank0(f"train_size: {len(raw_train_data)}")
+        # TODO set ignore_cached=True to use the cached at the first time we run
+        ds = ds_class(raw_train_data, tokenizer, cached_path=cached_path, ignore_cached=False)
+        print(f"process: {LOCAL_RANK} finish processing data")
+        torch.distributed.barrier()
+    ds = ds_class(raw_train_data, tokenizer, cached_path=cached_path, ignore_cached=False)
+    ds.stat()
+    return ds
+
 def train():
     argument_parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments, LoraArguments))
     model_args, data_args, training_args, lora_args = argument_parser.parse_args_into_dataclasses()
@@ -334,7 +358,7 @@ def train():
 
     print_rank0("training args: ", training_args)
 
-    model = load_model_with_rope_scaling(model_args, training_args, lora_args)
+    model = load_model_with_rope_scaling(model_args, training_args, lora_args, data_args)
     print_rank0(model)
 
     tokenizer = initialize_tokenizer(
@@ -345,32 +369,14 @@ def train():
     )
     
     assert data_args.train_data_path is not None, "Please provide a training data file."
-
-    with open(data_args.train_data_path, "r") as file:
-        raw_train_data = [json.loads(line) for line in file]
-        raw_train_data = raw_train_data[: 1000]
-        
-    print_rank0(f"train_size: {len(raw_train_data)}")
-    train_dataset = CustomDataset(raw_train_data, tokenizer)
-    if data_args.packing:
-        print_rank0("packing data points for training")
-        print_rank0("max packing length: ", data_args.max_packing_length)
-        train_dataset = PackedDataset(train_dataset, data_args.max_packing_length, tokenizer.pad_token_id)
-        print_rank0(f"train_size after packing: {len(train_dataset)}")
+    
+    train_dataset = get_dataset(data_args, training_args, tokenizer, "train")
     print_some_examples(train_dataset, tokenizer)
+    print_rank0("final train size: ", len(train_dataset))
     
-    if data_args.eval_data_path is not None:
-        with open(data_args.eval_data_path, "r") as file:
-            raw_eval_data = [json.loads(line) for line in file]
-            raw_eval_data = raw_eval_data[: 200]
-    
-    print_rank0(f"validation_size: {len(raw_eval_data)}")
     if training_args.do_eval:
-        eval_dataset = CustomDataset(raw_eval_data, tokenizer)
-        if data_args.packing:
-            print_rank0("packing data points for eval_data")
-            eval_dataset = PackedDataset(eval_dataset, data_args.max_packing_length, tokenizer.pad_token_id)
-            print_rank0(f"validation_size after packing: {len(eval_dataset)}")
+        eval_dataset = get_dataset(data_args, training_args, tokenizer, "eval")
+        print_rank0("final train size: ", len(eval_dataset))
     
     print_rank0("tokenizer.model_max_length: ", tokenizer.model_max_length)
 

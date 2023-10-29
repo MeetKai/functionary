@@ -1,10 +1,12 @@
 import json
 from typing import Any, Dict, List, Optional, Tuple, Union
+from abc import ABC, abstractmethod
 
 import torch
 import transformers
 from torch.utils.data import Dataset
 import datetime
+import os
 
 from functionary.prompt import (
     EndToken,
@@ -12,6 +14,18 @@ from functionary.prompt import (
     get_prompt_from_messages,
     get_end_token_to_token_id,
 )
+
+
+def get_batch_indices(size: int, batch_size: int) -> List[Tuple[int, int]]:
+    result = []
+    for i in range(size // batch_size + 1):
+        start = i * batch_size
+        end = i * batch_size + batch_size
+        if end > size:
+            end = size
+        if end > start:
+            result.append((start, end))
+    return result
 
 
 def get_prefix_assistant_token_ids(tokenizer: Any):
@@ -158,34 +172,56 @@ def prepare_training_inputs_batch(
 class CustomDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
-    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer, batch_size: int = 2000):
+    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer, cached_path: Optional[str] = None, ignore_cached: bool = False, batch_size: int = 2000):
         super(CustomDataset, self).__init__()
         self.tokenizer = tokenizer
-        self.processed_data = []
-        data_size = len(raw_data)
-        t1 = datetime.datetime.now()
-        for i in range(data_size // batch_size + 1):
-            start = i * batch_size
-            end = i * batch_size + batch_size
-            if end > data_size:
-                end = data_size
-            if end > start:
+        if cached_path is not None and os.path.exists(cached_path) and not ignore_cached:
+            self.load(cached_path)
+        else:
+            self.processed_data = []
+            data_size = len(raw_data)
+            t1 = datetime.datetime.now()
+            for start, end in get_batch_indices(data_size, batch_size):
                 batch_result = prepare_training_inputs_batch(raw_data[start: end], tokenizer, return_tensor=True)
                 assert len(batch_result["batch_inputs"]) == len(raw_data[start: end])
                 for item in batch_result["batch_inputs"]:
                     self.processed_data.append(item)
-            t2 = datetime.datetime.now()
-            avg_time = (t2 - t1).total_seconds() / len(self.processed_data)
-            remaining_time = avg_time * (data_size - len(self.processed_data))
-            print(f"{len(self.processed_data)}/{data_size}, avg_time per 1000 data points: {avg_time * 1000}, remaining time: {remaining_time}")
-        assert len(self.processed_data) == data_size
+                t2 = datetime.datetime.now()
+                avg_time = (t2 - t1).total_seconds() / len(self.processed_data)
+                remaining_time = avg_time * (data_size - len(self.processed_data))
+                print(f"{len(self.processed_data)}/{data_size}, avg_time per 1000 data points: {avg_time * 1000}, remaining time: {remaining_time}")
+            assert len(self.processed_data) == data_size
+            if cached_path is not None:
+                self.dump(self.cached_path)
 
     def __len__(self):
         return len(self.processed_data)
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         return self.processed_data[i]
-
+    
+    def load(self, path: str):
+        self.processed_data = []
+        with open(path, "r") as f:
+            for line in f:
+                if line:
+                    item = json.loads(item)
+                    for key in item:
+                        item[key] = torch.tensor(item[key])
+                    self.processed_data.append(item)
+        print(f"load: {len(self.processed_data)} from cached: {path}")
+    
+    def dump(self, path: str):
+        print(f"dump: {len(self.processed_data)} to: {path}")
+        with open(path, "w") as f:
+            for item in self.processed_data:
+                n_item = {}
+                for key in item:
+                    n_item[key] = item[key].tolist()
+                f.write(json.dumps(n_item) + "\n")
+    
+    def stat(self):
+        print("number of data points: ", len(self.processed_data))
 
 def convert_input_dic_to_int(input_dic: Dict) -> Dict:
     input_ids = input_dic["input_ids"]
@@ -246,8 +282,10 @@ def merge_data_points(data_points: List[Dict], pad_token_id, max_sequence_length
     label_ids = []
     for item in data_points:
         input_ids += item["input_ids"]
-        assert item["labels"][0] == -100 # This is to make sure that the first token won't be included in computing loss
-        label_ids += item["labels"]
+        #assert item["labels"][0] == -100 # This is to make sure that the first token won't be included in computing loss
+        labels = list(item["labels"])
+        labels[0] = -100
+        label_ids += labels
         lengths.append(len(item["input_ids"]))
     new_masks = create_mask_from_lengths(lengths, max_sequence_length, float("-inf"))
     pad_leng = max_sequence_length - len(input_ids)
@@ -259,15 +297,75 @@ def merge_data_points(data_points: List[Dict], pad_token_id, max_sequence_length
         "labels": torch.tensor(label_ids), 
         "attention_mask": torch.unsqueeze(new_masks, 0)  # This is because the shape is: B x 1 x N x N
     }
-
+    
 
 class PackedDataset(Dataset):
-    def __init__(self, normal_dataset: CustomDataset, max_sequence_length: int, pad_token_id: int) -> None:
-        super(PackedDataset, self).__init__()
+    def __init__(self, tokenizer: Any, cached_path: Optional[str]=None, ignore_cached: bool = False) -> None:
+        super().__init__()
+        self.tokenizer = tokenizer
+        self.data_points = []
+        if cached_path is not None and os.path.exists(cached_path) and not ignore_cached:
+            print(f"cached, found, load from cached: {cached_path}")
+            self.load(cached_path)
+    
+    def pack_data_points(self, data_points: List[Dict]):
+        self.lengths = [len(item["input_ids"]) for item in data_points]
+        self.groups = merge_data_points_by_length(self.lengths, self.tokenizer.model_max_length)
+        self.data_points = data_points
+        
+    def __len__(self):
+        return len(self.groups)
+
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        group = self.groups[i]
+        group_data_points = [self.data_points[index] for index in group]
+        return merge_data_points(group_data_points, self.tokenizer.pad_token_id, self.tokenizer.model_max_length)
+
+    def dump(self, path):
+        t1 = datetime.datetime.now()
+        with open(path, "w") as f:
+            for item in self.data_points:
+                f.write(json.dumps(item) + "\n")
+        t2 = datetime.datetime.now()
+        print("time of dumping data: ", (t2 - t1).total_seconds())
+
+    def load(self, path):
+        data_points = []
+        t1 = datetime.datetime.now()
+        with open(path, "r") as f:
+            for line in f:
+                temp = line.strip()
+                if len(temp) > 0:
+                    item = json.loads(temp)
+                    for key in item:
+                        item[key] = torch.tensor(item[key])
+                    data_points.append(item)
+        t2 = datetime.datetime.now()
+        print("time for loading data from cached:", (t2 - t1).total_seconds())
+        self.pack_data_points(data_points)
+    
+    def stat(self):
+        print(f"number of original data points:{len(self.data_points)}; packed to: {len(self.groups)}")
+        original_avg_length = sum(self.lengths) / len(self.lengths)
+        packed_lengths = []
+        for group in self.groups:
+            lengths = [self.lengths[index] for index in group]
+            packed_lengths.append(sum(lengths))
+        avg_packed_length = sum(packed_lengths) / len(packed_lengths)
+        print(f"original avg length: {original_avg_length}; avg packed length: {avg_packed_length}")
+
+
+class ConvertedPackDataset(PackedDataset):
+    def __init__(self, normal_dataset: CustomDataset, tokenizer: Any, cached_path: Optional[str]=None, ignore_cached: bool = False) -> None:
+        super().__init__(tokenizer, cached_path, ignore_cached)
+        if len(self.data_points) > 0:
+            # already load from cached
+            return 
         data_size = len(normal_dataset)
         original_datapoints = []
         lengths = []
         t1 = datetime.datetime.now()
+        print("start collecting ...")
         for i in range(data_size):
             item = normal_dataset[i]
             n_item = convert_input_dic_to_int(item)
@@ -277,22 +375,30 @@ class PackedDataset(Dataset):
             avg_time = (t2 - t1).total_seconds() / (i + 1)
             remaining_time = avg_time * (data_size - i - 1)
             if i % 500 == 0:
-                print(f"{i}/{data_size} avg-time: {avg_time}, remaining_time: {remaining_time}")
+                print(f"{i}/{data_size} avg-time per 1000: {avg_time * 1000}, remaining_time: {remaining_time}")
         print("time for loading CUSTOMIZED DATA: ", (t2 - t1).total_seconds())
-        groups = merge_data_points_by_length(lengths, max_sequence_length)
-        print("number of groups after merging: ", len(groups))
-        self.data_points = []
-        t1 = datetime.datetime.now()
-        for group in groups:
-            group_data_points = [original_datapoints[index] for index in group]
-            self.data_points.append(merge_data_points(group_data_points, pad_token_id, max_sequence_length))
-        t2 = datetime.datetime.now()
-        print("time for converting: ", (t2 - t1).total_seconds())
-    
-    def __len__(self):
-        return len(self.data_points)
-
-    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
-        return self.data_points[i]
-
+        self.pack_data_points(original_datapoints)
+        
+        
+class DirectPackedDataset(PackedDataset):
+    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer, cached_path: Optional[str] = None, ignore_cached: bool = False, batch_size: int = 5000):
+        super().__init__(tokenizer, cached_path, ignore_cached)
+        if len(self.data_points) == 0:
+            original_datapoints = []
+            data_size = len(raw_data)
+            t1 = datetime.datetime.now()
+            for start, end in get_batch_indices(data_size, batch_size):
+                batch_result = prepare_training_inputs_batch(raw_data[start: end], tokenizer, padding="do_not_pad", return_tensor=False)
+                assert len(batch_result["batch_inputs"]) == len(raw_data[start: end])
+                for item in batch_result["batch_inputs"]:
+                    original_datapoints.append(item)
+                t2 = datetime.datetime.now()
+                avg_time = (t2 - t1).total_seconds() / len(original_datapoints)
+                remaining_time = avg_time * (data_size - len(original_datapoints))
+                print(f"{len(original_datapoints)}/{data_size}, avg_time per 1000 data points: {avg_time * 1000}, remaining time: {remaining_time}")
+            assert len(original_datapoints) == data_size
+            self.pack_data_points(original_datapoints)
+            if cached_path is not None: 
+                print(f"dump data to cached: {cached_path}")
+                self.dump(cached_path)
 

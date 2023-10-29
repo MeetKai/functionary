@@ -9,9 +9,9 @@ import random
 from functionary.train.llama_attention_mask_monkey_patch import LlamaForCausalLM
 
 
-data_path = "2023-10-27_val.jsonl"
+data_path = "2023-10-27_train.jsonl"
 model_path = "models/Llama-2-7b-hf"
-tokenizer = LlamaTokenizerFast.from_pretrained(model_path, legacy=True, model_max_length=1024)
+tokenizer = LlamaTokenizerFast.from_pretrained(model_path, legacy=True, model_max_length=8192)
 tokenizer.pad_token = tokenizer.unk_token
 special_tokens = {"additional_special_tokens": get_additional_tokens()}
 tokenizer.add_special_tokens(special_tokens)
@@ -42,7 +42,7 @@ def assert_batch_processing():
 customized_dataset = custom_datasets.CustomDataset(raw_data, tokenizer)
 print("number of data-points before: ", len(customized_dataset))
 t1 = datetime.datetime.now()
-packed_dataset = custom_datasets.PackedDataset(customized_dataset, 1024, tokenizer.pad_token_id)
+packed_dataset = custom_datasets.PackedDataset(customized_dataset, 8192, tokenizer.pad_token_id)
 t2 = datetime.datetime.now()
 print("total time for handling: ", (t2 - t1).total_seconds())
 print("number of data points after: ", len(packed_dataset))

@@ -53,8 +53,6 @@ _CONFIG_FOR_DOC = "LlamaConfig"
 def _get_unpad_data(padding_mask):
     seqlens_in_batch = padding_mask.sum(dim=-1, dtype=torch.int32)
     indices = torch.nonzero(padding_mask.flatten(), as_tuple=False).flatten()
-    print("indices: ", indices)
-    print("seqlens_in_batch: ", seqlens_in_batch)
     max_seqlen_in_batch = seqlens_in_batch.max().item()
     cu_seqlens = F.pad(torch.cumsum(seqlens_in_batch, dim=0, dtype=torch.torch.int32), (1, 0))
     return (
@@ -554,8 +552,6 @@ class LlamaFlashAttention2(LlamaAttention):
         return attn_output
 
     def _upad_input(self, query_layer, key_layer, value_layer, padding_mask, query_length):
-        print("query_length: ", query_length)
-        print("padding_mask: ", padding_mask)
         indices_k, cu_seqlens_k, max_seqlen_in_batch_k = _get_unpad_data(padding_mask)
         batch_size, kv_seq_len, num_key_value_heads, head_dim = key_layer.shape
 
@@ -581,9 +577,7 @@ class LlamaFlashAttention2(LlamaAttention):
             query_layer = query_layer.squeeze(1)
         else:
             # The -q_len: slice assumes left padding.
-            print("query_length: ", query_length)
             padding_mask = padding_mask[:, -query_length:]
-            print("padding_mask: ", padding_mask)
             query_layer, indices_q, cu_seqlens_q, max_seqlen_in_batch_q = unpad_input(query_layer, padding_mask)
 
         return (
