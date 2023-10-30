@@ -6,7 +6,7 @@ import typer
 import random
 
 
-def main(pretrained_path: str, data_path: str, save_path: str, max_length: int):
+def main(pretrained_path: str, data_path: str, save_folder: str, max_length: int):
     tokenizer = LlamaTokenizerFast.from_pretrained(
         pretrained_path,
         model_max_length=max_length,
@@ -24,7 +24,7 @@ def main(pretrained_path: str, data_path: str, save_path: str, max_length: int):
             if line.strip():
                 raw_data.append(json.loads(line))
     print("number of data points: ", len(raw_data))
-    ds = custom_datasets.DirectPackedDataset(raw_data, tokenizer, cached_path=save_path, batch_size=2000)
+    ds = custom_datasets.DirectPackedDataset(raw_data, tokenizer, cached_path=save_folder, batch_size=2000)
     ds.stat()
     ds_size = len(ds)
     index = random.randint(0, ds_size - 1)

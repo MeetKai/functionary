@@ -328,7 +328,7 @@ def get_dataset(data_args, training_args, tokenizer, dtype):
     ds_class = CustomDataset
     if data_args.packing:
         ds_class = DirectPackedDataset
-    cached_path = os.path.join(training_args.output_dir, f"{dtype}_cached.jsonl")
+    cached_path = os.path.join(training_args.output_dir, f"{dtype}_cached")
     raw_train_data = None
     if training_args.local_rank > 0:
         print(f"process: {LOCAL_RANK} wait for main process to prepare the training data")
@@ -336,6 +336,8 @@ def get_dataset(data_args, training_args, tokenizer, dtype):
     else:    
         if not os.path.exists(training_args.output_dir):
             os.mkdir(training_args.output_dir)
+        if not os.path.exists(cached_path):
+            os.mkdir(cached_path)
         data_path = data_args.train_data_path if dtype == "train" else data_args.eval_data_path
         with open(data_path, "r") as file:
             raw_train_data = [json.loads(line) for line in file]
@@ -347,6 +349,7 @@ def get_dataset(data_args, training_args, tokenizer, dtype):
     ds = ds_class(raw_train_data, tokenizer, cached_path=cached_path, ignore_cached=False)
     ds.stat()
     return ds
+
 
 def train():
     argument_parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments, LoraArguments))
@@ -376,7 +379,7 @@ def train():
     
     if training_args.do_eval:
         eval_dataset = get_dataset(data_args, training_args, tokenizer, "eval")
-        print_rank0("final train size: ", len(eval_dataset))
+        print_rank0("final eval size: ", len(eval_dataset))
     
     print_rank0("tokenizer.model_max_length: ", tokenizer.model_max_length)
 

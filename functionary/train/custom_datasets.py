@@ -304,9 +304,12 @@ class PackedDataset(Dataset):
         super().__init__()
         self.tokenizer = tokenizer
         self.data_points = []
-        if cached_path is not None and os.path.exists(cached_path) and not ignore_cached:
+        if cached_path is not None and os.path.exists(os.path.join(cached_path, "inputs.jsonl")) and not ignore_cached:
             print(f"cached, found, load from cached: {cached_path}")
-            self.load(cached_path)
+            if self.is_loadable_cached(cached_path):
+                self.load(cached_path)
+            else:
+                print("cached is not correct, we have to load data again")
     
     def pack_data_points(self, data_points: List[Dict]):
         self.lengths = [len(item["input_ids"]) for item in data_points]
@@ -321,24 +324,45 @@ class PackedDataset(Dataset):
         group_data_points = [self.data_points[index] for index in group]
         return merge_data_points(group_data_points, self.tokenizer.pad_token_id, self.tokenizer.model_max_length)
 
-    def dump(self, path):
+    def dump(self, folder):
+        if not os.path.exists(folder):
+            os.mkdir(folder)
         t1 = datetime.datetime.now()
-        with open(path, "w") as f:
+        with open(f"{folder}/inputs.jsonl", "w") as f:
             for item in self.data_points:
                 f.write(json.dumps(item) + "\n")
         t2 = datetime.datetime.now()
         print("time of dumping data: ", (t2 - t1).total_seconds())
+        meta_path = f"{folder}/meta_info.json"
+        info = {"max_length": self.tokenizer.model_max_length}
+        with open(meta_path, "w") as f:
+            f.write(json.dumps(info))
+    
+    def read_max_length_from_cached(self, folder):
+        meta_path = f"{folder}/meta_info.json"
+        with open(meta_path, "r") as f:
+            info = json.loads(f.read())
+            return info["max_length"]
+    
+    
+    def is_loadable_cached(self, folder):
+        cached_max_length = self.read_max_length_from_cached(folder)
+        if cached_max_length >= self.tokenizer.model_max_length:
+            return True
+        return False
 
-    def load(self, path):
+    def load(self, folder):
         data_points = []
         t1 = datetime.datetime.now()
-        with open(path, "r") as f:
+        cached_max_length = self.read_max_length_from_cached(folder)
+        assert cached_max_length >= self.tokenizer.model_max_length
+        with open(f"{folder}/inputs.jsonl", "r") as f:
             for line in f:
                 temp = line.strip()
                 if len(temp) > 0:
                     item = json.loads(temp)
                     for key in item:
-                        item[key] = torch.tensor(item[key])
+                        item[key] = torch.tensor(item[key][: self.tokenizer.model_max_length])
                     data_points.append(item)
         t2 = datetime.datetime.now()
         print("time for loading data from cached:", (t2 - t1).total_seconds())
