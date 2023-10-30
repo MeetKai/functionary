@@ -1,23 +1,21 @@
 import json
 import math
+import os
 import pathlib
 from dataclasses import dataclass, field
 from typing import Optional
 
+os.environ["WANDB_LOG_MODEL"] = "checkpoint"
+os.environ["WANDB_CACHE_DIR"] = "/workspace/.cache/wandb"
+
 import torch
 import torch.distributed
+import transformers
 from torch.nn import CrossEntropyLoss
+from transformers import AutoTokenizer, Trainer
 
 from functionary.prompt import get_additional_tokens
 from functionary.train.custom_datasets import CustomDataset
-from functionary.train.llama_flash_attn_monkey_patch import (
-    replace_llama_attn_with_flash_attn,
-)
-
-replace_llama_attn_with_flash_attn()
-
-import transformers
-from transformers import LlamaTokenizer, Trainer
 
 
 @dataclass
@@ -27,8 +25,12 @@ class ModelArguments:
 
 @dataclass
 class DataArguments:
-    train_data_path: str = field(default=None, metadata={"help": "Path to the training data."})
-    eval_data_path: str = field(default=None, metadata={"help": "Path to the eval data."})
+    train_data_path: str = field(
+        default=None, metadata={"help": "Path to the training data."}
+    )
+    eval_data_path: str = field(
+        default=None, metadata={"help": "Path to the eval data."}
+    )
 
 
 @dataclass
@@ -37,7 +39,9 @@ class TrainingArguments(transformers.TrainingArguments):
     optim: str = field(default="adamw_torch")
     model_max_length: int = field(
         default=4096,
-        metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
+        metadata={
+            "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
+        },
     )
 
 
@@ -56,12 +60,18 @@ def initialize_tokenizer(
     cache_dir: str,
 ):
     """Initialize tokenizer and add special tokens, resizing vocab and embedding"""
+    # Mistral requires left padding due to the Sliding Window Attention mechanism
+    if isinstance(model, transformers.MistralForCausalLM):
+        padding_side = "left"
+    else:
+        padding_side = "right"
+
     # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
-    tokenizer = LlamaTokenizer.from_pretrained(
+    tokenizer = AutoTokenizer.from_pretrained(
         model_name_or_path,
         cache_dir=cache_dir,
         model_max_length=model_max_length,
-        padding_side="right",
+        padding_side=padding_side,
         legacy=True,
     )
 
@@ -76,8 +86,12 @@ def initialize_tokenizer(
         input_embeddings = model.get_input_embeddings().weight.data
         output_embeddings = model.get_output_embeddings().weight.data
 
-        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
-        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
+        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(
+            dim=0, keepdim=True
+        )
+        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(
+            dim=0, keepdim=True
+        )
 
         input_embeddings[-num_new_tokens:] = input_embeddings_avg
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
@@ -86,7 +100,9 @@ def initialize_tokenizer(
 
 
 def train():
-    argument_parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
+    argument_parser = transformers.HfArgumentParser(
+        (ModelArguments, DataArguments, TrainingArguments)
+    )
     model_args, data_args, training_args = argument_parser.parse_args_into_dataclasses()
 
     # Set RoPE scaling factor
@@ -118,6 +134,7 @@ def train():
 
     with open(data_args.train_data_path, "r") as file:
         raw_train_data = [json.loads(line) for line in file]
+    raw_train_data = raw_train_data[:8]
 
     if data_args.eval_data_path is not None:
         with open(data_args.eval_data_path, "r") as file:
@@ -158,7 +175,9 @@ def train():
         # Calculate accuracy
         acc_count = 0
         total_num = 0
-        for pred, label in zip(predictions.flatten().tolist(), labels.flatten().tolist()):
+        for pred, label in zip(
+            predictions.flatten().tolist(), labels.flatten().tolist()
+        ):
             if label != -100:
                 if label == pred:
                     acc_count += 1
@@ -195,7 +214,12 @@ def train():
         trainer.train()
 
     trainer.save_state()
-    trainer_save_model_safe(trainer=trainer)
+
+    # FSDP requires state_dict_type=FULL_STATE_DICT in order to save the model weights in .bin format
+    if trainer.is_fsdp_enabled:
+        trainer_save_model_safe(trainer=trainer)
+    else:
+        trainer.save_model()
 
 
 if __name__ == "__main__":
