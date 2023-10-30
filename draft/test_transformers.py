@@ -2,6 +2,7 @@
 from transformers import LlamaTokenizer
 from functionary.train.llama_attention_mask_monkey_patch import LlamaForCausalLM
 import torch 
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
 
 
@@ -138,8 +139,9 @@ def get_loss(test_inputs, max_length, model):
         
     print("inputs: ", inputs)
     inputs["return_dict"] = True
-    output = model.forward(**inputs)
-    loss2 = output.loss
+    with torch.no_grad():
+        output = model.forward(**inputs)
+        loss2 = output.loss
     return loss2
 
 
@@ -152,13 +154,46 @@ def get_loss_packed(test_inputs, max_length, model):
         
     print("inputs: ", inputs)
     inputs["return_dict"] = True
-    output = model.forward(**inputs)
-    loss2 = output.loss
+    with torch.no_grad():
+        output = model.forward(**inputs)
+        loss2 = output.loss
     return loss2
+
+
+def get_model(model_path):
+    model = LlamaForCausalLM.from_pretrained(model_path,
+        device_map=device,
+        use_flash_attention_2=False,
+        quantization_config=None,
+    )
+    target_modules = ['q_proj', 'o_proj', 'k_proj', 'gate_proj', 'down_proj', 'up_proj', 'v_proj']
+    # lora_r: int = 16
+    # lora_alpha: int = 64
+    # lora_dropout: float = 0.1
+    # lora_target_modules: str = "all"  # all for all linear; "q_proj v_proj"
+    # lora_weight_path: str = ""
+    # lora_bias: str = "none"
+    # q_lora: bool = False
+    lora_config = LoraConfig(
+        r=16,
+        lora_alpha=64,
+        target_modules=target_modules,
+        lora_dropout=0.1,
+        bias="none",
+        task_type="CAUSAL_LM",
+        modules_to_save=["lm_head", "embed_tokens"],  # because we retrain the embedding
+    )
+
+    model = get_peft_model(model, lora_config)
+    model.enable_input_require_grads()
+    model.config.use_cache = False
+    return model
     
 
-model = LlamaForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16, device_map=device, use_flash_attention_2=False)
-model.train()
+#model = LlamaForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16, device_map=device, use_flash_attention_2=False)
+model = get_model(model_path)
+model.eval()
+#model.train()
 # l1 = get_loss(["this is my son"], 8, model)
 # print("l1: ", l1)
 # l2 = get_loss(["this is my son"], 10, model)

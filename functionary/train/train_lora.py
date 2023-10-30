@@ -5,14 +5,12 @@ import pathlib
 import random
 import sys
 from dataclasses import dataclass, field
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 
 import torch
 import torch.distributed
 from torch.utils.data import DataLoader
 from torch.nn import CrossEntropyLoss
-
-os.environ["WANDB_LOG_MODEL"] = "all"
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 import bitsandbytes as bnb
@@ -137,6 +135,7 @@ def load_model_with_rope_scaling(
     )
     orig_ctx_len = getattr(config, "max_position_embeddings", None)
     if orig_ctx_len and training_args.model_max_length > orig_ctx_len:
+        print(f"have to use rope-scaling, original max_leng={orig_ctx_len}, scaled to: {training_args.model_max_length}", )
         scaling_factor = float(math.ceil(training_args.model_max_length / orig_ctx_len))
         config.rope_scaling = {"type": "linear", "factor": scaling_factor}
     config.use_cache = False
@@ -324,30 +323,36 @@ def initialize_tokenizer(
     return tokenizer
 
 
-def get_dataset(data_args, training_args, tokenizer, dtype):
+def read_dataset(data_args: DataArguments, training_args: TrainingArguments, tokenizer: Any, ds_type: str):
     ds_class = CustomDataset
     if data_args.packing:
         ds_class = DirectPackedDataset
-    cached_path = os.path.join(training_args.output_dir, f"{dtype}_cached")
+        
+    cached_path = os.path.join(training_args.output_dir, f"{ds_type}_cached")
     raw_train_data = None
+    
     if training_args.local_rank > 0:
         print(f"process: {LOCAL_RANK} wait for main process to prepare the training data")
         torch.distributed.barrier()
-    else:    
+    else:  # rank 0 will process data first, others will wait
         if not os.path.exists(training_args.output_dir):
             os.mkdir(training_args.output_dir)
         if not os.path.exists(cached_path):
             os.mkdir(cached_path)
-        data_path = data_args.train_data_path if dtype == "train" else data_args.eval_data_path
+            
+        data_path = data_args.train_data_path if ds_type == "train" else data_args.eval_data_path
         with open(data_path, "r") as file:
             raw_train_data = [json.loads(line) for line in file]
-        print_rank0(f"train_size: {len(raw_train_data)}")
-        # TODO set ignore_cached=True to use the cached at the first time we run
-        ds = ds_class(raw_train_data, tokenizer, cached_path=cached_path, ignore_cached=False)
+        print_rank0(f"{ds_type} size: : {len(raw_train_data)}")
+        # set ignore_cached=True to process data at rank 0
+        ds = ds_class(raw_train_data, tokenizer, cached_path=cached_path, ignore_cached=True)
         print(f"process: {LOCAL_RANK} finish processing data")
         torch.distributed.barrier()
+        
+    # All ranks will read the processed data from cached_path created by rank 0
     ds = ds_class(raw_train_data, tokenizer, cached_path=cached_path, ignore_cached=False)
-    ds.stat()
+    if LOCAL_RANK == 0:
+        ds.stat()
     return ds
 
 
@@ -373,12 +378,12 @@ def train():
     
     assert data_args.train_data_path is not None, "Please provide a training data file."
     
-    train_dataset = get_dataset(data_args, training_args, tokenizer, "train")
-    print_some_examples(train_dataset, tokenizer)
+    train_dataset = read_dataset(data_args, training_args, tokenizer, "train")
+    #print_some_examples(train_dataset, tokenizer)
     print_rank0("final train size: ", len(train_dataset))
     
     if training_args.do_eval:
-        eval_dataset = get_dataset(data_args, training_args, tokenizer, "eval")
+        eval_dataset = read_dataset(data_args, training_args, tokenizer, "eval")
         print_rank0("final eval size: ", len(eval_dataset))
     
     print_rank0("tokenizer.model_max_length: ", tokenizer.model_max_length)

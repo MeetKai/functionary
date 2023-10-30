@@ -599,7 +599,7 @@ class LlamaDecoderLayer(nn.Module):
             if not getattr(config, "_flash_attn_2_enabled", False)
             else LlamaFlashAttention2(config=config)
         )
-        print("attention type: ", type(self.self_attn))
+        #print("attention type: ", type(self.self_attn))
         self.mlp = LlamaMLP(config)
         self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
