@@ -94,6 +94,8 @@ DeepSpeed is the recommended multi-GPU option for Mistral finetuning currently b
 ```shell
 # DeepSpeed ZeRO3 with accelerate launcher
 # 2xA100 80GB, from the root directory of the repository
+export WANDB_ENTITY=NAME_OF_ENTITY
+export WANDB_PROJECT=NAME_OF_PROJECT
 accelerate launch --config_file "functionary/train/accelerate_configs/ds3_config.yaml" -m functionary.train.train \
     --model_name_or_path mistralai/Mistral-7B-v0.1 \
     --train_data_path train_dataset.jsonl \
@@ -130,6 +132,15 @@ accelerate launch --config_file "functionary/train/accelerate_configs/ds3_config
 ### Logging model to WandB
 
 As WandB is [not compatible](https://github.com/huggingface/accelerate/issues/1845) with DeepSpeed, we have provided a script that uploads the model as an artifact to a specified WandB training run. This script should be run after the training is completed.
+
+**Cache management**
+
+If you are running the training on container-based GPU instances which do not provide large enough volumes of disk space in the root directory (like RunPod), you should set the following WandB environment variables to a disk with large enough disk space. Else, you will encounter disk out of space error when trying to upload the artifacts.
+
+```shell
+export WANDB_DATA_DIR=NAME_OF_NEW_DIR
+export WANDB_CACHE_DIR=NAME_OF_NEW_DIR
+```
 
 ```shell
 # From the root directory of the repository

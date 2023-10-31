@@ -1,9 +1,6 @@
 import os
 
-os.environ["WANDB_CACHE_DIR"] = "/workspace/.cache"
-
 import typer
-
 import wandb
 
 
