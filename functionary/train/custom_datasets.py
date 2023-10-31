@@ -1,19 +1,17 @@
+import datetime
 import json
-from typing import Any, Dict, List, Optional, Tuple, Union
+import os
+import pickle
 from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 import transformers
 from torch.utils.data import Dataset
-import datetime
-import os
 
-from functionary.prompt import (
-    EndToken,
-    get_number_of_tokens_of_prefix_assistant,
-    get_prompt_from_messages,
-    get_end_token_to_token_id,
-)
+from functionary.prompt import (EndToken, get_end_token_to_token_id,
+                                get_number_of_tokens_of_prefix_assistant,
+                                get_prompt_from_messages)
 
 
 def get_batch_indices(size: int, batch_size: int) -> List[Tuple[int, int]]:
@@ -169,118 +167,27 @@ def prepare_training_inputs_batch(
     return dict(batch_prompts=prompt_str_list, batch_inputs=batch_inputs)
 
 
-class CachedDataset(Dataset):
-    def __init__(self, tokenizer: Any, cached_folder: str, ignore_cached: bool=False) -> None:
-        super().__init__()
-        self.tokenizer = tokenizer
-        self.data_points = []
-        if cached_folder is not None and os.path.exists(os.path.join(cached_folder, "inputs.jsonl")) and not ignore_cached:
-            print(f"cached found, load from cached: {cached_folder}")
-            self.load(cached_folder)
-    
-    def __len__(self):
-        return len(self.data_points)
-
-    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
-        return self.data_points[i]
-    
-    def post_process_loaded_item(self, item: Dict) -> Dict:
-        return item
-    
-    def post_process_before_dump(self, item: Dict) -> Dict:
-        return item
-    
-    def create_meta_info(self):
-        return {"max_length": self.tokenizer.model_max_length, "size": len(self.data_points)}
-    
-    def load(self, folder: str):
-        count = 0
-        with open(os.path.join(folder, "inputs.jsonl"), "r") as f:
-            for line in f:
-                if line:
-                    item = json.loads(line)
-                    item = self.post_process_loaded_item(item)
-                    self.data_points.append(item)
-                    count += 1
-        print(f"load: {count} from cached: {folder}")
-    
-    def dump(self, folder: str):
-        if not os.path.exists(folder):
-            os.mkdir(folder)
-        print(f"dump: {len(self.data_points)} datapoints to: {folder}")
-        with open(os.path.join(folder, "inputs.jsonl"), "w") as f:
-            for item in self.data_points:
-                n_item = self.post_process_before_dump(item)
-                f.write(json.dumps(n_item) + "\n")
-                
-        with open(os.path.join(folder, "meta_info.jsonl"), "w") as f:
-            f.write(json.dumps(self.create_meta_info()))          
-    
-    def stat(self):
-        print(json.dumps(self.create_meta_info()))
-    
-
-class CustomDataset(CachedDataset):
-    """Dataset for supervised fine-tuning."""
-
-    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer, cached_folder: Optional[str] = None, ignore_cached: bool = False, batch_size: int = 5000):
-        super(self).__init__(tokenizer, cached_folder, ignore_cached)
-        
-        if len(self.data_points) == 0: # if loaded from cached
-            self.processed_data = []
-            data_size = len(raw_data)
-            t1 = datetime.datetime.now()
-            invalid_count = 0
-            for start, end in get_batch_indices(data_size, batch_size):
-                batch_result = prepare_training_inputs_batch(raw_data[start: end], tokenizer, return_tensor=True)
-                assert len(batch_result["batch_inputs"]) == len(raw_data[start: end])
-                for item in batch_result["batch_inputs"]:
-                    if is_valid_labels(item["labels"]):
-                        self.processed_data.append(item)
-                    else: 
-                        invalid_count += 1
-                t2 = datetime.datetime.now()
-                avg_time = (t2 - t1).total_seconds() / len(self.processed_data)
-                remaining_time = avg_time * (data_size - len(self.processed_data))
-                print(f"{len(self.processed_data)}/{data_size}, avg_time per 1000 data points: {avg_time * 1000}, remaining time: {remaining_time}")
-            assert len(self.processed_data) == data_size - invalid_count
-            print("number of invalid data points where labels=-100 all the times: ", invalid_count)
-            if cached_path is not None:
-                self.dump(cached_path)
-
-    def __len__(self):
-        return len(self.processed_data)
-
-    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
-        return self.processed_data[i]
-    
-    def load(self, folder: str):
-        self.processed_data = []
-        with open(os.path.join(folder, "inputs.jsonl"), "r") as f:
-            for line in f:
-                if line:
-                    item = json.loads(line)
-                    for key in item:
-                        item[key] = torch.tensor(item[key])
-                    self.processed_data.append(item)
-        print(f"load: {len(self.processed_data)} from cached: {folder}")
-    
-    def dump(self, folder: str):
-        if not os.path.exists(folder):
-            os.mkdir(folder)
-        print(f"dump: {len(self.processed_data)} datapoints to: {folder}")
-        with open(os.path.join(folder, "inputs.jsonl"), "w") as f:
-            for item in self.processed_data:
-                n_item = {}
-                for key in item:
-                    n_item[key] = item[key].tolist()
-                f.write(json.dumps(n_item) + "\n")
-        meta = {"max_length": self.tokenizer.model_max_length}
-        with open(os.path.join(folder, "meta_info.jsonl"), "w") as f:
-            f.write(json.dumps(meta))          
-    
-    def stat(self):
-        print("number of data points: ", len(self.processed_data))
+def map_raw_data_to_input_dic(raw_data: List[Dict], tokenizer: Any, padding: str, batch_size: int = 5000) -> List[Dict]:
+    invalid_count = 0
+    data_size = len(raw_data)
+    data_points = []
+    t1 = datetime.datetime.now()
+    for start, end in get_batch_indices(data_size, batch_size):
+        batch_result = prepare_training_inputs_batch(raw_data[start: end], tokenizer, padding=padding, return_tensor=False)
+        assert len(batch_result["batch_inputs"]) == len(raw_data[start: end])
+        for item in batch_result["batch_inputs"]:
+            if is_valid_labels(item["labels"]):
+                data_points.append(item)
+            else: 
+                invalid_count += 1
+        t2 = datetime.datetime.now()
+        avg_time = (t2 - t1).total_seconds() / len(data_points)
+        remaining_time = avg_time * (data_size - len(data_points))
+        print(f"{len(data_points)}/{data_size}, avg_time per 1000 data points: {avg_time * 1000}, remaining time: {remaining_time}")
+    if invalid_count > 0:
+        print(f"*****WARNING: invalid data points: {invalid_count} because of labels=-100 all the time")
+    assert len(data_points) == data_size - invalid_count
+    return data_points
 
 
 def merge_data_points_by_length(lengths: List[int], max_length: int) -> List[List[int]]:
@@ -372,7 +279,7 @@ def merge_data_points(data_points: List[Dict], tokenizer: Any) -> Dict:
     return {
         "input_ids": torch.tensor(input_ids), 
         "labels": torch.tensor(label_ids), 
-        "attention_mask": torch.unsqueeze(attention_mask, 0)  # This is because the shape is: B x 1 x N x N
+        "attention_mask": torch.unsqueeze(attention_mask, 0)  # unsqueeze <-- because the shape is: B x 1 x N x N
     }
 
 
@@ -398,7 +305,7 @@ def is_valid_labels(labels: Union[List[int], torch.Tensor]) -> bool:
         return True
 
 
-def remove_invalid_label_items(data_points: List[Dict]):
+def remove_invalid_label_items(data_points: List[Dict]) -> List[Dict]:
     """Remove data points where labels are all -100
 
     Args:
@@ -412,29 +319,96 @@ def remove_invalid_label_items(data_points: List[Dict]):
         if is_valid_labels(dp["labels"]):
             result.append(dp)
     return result
-    
 
-class PackedDataset(Dataset):
-    def __init__(self, tokenizer: Any, cached_path: Optional[str]=None, ignore_cached: bool = False) -> None:
+
+class CachedDataset(Dataset):
+    def __init__(self, tokenizer: Any, cached_folder: str, ignore_cached: bool=False) -> None:
         super().__init__()
         self.tokenizer = tokenizer
         self.data_points = []
-        if cached_path is not None and os.path.exists(os.path.join(cached_path, "inputs.jsonl")) and not ignore_cached:
-            print(f"cached found, load from cached: {cached_path}")
-            if self.is_loadable_cached(cached_path):
-                self.load(cached_path)
+        self.load_from_cache = False
+        if cached_folder is not None and not ignore_cached:
+            data_path = self.get_data_point_path(cached_folder)
+            if os.path.exists(data_path):
+                print(f"cached found, load from cached: {cached_folder}")
+                self.load(cached_folder)
+                self.load_from_cache = True
     
-    def pack_data_points(self, data_points: List[Dict]):
-        # remove data points where labels = -100 all the times
-        valid_data_points = remove_invalid_label_items(data_points) 
-        invalid_count = len(data_points) - len(valid_data_points)
-        if invalid_count > 0:
-            print(f"Remove {invalid_count} data points with invalid labels")
-        self.lengths = [len(item["input_ids"]) for item in valid_data_points]
-        self.groups = merge_data_points_by_length(self.lengths, self.tokenizer.model_max_length)
-        print(f"pack: {len(data_points)} data points into: {len(self.groups)} data points")
-        self.data_points = valid_data_points
+    def __len__(self):
+        return len(self.data_points)
+
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        return self.data_points[i]
+    
+    def create_meta_info(self):
+        return {"max_length": self.tokenizer.model_max_length, "size": len(self.data_points)}
+    
+    def load(self, folder: str):
+        t1 = datetime.datetime.now()
+        with open(self.get_data_point_path(folder), 'rb') as file:
+            self.data_points = pickle.load(file)
+        t2 = datetime.datetime.now()
+        print("time for loading cached data: ", (t2 - t1).total_seconds())
+    
+    def get_data_point_path(self, folder: str) -> str:
+        return os.path.join(folder, "data_points.pkl")
+
+    def get_metainfo_path(self, folder: str) -> str:
+        return os.path.join(folder, "meta_info.json")
+    
+    def dump(self, folder: str):
+        t1 = datetime.datetime.now()
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+            
+        with open(self.get_data_point_path(folder), 'wb') as file:
+            pickle.dump(self.data_points, file)
         
+        with open(self.get_metainfo_path(folder), "w") as f:
+            f.write(json.dumps(self.create_meta_info()))        
+        t2 = datetime.datetime.now()  
+        print("time for dumping data: ", (t2 - t1).total_seconds())
+    
+    def stat(self):
+        print(json.dumps(self.create_meta_info()))
+        
+
+class CustomDataset(CachedDataset):
+    """Dataset for supervised fine-tuning."""
+
+    def __init__(self, raw_data: List[Dict], tokenizer: transformers.PreTrainedTokenizer, cached_folder: Optional[str] = None, ignore_cached: bool = False, batch_size: int = 5000):
+        super().__init__(tokenizer, cached_folder, ignore_cached)
+        
+        if not self.load_from_cache: # if not loaded from cached
+            self.data_points = map_raw_data_to_input_dic(raw_data, tokenizer, padding="max_length", batch_size=batch_size)
+            if cached_folder is not None:
+                print(f"dump data to cached: {cached_folder}")
+                self.dump(cached_folder)
+
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        dp = self.data_points[i]
+        result = {}
+        for key in dp:
+            result[key] = torch.tensor(dp[key])
+        return result
+    
+
+class PackedDataset(CachedDataset):
+    def __init__(self, raw_data: List[Dict], tokenizer: transformers.PreTrainedTokenizer, cached_folder: Optional[str] = None, ignore_cached: bool = False, batch_size: int = 5000):
+        super().__init__(tokenizer, cached_folder, ignore_cached)
+        if not self.load_from_cache:
+            self.data_points = map_raw_data_to_input_dic(raw_data, tokenizer, padding="do_not_pad", batch_size=batch_size)
+            self.update_packing_info()
+            if cached_folder is not None: 
+                print(f"dump data to cached: {cached_folder}")
+                self.dump(cached_folder)
+        else:  # update packing
+            self.update_packing_info()
+    
+    def update_packing_info(self):
+        self.lengths = [len(item["input_ids"]) for item in self.data_points]
+        self.groups = merge_data_points_by_length(self.lengths, self.tokenizer.model_max_length)
+
     def __len__(self):
         return len(self.groups)
 
@@ -443,51 +417,8 @@ class PackedDataset(Dataset):
         group_data_points = [self.data_points[index] for index in group]
         return merge_data_points(group_data_points, self.tokenizer)
 
-    def dump(self, folder):
-        if not os.path.exists(folder):
-            os.mkdir(folder)
-        t1 = datetime.datetime.now()
-        with open(f"{folder}/inputs.jsonl", "w") as f:
-            for item in self.data_points:
-                f.write(json.dumps(item) + "\n")
-        t2 = datetime.datetime.now()
-        print("time of dumping data: ", (t2 - t1).total_seconds())
-        meta_path = f"{folder}/meta_info.json"
-        info = {"max_length": self.tokenizer.model_max_length}
-        with open(meta_path, "w") as f:
-            f.write(json.dumps(info))
-    
-    def read_max_length_from_cached(self, folder):
-        meta_path = f"{folder}/meta_info.json"
-        with open(meta_path, "r") as f:
-            info = json.loads(f.read())
-            return info["max_length"]
-    
-    def is_loadable_cached(self, folder):
-        cached_max_length = self.read_max_length_from_cached(folder)
-        if cached_max_length >= self.tokenizer.model_max_length:
-            return True
-        return False
-
-    def load(self, folder):
-        data_points = []
-        t1 = datetime.datetime.now()
-        cached_max_length = self.read_max_length_from_cached(folder)
-        assert cached_max_length >= self.tokenizer.model_max_length
-        with open(f"{folder}/inputs.jsonl", "r") as f:
-            for line in f:
-                temp = line.strip()
-                if len(temp) > 0:
-                    item = json.loads(temp)
-                    for key in item:
-                        item[key] = torch.tensor(item[key][: self.tokenizer.model_max_length])
-                    data_points.append(item)
-        t2 = datetime.datetime.now()
-        print("time for loading data from cached:", (t2 - t1).total_seconds())
-        self.pack_data_points(data_points)
-    
     def stat(self):
-        print(f"number of original data points:{len(self.data_points)}; packed to: {len(self.groups)}")
+        print(f"number of original data points:{len(self.data_points)}; packed to: {len(self.groups)} data points")
         original_avg_length = sum(self.lengths) / len(self.lengths)
         packed_lengths = []
         for group in self.groups:
@@ -495,28 +426,3 @@ class PackedDataset(Dataset):
             packed_lengths.append(sum(lengths))
         avg_packed_length = sum(packed_lengths) / len(packed_lengths)
         print(f"original avg length: {original_avg_length}; avg packed length: {avg_packed_length}")
-        
-        
-class DirectPackedDataset(PackedDataset):
-    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer, cached_path: Optional[str] = None, ignore_cached: bool = False, batch_size: int = 5000):
-        super().__init__(tokenizer, cached_path, ignore_cached)
-        if len(self.data_points) == 0:
-            original_datapoints = []
-            data_size = len(raw_data)
-            t1 = datetime.datetime.now()
-            for start, end in get_batch_indices(data_size, batch_size):
-                batch_result = prepare_training_inputs_batch(raw_data[start: end], tokenizer, padding="do_not_pad", return_tensor=False)
-                assert len(batch_result["batch_inputs"]) == len(raw_data[start: end])
-                for item in batch_result["batch_inputs"]:
-                    original_datapoints.append(item)
-                t2 = datetime.datetime.now()
-                avg_time = (t2 - t1).total_seconds() / len(original_datapoints)
-                remaining_time = avg_time * (data_size - len(original_datapoints))
-                print(f"{len(original_datapoints)}/{data_size}, avg_time per 1000 data points: {avg_time * 1000}, remaining time: {remaining_time}")
-            assert len(original_datapoints) == data_size
-            self.pack_data_points(original_datapoints)
-            if cached_path is not None: 
-                if not os.path.exists(cached_path):
-                    print(f"dump data to cached: {cached_path}")
-                    self.dump(cached_path)
-

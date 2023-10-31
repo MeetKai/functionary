@@ -5,12 +5,12 @@ import pathlib
 import random
 import sys
 from dataclasses import dataclass, field
-from typing import Dict, Optional, List, Any
+from typing import Any, Dict, List, Optional
 
 import torch
 import torch.distributed
-from torch.utils.data import DataLoader
 from torch.nn import CrossEntropyLoss
+from torch.utils.data import DataLoader
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 import bitsandbytes as bnb
@@ -18,17 +18,13 @@ import transformers
 from deepspeed import zero
 from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from transformers import (
-    BitsAndBytesConfig,
-    LlamaTokenizer,
-    LlamaTokenizerFast,
-    Trainer,
-    deepspeed,
-)
+from transformers import (BitsAndBytesConfig, LlamaTokenizer,
+                          LlamaTokenizerFast, Trainer, deepspeed)
 
 from functionary.prompt import get_additional_tokens
-from functionary.train.custom_datasets import CustomDataset, DirectPackedDataset
-from functionary.train.llama_attention_mask_monkey_patch import LlamaForCausalLM
+from functionary.train.custom_datasets import CustomDataset, PackedDataset
+from functionary.train.llama_attention_mask_monkey_patch import \
+    LlamaForCausalLM
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
@@ -46,7 +42,9 @@ class ModelArguments:
 @dataclass
 class DataArguments:
     train_data_path: str = field(default=None, metadata={"help": "Path to the training data."})
+    training_ratio: float = field(default=1.0, metadata={"help": "percentage of data used for training"})
     eval_data_path: str = field(default=None, metadata={"help": "Path to the eval data."})
+    eval_ratio: float = field(default=1.0, metadata={"help": "percentage of data used for evluation"})
     packing: bool = field(default=False, metadata={"help": "Whether use packing or not"})
     max_packing_length: int = field(default=4096, metadata={"help": "maximum sequence length we can pack"})
 
@@ -141,11 +139,17 @@ def load_model_with_rope_scaling(
     config.use_cache = False
 
     compute_dtype = torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32)
+    
     use_flash_attention_2 = True
     if data_args.packing:
         print_rank0("do not use flash attention because of using packing")
         use_flash_attention_2 = False # currently packing is only possible when use_flash_attention_2=False
-    model = LlamaForCausalLM.from_pretrained(
+    if data_args.packing: # have to monkey-patch
+        model_class = LlamaForCausalLM
+    else:
+        model_class = transformers.AutoModelForCausalLM
+        
+    model = model_class.from_pretrained(
         model_args.model_name_or_path,
         config=config,
         cache_dir=training_args.cache_dir,
@@ -326,10 +330,9 @@ def initialize_tokenizer(
 def read_dataset(data_args: DataArguments, training_args: TrainingArguments, tokenizer: Any, ds_type: str):
     ds_class = CustomDataset
     if data_args.packing:
-        ds_class = DirectPackedDataset
+        ds_class = PackedDataset
         
-    cached_path = os.path.join(training_args.output_dir, f"{ds_type}_cached")
-    raw_train_data = None
+    cached_folder = os.path.join(training_args.output_dir, f"{ds_type}_cached")
     
     if training_args.local_rank > 0:
         print(f"process: {LOCAL_RANK} wait for main process to prepare the training data")
@@ -337,20 +340,23 @@ def read_dataset(data_args: DataArguments, training_args: TrainingArguments, tok
     else:  # rank 0 will process data first, others will wait
         if not os.path.exists(training_args.output_dir):
             os.mkdir(training_args.output_dir)
-        if not os.path.exists(cached_path):
-            os.mkdir(cached_path)
+        if not os.path.exists(cached_folder):
+            os.mkdir(cached_folder)
             
         data_path = data_args.train_data_path if ds_type == "train" else data_args.eval_data_path
+        data_ratio = data_args.training_ratio if ds_type == "train" else data_args.eval_ratio
         with open(data_path, "r") as file:
             raw_train_data = [json.loads(line) for line in file]
-        print_rank0(f"{ds_type} size: : {len(raw_train_data)}")
+            if data_ratio < 1:
+                raw_train_data = raw_train_data[: int(data_ratio * len(raw_train_data))]
+        print(f"{ds_type} size: : {len(raw_train_data)}")
         # set ignore_cached=True to process data at rank 0
-        ds = ds_class(raw_train_data, tokenizer, cached_path=cached_path, ignore_cached=True)
+        ds = ds_class(raw_train_data, tokenizer, cached_folder=cached_folder, ignore_cached=True)
         print(f"process: {LOCAL_RANK} finish processing data")
         torch.distributed.barrier()
         
     # All ranks will read the processed data from cached_path created by rank 0
-    ds = ds_class(raw_train_data, tokenizer, cached_path=cached_path, ignore_cached=False)
+    ds = ds_class(None, tokenizer, cached_folder=cached_folder, ignore_cached=False)
     if LOCAL_RANK == 0:
         ds.stat()
     return ds
