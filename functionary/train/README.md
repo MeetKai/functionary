@@ -22,14 +22,14 @@ We have produced full-parameter finetuning scripts compatible with FSDP and DDP 
 # 2xA100 80GB, from the root directory of the repository
 export WANDB_ENTITY=NAME_OF_ENTITY
 export WANDB_PROJECT=NAME_OF_PROJECT
-accelerate launch --config_file "functionary/train/fsdp_config.yaml" -m functionary.train.train \
+accelerate launch --config_file "functionary/train/accelerate_configs/fsdp_config.yaml" -m functionary.train.train \
     --model_name_or_path meta-llama/Llama-2-7b-hf \
     --train_data_path train_dataset.jsonl \
     --eval_data_path eval_dataset.jsonl \
     --bf16 True \
     --num_train_epochs 2 \
-    --per_device_train_batch_size 4 \
-    --gradient_accumulation_steps 32 \
+    --per_device_train_batch_size 2 \
+    --gradient_accumulation_steps 64 \
     --per_device_eval_batch_size 4 \
     --eval_accumulation_steps 16 \
     --evaluation_strategy "steps" \
@@ -53,13 +53,13 @@ accelerate launch --config_file "functionary/train/fsdp_config.yaml" -m function
 export WANDB_ENTITY=NAME_OF_ENTITY
 export WANDB_PROJECT=NAME_OF_PROJECT
 torchrun --nproc_per_node=2 --master_port=20001 -m functionary.train.train \
-    --model_name_or_path meta-llama/Llama-2-7b-hf  \
-    --train_data_path llama_train_dataset.jsonl \
-    --eval_data_path llama_eval_dataset.jsonl \
+    --model_name_or_path meta-llama/Llama-2-7b-hf \
+    --train_data_path train_dataset.jsonl \
+    --eval_data_path eval_dataset.jsonl \
     --bf16 True \
     --num_train_epochs 2 \
-    --per_device_train_batch_size 4 \
-    --gradient_accumulation_steps 32 \
+    --per_device_train_batch_size 2 \
+    --gradient_accumulation_steps 64 \
     --per_device_eval_batch_size 4 \
     --eval_accumulation_steps 16 \
     --evaluation_strategy "steps" \
@@ -94,14 +94,14 @@ DeepSpeed is the recommended multi-GPU option for Mistral finetuning currently b
 ```shell
 # DeepSpeed ZeRO3 with accelerate launcher
 # 2xA100 80GB, from the root directory of the repository
-accelerate launch --config_file "functionary/train/ds3_config.yaml" -m functionary.train.train \
+accelerate launch --config_file "functionary/train/accelerate_configs/ds3_config.yaml" -m functionary.train.train \
     --model_name_or_path mistralai/Mistral-7B-v0.1 \
     --train_data_path train_dataset.jsonl \
     --eval_data_path eval_dataset.jsonl \
     --bf16 True \
     --num_train_epochs 2 \
-    --per_device_train_batch_size 4 \
-    --gradient_accumulation_steps 32 \
+    --per_device_train_batch_size 2 \
+    --gradient_accumulation_steps 64 \
     --per_device_eval_batch_size 4 \
     --eval_accumulation_steps 16 \
     --evaluation_strategy "steps" \

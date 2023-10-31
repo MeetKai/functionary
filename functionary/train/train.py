@@ -130,7 +130,6 @@ def train():
 
     with open(data_args.train_data_path, "r") as file:
         raw_train_data = [json.loads(line) for line in file]
-    raw_train_data = raw_train_data[:4]
 
     if data_args.eval_data_path is not None:
         with open(data_args.eval_data_path, "r") as file:
