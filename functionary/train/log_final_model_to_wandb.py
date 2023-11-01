@@ -11,7 +11,7 @@ def main(entity: str, project: str, run_id: str, model_dir: str):
     run = wandb.init(id=run_id, project=project, entity=entity, resume="allow")
 
     # Create a new artifact object to upload the model to
-    artifact = wandb.Artifact(name="final_model", type="model")
+    artifact = wandb.Artifact(name=f"model_{run_id}", type="model")
 
     # Add the model to the artifact's contents
     for filename in os.listdir(model_dir):
