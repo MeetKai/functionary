@@ -133,7 +133,6 @@ def get_prompt_from_messages(messages: List[Dict], functions: Optional[List[Dict
     if functions is None:
         functions = []
 
-    #if len(messages_clone) > 0 and messages_clone[0]["role"] != "system":
     messages_clone.insert(0, {"role": "system", "content": generate_schema_from_functions(functions)})
     messages_clone.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
 

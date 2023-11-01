@@ -15,19 +15,19 @@ def create_data_points():
                 {"role": "user", "content": "hi, how are you"},
                 {"role": "assistant", "content": "I am fine, thank you and you?"},
                 {"role": "user", "content": "Oh I am good, where do you live now"},
-                {"role": "assistant", "content": "I live in Hanoi"}
+                {"role": "assistant", "content": "I live in Hanoi"},
             ],
-            "functions": []
+            "functions": [],
         },
         {
             "messages": [
                 {"role": "user", "content": "this is a test"},
                 {"role": "assistant", "content": "Oh I know that"},
                 {"role": "user", "content": "you are smart"},
-                {"role": "assistant", "content": "yes I am "}
+                {"role": "assistant", "content": "yes I am "},
             ],
-            "functions": []
-        }
+            "functions": [],
+        },
     ]
 
 
@@ -57,24 +57,25 @@ def main(pretrained_path: str, device: str = typer.Option("cuda:0")):
     tokenizer.pad_token = tokenizer.unk_token
     special_tokens = {"additional_special_tokens": get_additional_tokens()}
     tokenizer.add_special_tokens(special_tokens)
-    
-    model = LlamaForCausalLM.from_pretrained(pretrained_path, torch_dtype=torch.bfloat16, device_map=device, use_flash_attention_2=False)
+
+    model = LlamaForCausalLM.from_pretrained(
+        pretrained_path, torch_dtype=torch.bfloat16, device_map=device, use_flash_attention_2=False
+    )
     model.resize_token_embeddings(len(tokenizer))
-    
-    
+
     dt_points = create_data_points()
     normal_ds = custom_datasets.CustomDataset(dt_points, tokenizer)
     packed_ds = custom_datasets.DirectPackedDataset(dt_points, tokenizer)
     assert len(packed_ds) == 1
     assert len(normal_ds) == 2
-    
+
     model.eval()
     normal_loss = compute_loss_from_ds(normal_ds, model, device)
     mk_loss = compute_loss_from_ds(packed_ds, model, device)
     diff = math.fabs(normal_loss - mk_loss)
     diff_percent = diff * 100 / max(normal_loss, mk_loss)
     print(f"normal_loss: {normal_loss}, mk_loss={mk_loss}, diff_percent={diff_percent}")
-    
+
 
 if __name__ == "__main__":
     typer.run(main)

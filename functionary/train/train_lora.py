@@ -18,13 +18,11 @@ import transformers
 from deepspeed import zero
 from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from transformers import (BitsAndBytesConfig, LlamaTokenizer,
-                          LlamaTokenizerFast, Trainer, deepspeed)
+from transformers import BitsAndBytesConfig, LlamaTokenizer, LlamaTokenizerFast, Trainer, deepspeed
 
 from functionary.prompt import get_additional_tokens
 from functionary.train.custom_datasets import CustomDataset, PackedDataset
-from functionary.train.llama_attention_mask_monkey_patch import \
-    LlamaForCausalLM
+from functionary.train.llama_attention_mask_monkey_patch import LlamaForCausalLM
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
@@ -46,7 +44,6 @@ class DataArguments:
     eval_data_path: str = field(default=None, metadata={"help": "Path to the eval data."})
     eval_ratio: float = field(default=1.0, metadata={"help": "percentage of data used for evluation"})
     packing: bool = field(default=False, metadata={"help": "Whether use packing or not"})
-    max_packing_length: int = field(default=4096, metadata={"help": "maximum sequence length we can pack"})
 
 
 @dataclass
@@ -133,22 +130,24 @@ def load_model_with_rope_scaling(
     )
     orig_ctx_len = getattr(config, "max_position_embeddings", None)
     if orig_ctx_len and training_args.model_max_length > orig_ctx_len:
-        print(f"have to use rope-scaling, original max_leng={orig_ctx_len}, scaled to: {training_args.model_max_length}", )
+        print(
+            f"have to use rope-scaling, original max_leng={orig_ctx_len}, scaled to: {training_args.model_max_length}",
+        )
         scaling_factor = float(math.ceil(training_args.model_max_length / orig_ctx_len))
         config.rope_scaling = {"type": "linear", "factor": scaling_factor}
     config.use_cache = False
 
     compute_dtype = torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32)
-    
+
     use_flash_attention_2 = True
     if data_args.packing:
         print_rank0("do not use flash attention because of using packing")
-        use_flash_attention_2 = False # currently packing is only possible when use_flash_attention_2=False
-    if data_args.packing: # have to monkey-patch
+        use_flash_attention_2 = False  # currently packing is only possible when use_flash_attention_2=False
+    if data_args.packing:  # have to monkey-patch
         model_class = LlamaForCausalLM
     else:
         model_class = transformers.AutoModelForCausalLM
-        
+
     model = model_class.from_pretrained(
         model_args.model_name_or_path,
         config=config,
@@ -330,35 +329,39 @@ def initialize_tokenizer(
 def read_dataset(data_args: DataArguments, training_args: TrainingArguments, tokenizer: Any, ds_type: str):
     ds_class = CustomDataset
     if data_args.packing:
-        ds_class = PackedDataset
-        
+        ds_class = PackedDataset  # if packing --> Use PackedDataset
+
+    # The way we read dataset is:
+    # Rank 0 will process the dataset and save the result to cached_folder, other ranks will read from the cached_folder
     cached_folder = os.path.join(training_args.output_dir, f"{ds_type}_cached")
-    
-    if training_args.local_rank > 0:
+
+    if training_args.local_rank > 0:  # If this is not rank 0, stay here, wait for rank 0 to process the data
         print(f"process: {LOCAL_RANK} wait for main process to prepare the training data")
         torch.distributed.barrier()
-    else:  # rank 0 will process data first, others will wait
+    else:  # rank 0 process the data and save to cached_folder
         if not os.path.exists(training_args.output_dir):
             os.mkdir(training_args.output_dir)
         if not os.path.exists(cached_folder):
             os.mkdir(cached_folder)
-            
+
         data_path = data_args.train_data_path if ds_type == "train" else data_args.eval_data_path
         data_ratio = data_args.training_ratio if ds_type == "train" else data_args.eval_ratio
+
         with open(data_path, "r") as file:
             raw_train_data = [json.loads(line) for line in file]
             if data_ratio < 1:
                 raw_train_data = raw_train_data[: int(data_ratio * len(raw_train_data))]
+
         print(f"{ds_type} size: : {len(raw_train_data)}")
-        # set ignore_cached=True to process data at rank 0
+        # ignore_cached=True to ignore the cached if exist, rank 0 will always process the data
         ds = ds_class(raw_train_data, tokenizer, cached_folder=cached_folder, ignore_cached=True)
         print(f"process: {LOCAL_RANK} finish processing data")
-        torch.distributed.barrier()
-        
+        torch.distributed.barrier()  # allow other ranks to execute
+
     # All ranks will read the processed data from cached_path created by rank 0
     ds = ds_class(None, tokenizer, cached_folder=cached_folder, ignore_cached=False)
     if LOCAL_RANK == 0:
-        ds.stat()
+        ds.stat()  #  print some statistics about the dataset
     return ds
 
 
@@ -381,21 +384,21 @@ def train():
         training_args.model_max_length,
         training_args.cache_dir,
     )
-    
+
     assert data_args.train_data_path is not None, "Please provide a training data file."
-    
+
     train_dataset = read_dataset(data_args, training_args, tokenizer, "train")
-    #print_some_examples(train_dataset, tokenizer)
+    # print_some_examples(train_dataset, tokenizer)
     print_rank0("final train size: ", len(train_dataset))
-    
+
     if training_args.do_eval:
         eval_dataset = read_dataset(data_args, training_args, tokenizer, "eval")
         print_rank0("final eval size: ", len(eval_dataset))
-    
+
     print_rank0("tokenizer.model_max_length: ", tokenizer.model_max_length)
 
     model = prepare_model_for_training(model, training_args, lora_args)
-    
+
     def preprocess_logits_for_metrics(logits, labels):
         """Preprocesses the logits during evaluation by computing the greedy token predictions for
         accuracy calculation and loss values for perplexity calculation. Both pred_ids and loss are
