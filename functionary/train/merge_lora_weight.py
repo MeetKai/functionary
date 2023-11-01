@@ -11,12 +11,13 @@ import transformers
 import math 
 
 
-def merge_weight(save_folder: str, pretrained_path: str, checkpoint: str, model_max_length: int = 4096):
+def merge_weight(save_folder: str, pretrained_path: str, checkpoint: str, model_max_length: int):
     print("save to: ", save_folder)
     print("pretrained: ", pretrained_path)
     print("checkpoint: ", checkpoint)
-    tokenizer = LlamaTokenizer.from_pretrained(pretrained_path, legacy=True)
+    tokenizer = LlamaTokenizer.from_pretrained(pretrained_path, legacy=True, model_max_length=model_max_length)
     tokenizer.pad_token = tokenizer.eos_token
+    
     special_tokens = {"additional_special_tokens": get_additional_tokens()}
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
     print("number of new tokens: ", num_new_tokens)

@@ -194,10 +194,12 @@ deepspeed functionary/train/train_lora.py \
     --model_max_length 4096 \
     --gradient_checkpointing True \
     --report_to wandb \
+    --packing \
     --deepspeed ds_config/zero2.json
 ```
 
 Using **--q_lora True** to use q_lora instead of *lora*
+Using **--packing** to speed up training by packing short data points, currently only works for Llama.
 
 ### Merging Lora weights
 After finish training, you can merge the Lora weights with the pretrained weights by the following commmand:
