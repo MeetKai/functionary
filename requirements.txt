@@ -8,3 +8,6 @@ scipy~=1.11.1
 jsonref~=1.1.0
 requests~=2.31.0
 PyYAML~=6.0.1
+typer==0.9.0
+protobuf==3.20.0
+tokenizers==0.14.1

@@ -1,0 +1,10 @@
+bitsandbytes==0.41.1
+peft==0.5.0
+datasets==2.8.0
+transformers==4.34.0
+scipy==1.11.3
+deepspeed==0.11.1
+typer==0.9.0
+flash-attn==2.3.2
+jsonref==1.1.0
+wandb==0.15.12
