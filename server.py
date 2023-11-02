@@ -7,14 +7,35 @@ import torch
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, StreamingResponse
-from transformers import LlamaForCausalLM, LlamaTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from functionary.inference import generate_message
 from functionary.inference_stream import generate_stream
-from functionary.openai_types import (ChatCompletion, ChatCompletionChunk,
-                                      ChatInput, Choice, StreamChoice)
+from functionary.openai_types import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatInput,
+    Choice,
+    ModelCard,
+    ModelList,
+    ModelPermission,
+    StreamChoice,
+)
 
 app = FastAPI(title="Functionary API")
+
+
+@app.get("/v1/models")
+async def show_available_models():
+    """Show available models. Right now we only have one model."""
+    model_cards = [
+        ModelCard(
+            id="/workspace/functionary-v1-ds3/",
+            root="workspace/functionary-v1-ds3/",
+            permission=[ModelPermission()],
+        )
+    ]
+    return ModelList(data=model_cards)
 
 
 @app.post("/v1/chat/completions")
@@ -29,10 +50,13 @@ async def chat_endpoint(chat_input: ChatInput):
             tokenizer=tokenizer,
             device=model.device,
         )
-        finish_reason = "stop" 
+        finish_reason = "stop"
         if response_message.function_call is not None:
             finish_reason = "function_call"  # need to add this to follow the format of openAI function calling
-        result = ChatCompletion(id=request_id, choices=[Choice.from_message(response_message, finish_reason)])
+        result = ChatCompletion(
+            id=request_id,
+            choices=[Choice.from_message(response_message, finish_reason)],
+        )
         return result.dict(exclude_none=True)
     else:
         response_generator = generate_stream(
@@ -42,6 +66,7 @@ async def chat_endpoint(chat_input: ChatInput):
             model=model,  # type: ignore
             tokenizer=tokenizer,
         )
+
         def get_response_stream():
             for response in response_generator:
                 chunk = StreamChoice(**response)
@@ -70,13 +95,13 @@ if __name__ == "__main__":
     )
     parser.add_argument("--load_in_8bit", type=bool, default=False)
     args = parser.parse_args()
-    model = LlamaForCausalLM.from_pretrained(
+    model = AutoModelForCausalLM.from_pretrained(
         args.model,
         low_cpu_mem_usage=True,
         device_map=args.device,
         torch_dtype=torch.bfloat16 if args.device == "cpu" else torch.float16,
         load_in_8bit=args.load_in_8bit,
     )
-    tokenizer = LlamaTokenizer.from_pretrained(args.model, use_fast=False)
+    tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=80)
