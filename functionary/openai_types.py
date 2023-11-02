@@ -5,36 +5,6 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
-class ModelPermission(BaseModel):
-    id: str = Field(default_factory=lambda: f"modelperm-{str(uuid.uuid4())}")
-    object: str = "model_permission"
-    created: int = Field(default_factory=lambda: int(time.time()))
-    allow_create_engine: bool = False
-    allow_sampling: bool = True
-    allow_logprobs: bool = True
-    allow_search_indices: bool = False
-    allow_view: bool = True
-    allow_fine_tuning: bool = False
-    organization: str = "*"
-    group: Optional[str] = None
-    is_blocking: str = False
-
-
-class ModelCard(BaseModel):
-    id: str
-    object: str = "model"
-    created: int = Field(default_factory=lambda: int(time.time()))
-    owned_by: str = "vllm"
-    root: Optional[str] = None
-    parent: Optional[str] = None
-    permission: List[ModelPermission] = Field(default_factory=list)
-
-
-class ModelList(BaseModel):
-    object: str = "list"
-    data: List[ModelCard] = Field(default_factory=list)
-
-
 class FunctionCall(BaseModel):
     name: Optional[str] = None
     arguments: str

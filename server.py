@@ -8,6 +8,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, StreamingResponse
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from vllm.entrypoints.openai.protocol import ModelCard, ModelList, ModelPermission
 
 from functionary.inference import generate_message
 from functionary.inference_stream import generate_stream
@@ -16,9 +17,6 @@ from functionary.openai_types import (
     ChatCompletionChunk,
     ChatInput,
     Choice,
-    ModelCard,
-    ModelList,
-    ModelPermission,
     StreamChoice,
 )
 
@@ -104,4 +102,4 @@ if __name__ == "__main__":
     )
     tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
 
-    uvicorn.run(app, host="0.0.0.0", port=80)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
