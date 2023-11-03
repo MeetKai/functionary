@@ -64,11 +64,11 @@ sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functi
 To call the real python function, get the result and extract the result to respond, you can use [chatlab](https://github.com/rgbkrk/chatlab).
 
 ```python
-from chatlab import Chat
-import asyncio
-import json 
+from chatlab import Conversation
 import openai
-openai.api_key = "functionary"
+import os
+openai.api_key = "functionary" # We just need to set this something other than None
+os.environ['OPENAI_API_KEY'] = "functionary" # chatlab requires us to set this too
 openai.api_base = "http://localhost:8000/v1"
 
 # now provide the function with description
@@ -85,9 +85,10 @@ def get_car_price(car_name: str):
             return {"price": car_price[key]}
     return {"price": "unknown"}
 
-chat = Chat()
+chat = Conversation(model="meetkai/functionary-7b-v1.1")
 chat.register(get_car_price)  # register this function
-asyncio.run(chat("what is the price of the car named Tang?", stream=False))
+chat.submit("what is the price of the car named Tang?") # submit user prompt
+
 # print the flow
 for message in chat.messages:
     role = message["role"].upper()
