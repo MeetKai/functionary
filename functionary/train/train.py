@@ -24,8 +24,17 @@ class DataArguments:
     train_data_path: str = field(
         default=None, metadata={"help": "Path to the training data."}
     )
+    training_ratio: float = field(
+        default=1.0, metadata={"help": "percentage of data used for training"}
+    )
     eval_data_path: str = field(
         default=None, metadata={"help": "Path to the eval data."}
+    )
+    eval_ratio: float = field(
+        default=1.0, metadata={"help": "percentage of data used for evluation"}
+    )
+    packing: bool = field(
+        default=False, metadata={"help": "Whether use packing or not"}
     )
 
 
