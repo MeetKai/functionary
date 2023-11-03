@@ -23,6 +23,7 @@ from http import HTTPStatus
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
 
 import fastapi
+import requests
 import uvicorn
 from fastapi import BackgroundTasks, Request
 from fastapi.exceptions import RequestValidationError
@@ -143,7 +144,7 @@ async def check_model(request) -> Optional[JSONResponse]:
     return ret
 
 
-async def check_length(request, input_ids, model_config):
+def check_length(request, input_ids, model_config):
     if hasattr(model_config.hf_config, "max_sequence_length"):
         context_len = model_config.hf_config.max_sequence_length
     elif hasattr(model_config.hf_config, "seq_length"):
@@ -224,16 +225,8 @@ async def create_chat_completion(raw_request: Request):
             HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
         )
 
-    prompt_token_ids = prepare_messages_for_inference(
-        tokenizer, request.messages, request.functions
-    ).tolist()[0]
-    error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
-    if error_check_ret is not None:
-        return error_check_ret
-
-    model_name = request.model
-    request_id = f"cmpl-{random_uuid()}"
-    created_time = int(time.time())
+    response = requests.get("http://0.0.0.0:8002/functions")
+    functions = [Function(**fn) for fn in response.json()]
 
     # compute stop_token_ids
     stop_token_ids = []
@@ -260,14 +253,28 @@ async def create_chat_completion(raw_request: Request):
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
 
-    result_generator = engine.generate(
-        None, sampling_params, request_id, prompt_token_ids=prompt_token_ids
-    )
+    def perform_inference(messages):
+        prompt_token_ids = prepare_messages_for_inference(
+            tokenizer, messages, functions
+        ).tolist()[0]
 
-    async def abort_request() -> None:
-        await engine.abort(request_id)
+        error_check_ret = check_length(request, prompt_token_ids, engine_model_config)
+        if error_check_ret is not None:
+            return error_check_ret
 
-    async def wrap_vllm_generator() -> AsyncGenerator[Tuple[str, Optional[str]], None]:
+        model_name = request.model
+        request_id = f"cmpl-{random_uuid()}"
+        created_time = int(time.time())
+
+        result_generator = engine.generate(
+            None, sampling_params, request_id, prompt_token_ids=prompt_token_ids
+        )
+
+        return result_generator, request_id
+
+    async def wrap_vllm_generator(
+        result_generator,
+    ) -> AsyncGenerator[Tuple[str, Optional[str]], None]:
         previous_texts = ""
         async for res in result_generator:
             for output in res.outputs:
@@ -281,23 +288,80 @@ async def create_chat_completion(raw_request: Request):
                     yield delta_text, finish_reason
         yield "", "stop"
 
-    async def completion_stream_generator() -> AsyncGenerator[str, None]:
-        generator = wrap_vllm_generator()
-        async for response in generate_openai_format_from_stream_async(generator):
-            chunk = StreamChoice(**response)
-            result = ChatCompletionChunk(id=request_id, choices=[chunk])
-            chunk_dic = result.dict(exclude_unset=True)
-            chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
-            yield f"data: {chunk_data}\n\n"
-        yield "data: [DONE]\n\n"
+    # async def abort_request() -> None:
+    #     await engine.abort(request_id)
+
+    async def completion_stream_generator(messages) -> AsyncGenerator[str, None]:
+        function_call = None
+
+        while True:
+            result_generator, request_id = perform_inference(messages=messages)
+            generator = wrap_vllm_generator(result_generator=result_generator)
+
+            async for response in generate_openai_format_from_stream_async(generator):
+                chunk = StreamChoice(**response)
+                result = ChatCompletionChunk(id=request_id, choices=[chunk])
+                chunk_dic = result.dict(exclude_unset=True)
+                chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
+
+                # Store the chunks if the model generates a function call
+                # {'delta': {'role': 'assistant', 'content': None, 'function_call': xxx}, 'finish_reason': None}]
+                if (
+                    "function_call" in chunk_dic["choices"][0]["delta"]
+                    and chunk_dic["choices"][0]["delta"]["function_call"] is not None
+                ):
+                    if function_call is not None:
+                        function_call["arguments"] += chunk_dic["choices"][0]["delta"][
+                            "function_call"
+                        ]["arguments"]
+                    else:
+                        function_call = chunk_dic["choices"][0]["delta"][
+                            "function_call"
+                        ]
+                # Skip this step if the chunk indicates the end of function_call
+                # [{'delta': {}, 'finish_reason': 'function_call'}]
+                elif chunk_dic["choices"][0]["finish_reason"] == "function_call":
+                    pass
+                # Normal response
+                # [{'delta': {'role': 'assistant', 'content': xxx}, 'finish_reason': None}]
+                # if (
+                #     chunk_dic["choices"][0]["finish_reason"] is None
+                #     and "function_call" not in chunk_dic["choices"][0]["delta"]
+                # ):
+                else:
+                    yield f"data: {chunk_data}\n\n"
+
+            # Check if the model generated a function call
+            # If so, call the function and append the assistant fn call and fn response to messages
+            if function_call is not None:
+                response = requests.post(
+                    "http://0.0.0.0:8002/functions/call", json=function_call
+                ).json()
+
+                messages += [
+                    ChatMessage(
+                        role="assistant",
+                        content=None,
+                        function_call=FunctionCall(**function_call),
+                    ),
+                    ChatMessage(
+                        role="function", content=response, name=function_call["name"]
+                    ),
+                ]
+
+                # Reset function_call to None
+                function_call = None
+            else:
+                yield "data: [DONE]\n\n"
+                break
 
     # Streaming response
     if request.stream:
         background_tasks = BackgroundTasks()
         # Abort the request if the client disconnects.
-        background_tasks.add_task(abort_request)
+        # background_tasks.add_task(abort_request)
         return StreamingResponse(
-            completion_stream_generator(),
+            completion_stream_generator(messages=request.messages),
             media_type="text/event-stream",
             background=background_tasks,
         )
