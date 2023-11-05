@@ -501,6 +501,33 @@ class CustomDataset(CachedDataset):
         return result
 
 
+class LazyPreprocessDataset(Dataset):
+    """Dataset for supervised fine-tuning."""
+
+    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer):
+        super(CustomDataset, self).__init__()
+        self.tokenizer = tokenizer
+
+        self.raw_data = raw_data
+        self.cached_data_dict = {}
+
+    def __len__(self):
+        return len(self.raw_data)
+
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        if i in self.cached_data_dict:
+            return self.cached_data_dict[i]
+
+        ret = prepare_training_inputs(self.raw_data[i], self.tokenizer)
+        ret = {
+            "input_ids": ret["inputs"]["input_ids"],
+            "labels": ret["inputs"]["labels"],
+            "attention_mask": ret["inputs"]["attention_mask"],
+        }
+        self.cached_data_dict[i] = ret
+        return ret
+
+
 class PackedDataset(CachedDataset):
     def __init__(
         self,

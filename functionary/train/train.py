@@ -11,7 +11,7 @@ from torch.nn import CrossEntropyLoss
 from transformers import AutoTokenizer, Trainer
 
 from functionary.prompt import get_additional_tokens
-from functionary.train.custom_datasets import read_dataset
+from functionary.train.custom_datasets import LazyPreprocessDataset
 
 
 @dataclass
@@ -125,6 +125,7 @@ def train():
         model_args.model_name_or_path,
         config=config,
         cache_dir=training_args.cache_dir,
+        use_flash_attention_2=True,
     )
     model.config.use_cache = False
 
@@ -144,13 +145,13 @@ def train():
         with open(data_args.eval_data_path, "r") as file:
             raw_eval_data = [json.loads(line) for line in file]
 
-    train_dataset = read_dataset(data_args, training_args, tokenizer, "train")
+    train_dataset = LazyPreprocessDataset(raw_train_data, tokenizer)
 
     if torch.distributed.get_rank() == 0:
         print(f"Training Data Loaded: #{len(raw_train_data)}")
 
     if training_args.do_eval:
-        eval_dataset = read_dataset(data_args, training_args, tokenizer, "eval")
+        eval_dataset = LazyPreprocessDataset(raw_eval_data, tokenizer)
 
         if torch.distributed.get_rank() == 0:
             print(f"Eval Data Loaded: #{len(raw_eval_data)}")

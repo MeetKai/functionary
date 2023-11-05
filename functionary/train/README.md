@@ -93,7 +93,7 @@ DeepSpeed is the recommended multi-GPU option for Mistral finetuning currently b
 
 ```shell
 # DeepSpeed ZeRO3 with accelerate launcher
-# 2xA100 80GB, from the root directory of the repository
+# 4xA100 80GB, from the root directory of the repository
 export WANDB_ENTITY=NAME_OF_ENTITY
 export WANDB_PROJECT=NAME_OF_PROJECT
 accelerate launch --config_file "functionary/train/accelerate_configs/ds3_config.yaml" -m functionary.train.train \
@@ -102,17 +102,17 @@ accelerate launch --config_file "functionary/train/accelerate_configs/ds3_config
     --eval_data_path eval_dataset.jsonl \
     --bf16 True \
     --num_train_epochs 2 \
-    --per_device_train_batch_size 2 \
-    --gradient_accumulation_steps 64 \
-    --per_device_eval_batch_size 4 \
+    --per_device_train_batch_size 8 \
+    --gradient_accumulation_steps 12 \
+    --per_device_eval_batch_size 8 \
     --eval_accumulation_steps 16 \
     --evaluation_strategy "steps" \
-    --eval_steps 200 \
+    --eval_steps 20 \
     --save_strategy "steps" \
-    --save_steps 100 \
+    --save_steps 115 \
     --save_total_limit 5 \
     --learning_rate 2e-5 \
-    --weight_decay 0.3 \
+    --weight_decay 0.1 \
     --warmup_ratio 0.03 \
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
@@ -124,7 +124,7 @@ accelerate launch --config_file "functionary/train/accelerate_configs/ds3_config
 
 ### Compute requirements
 
-| Model    | Number of GPUs (A100-80GB) |
+| Model    | Minimum Number of GPUs (A100-80GB) |
 | :--------: | :-------: |
 | Llama-2-7b  | 2 |
 | Llama-2-13b | 4 |
