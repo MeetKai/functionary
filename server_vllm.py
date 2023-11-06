@@ -349,6 +349,19 @@ async def create_chat_completion(raw_request: Request):
                     ),
                 ]
 
+                # Send data to the frontend to show that a function is called
+                fn_call_chunk = {
+                    "delta": {
+                        "role": "assistant",
+                        "content": f"**Calling function:**\nName: {function_call['name']}\nArguments: {function_call['arguments'].lstrip().rstrip()}\n**Function response:**\n{response}\n\n",
+                    },
+                    "finish_reason": None,
+                }
+                result = ChatCompletionChunk(id=request_id, choices=[fn_call_chunk])
+                chunk_dic = result.dict(exclude_unset=True)
+                chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
+                yield f"data: {chunk_data}\n\n"
+
                 # Reset function_call to None
                 function_call = None
             else:
