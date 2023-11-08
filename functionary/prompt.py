@@ -175,3 +175,31 @@ def get_number_of_tokens_of_prefix_assistant(tokenizer: Any) -> int:
     text2 = "<|END_OF_USER|>"
     tok_ids2 = tokenizer.encode(text2, add_special_tokens=False)
     return len(tok_ids1) - len(tok_ids2)
+
+
+def get_chat_template() -> str:
+    chat_template = """{% for message in messages %}
+    {% if message['role'] == 'user' %}
+        {{ message['role'] + ':\n' + message['content'] + '<|END_OF_USER|>' + '\n' }}<br>
+    {% elif message['role'] == 'system' %}
+        {{ message['role'] + ':\n' + message['content'] + '<|END_OF_SYSTEM|>' + '\n' }}<br>
+    {% elif message['role'] == 'function' %}
+        {{ 'function name=' + message['name'] + ':\n' + message['content']+ '<|END_OF_FUNCTION_RESULT|>\n' }}<br>
+    {% elif message['role'] == 'assistant' %}
+        {% if 'function_call' in message and message['function_call'] is not none %}
+            {% if message['content'] is not none %}
+                {{ 'assistant:\n' + message['content'] + '\n<|START_OF_FUNCTION_CALL|>' + message['function_call']['name'] + ':\n' + message['function_call']['arguments'] + '<|END_OF_FUNCTION_CALL|>\n' }}<br>
+            {% else %}
+                {{ 'assistant:\n<|START_OF_FUNCTION_CALL|>' + message['function_call']['name'] +  ':\n' + message['function_call']['arguments'] + '<|END_OF_FUNCTION_CALL|>\n' }}<br>
+            {% endif %}
+        {% else %}
+            {{ 'assistant:\n' + message['content'] + '<|END_OF_ASSISTANT|>' + '\n' }}<br>
+        {% endif %}
+    {% endif %}
+    {% endfor %}
+    {% if add_generation_prompt %}{{ 'assistant:' }}{% endif %}
+"""
+    chat_template = chat_template.replace("    ", "")
+    chat_template = chat_template.replace("<br>\n", "")
+    chat_template = chat_template.strip()
+    return chat_template

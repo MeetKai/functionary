@@ -7,7 +7,7 @@ import torch
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, StreamingResponse
-from transformers import LlamaForCausalLM, LlamaTokenizer
+from transformers import AutoModelForCausalLM, LlamaTokenizer
 
 from functionary.inference import generate_message
 from functionary.inference_stream import generate_stream
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--load_in_8bit", type=bool, default=False)
     args = parser.parse_args()
-    model = LlamaForCausalLM.from_pretrained(
+    model = AutoModelForCausalLM.from_pretrained(
         args.model,
         low_cpu_mem_usage=True,
         device_map=args.device,

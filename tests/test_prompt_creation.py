@@ -5,12 +5,10 @@ from typing import List
 
 from transformers import LlamaTokenizer, LlamaTokenizerFast
 
-from functionary.prompt import (
-    EndToken,
-    get_additional_tokens,
-    get_prompt_from_messages,
-    get_text_from_message,
-)
+from functionary.prompt import (SYSTEM_MESSAGE, EndToken,
+                                get_additional_tokens, get_chat_template,
+                                get_prompt_from_messages,
+                                get_text_from_message)
 from functionary.schema import generate_schema_from_functions
 from functionary.train.custom_datasets import prepare_training_inputs
 
@@ -108,6 +106,30 @@ class TestInsertingEndToken(unittest.TestCase):
             self.final_prompt,
             "wrong final prompt from: get_prompt_from_messages",
         )
+    
+    def test_chat_template(self):
+        messages = self.test_case["messages"]
+        functions = self.test_case["functions"]
+        messages.insert(0, {"role": "system", "content": generate_schema_from_functions(functions)})
+        messages.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
+        
+        chat_template = get_chat_template()
+        tokenizer = LlamaTokenizer.from_pretrained("meetkai/functionary-7b-v1.1", legacy=True)
+        tokenizer.chat_template = chat_template
+        final_prompt = tokenizer.apply_chat_template(messages, tokenize=False)
+        self.assertEqual(
+            final_prompt.strip(), 
+            self.final_prompt, 
+            "wrong final prompt for chat template",
+        )
+        
+        prompt_gen = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        self.assertEqual(
+            prompt_gen, 
+            self.final_prompt + "\nassistant:",
+            "wrong prompt for generation",
+        )
+        
 
     def test_correct_end_token(self):
         """this function is to test if endtoken is correctly inserted at the end"""
