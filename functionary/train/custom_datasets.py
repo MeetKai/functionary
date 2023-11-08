@@ -377,6 +377,38 @@ def merge_data_points(data_points: List[Dict], tokenizer: Any) -> Dict:
     }
 
 
+def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
+    input_ids = []
+    lengths = []
+    label_ids = []
+    attention_mask = []
+    for index, item in enumerate(data_points):
+        input_ids += item["input_ids"]
+        #assert item["labels"][0] == -100 # This is to make sure that the first token won't be included in computing loss
+        labels = list(item["labels"])
+        labels[0] = -100
+        label_ids += labels
+        lengths.append(len(item["input_ids"]))
+        attention_mask += [index + 1 for _ in range(len(item["input_ids"]))]
+
+    pad_leng = tokenizer.model_max_length - len(input_ids)  # padding to model_max_length
+    if tokenizer.padding_side == "right":
+        input_ids = input_ids + [tokenizer.pad_token_id for _ in range(pad_leng)]
+        label_ids = label_ids + [-100 for _ in range(pad_leng)]
+        attention_mask = attention_mask + [0 for _ in range(pad_leng)]
+    else:
+        input_ids = [tokenizer.pad_token_id for _ in range(pad_leng)] + input_ids
+        label_ids = [-100 for _ in range(pad_leng)] + label_ids
+        attention_mask = [0 for _ in range(pad_leng)] + attention_mask
+        
+    assert len(input_ids) == len(label_ids) == len(attention_mask)
+    return {
+        "input_ids": torch.tensor(input_ids), 
+        "labels": torch.tensor(label_ids), 
+        "attention_mask": torch.tensor(attention_mask)  # unsqueeze <-- because the shape is: B x 1 x N x N
+    }
+
+
 def is_valid_labels(labels: Union[List[int], torch.Tensor]) -> bool:
     """by setting max_length, there might be the case that the labels are all -100 -> loss=nan
     Args:
@@ -576,3 +608,10 @@ class PackedDataset(CachedDataset):
         print(
             f"original avg length: {original_avg_length}; avg packed length: {avg_packed_length}"
         )
+
+
+class FAPackedDataset(PackedDataset):
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        group = self.groups[i]
+        group_data_points = [self.data_points[index] for index in group]
+        return pack_data_points_FA(group_data_points, self.tokenizer)
