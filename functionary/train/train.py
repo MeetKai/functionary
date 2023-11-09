@@ -3,15 +3,18 @@ import math
 import pathlib
 from dataclasses import dataclass, field
 from typing import Optional
+import sys
+import os
 
 import torch
 import torch.distributed
 import transformers
 from torch.nn import CrossEntropyLoss
-from transformers import AutoTokenizer, Trainer
+from transformers import AutoTokenizer, Trainer, LlamaTokenizerFast
 
+sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 from functionary.prompt import get_additional_tokens
-from functionary.train.custom_datasets import LazyPreprocessDataset
+from functionary.train.custom_datasets import read_dataset
 
 
 @dataclass
@@ -66,7 +69,8 @@ def initialize_tokenizer(
 ):
     """Initialize tokenizer and add special tokens, resizing vocab and embedding"""
     # Mistral requires left padding due to the Sliding Window Attention mechanism
-    if isinstance(model, transformers.MistralForCausalLM):
+    if "mistral" in type(model).__name__.lower():
+        print("model is mistral so padding_side=left")
         padding_side = "left"
     else:
         padding_side = "right"
@@ -79,6 +83,7 @@ def initialize_tokenizer(
         padding_side=padding_side,
         legacy=True,
     )
+    print("tokenizer: ", tokenizer)
 
     # Add special tokens
     tokenizer.pad_token = tokenizer.eos_token
@@ -121,8 +126,24 @@ def train():
         config.rope_scaling = {"type": "linear", "factor": scaling_factor}
     config.use_cache = False
 
-    model = transformers.AutoModelForCausalLM.from_pretrained(
+    model_class = transformers.AutoModelForCausalLM
+    if data_args.packing:
+        print("Packing=True, using monkey-patched MistralForCausalLM")
+        from functionary.train.monkey_patch.mistral_monkey_patched import (
+            MistralForCausalLM,
+        )
+
+        model_class = MistralForCausalLM
+
+    compute_dtype = (
+        torch.float16
+        if training_args.fp16
+        else (torch.bfloat16 if training_args.bf16 else torch.float32)
+    )
+
+    model = model_class.from_pretrained(
         model_args.model_name_or_path,
+        torch_dtype=compute_dtype,
         config=config,
         cache_dir=training_args.cache_dir,
         use_flash_attention_2=True,
@@ -138,23 +159,16 @@ def train():
 
     assert data_args.train_data_path is not None, "Please provide a training data file."
 
-    with open(data_args.train_data_path, "r") as file:
-        raw_train_data = [json.loads(line) for line in file]
-
-    if data_args.eval_data_path is not None:
-        with open(data_args.eval_data_path, "r") as file:
-            raw_eval_data = [json.loads(line) for line in file]
-
-    train_dataset = LazyPreprocessDataset(raw_train_data, tokenizer)
+    train_dataset = read_dataset(data_args, training_args, tokenizer, "train")
 
     if torch.distributed.get_rank() == 0:
-        print(f"Training Data Loaded: #{len(raw_train_data)}")
+        print(f"Training Data Loaded: #{len(train_dataset)}")
 
     if training_args.do_eval:
-        eval_dataset = LazyPreprocessDataset(raw_eval_data, tokenizer)
+        eval_dataset = read_dataset(data_args, training_args, tokenizer, "validation")
 
         if torch.distributed.get_rank() == 0:
-            print(f"Eval Data Loaded: #{len(raw_eval_data)}")
+            print(f"Eval Data Loaded: #{len(eval_dataset)}")
 
     def preprocess_logits_for_metrics(logits, labels):
         """Preprocesses the logits during evaluation by computing the greedy token predictions for

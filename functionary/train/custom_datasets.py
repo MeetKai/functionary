@@ -49,11 +49,23 @@ def get_matching_prefix(prefix_tokens, sequence_ids):
 
 
 def read_dataset(data_args, training_args, tokenizer, ds_type):
-    local_rank = int(os.getenv("LOCAL_RANK", "0"))
-    ds_class = CustomDataset
-    if data_args.packing:
-        ds_class = PackedDataset  # if packing --> Use PackedDataset
+    data_path = (
+        data_args.train_data_path if ds_type == "train" else data_args.eval_data_path
+    )
 
+    data_ratio = (
+        data_args.training_ratio if ds_type == "train" else data_args.eval_ratio
+    )
+
+    if not data_args.packing:
+        with open(data_path, "r") as file:
+            raw_data = [json.loads(line) for line in file]
+            if data_ratio < 1:
+                raw_data = raw_data[: int(data_ratio * len(raw_data))]
+        ds = LazyPreprocessDataset(raw_data, tokenizer)
+        return ds
+
+    local_rank = int(os.getenv("LOCAL_RANK", "0"))
     # The way we read dataset is:
     # Rank 0 will process the dataset and save the result to cached_folder, other ranks will read from the cached_folder
     cached_folder = os.path.join(training_args.output_dir, f"{ds_type}_cached")
@@ -71,15 +83,6 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
         if not os.path.exists(cached_folder):
             os.mkdir(cached_folder)
 
-        data_path = (
-            data_args.train_data_path
-            if ds_type == "train"
-            else data_args.eval_data_path
-        )
-        data_ratio = (
-            data_args.training_ratio if ds_type == "train" else data_args.eval_ratio
-        )
-
         with open(data_path, "r") as file:
             raw_train_data = [json.loads(line) for line in file]
             if data_ratio < 1:
@@ -87,14 +90,16 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
 
         print(f"{ds_type} size: : {len(raw_train_data)}")
         # ignore_cached=True to ignore the cached if exist, rank 0 will always process the data
-        ds = ds_class(
-            raw_train_data, tokenizer, cached_folder=cached_folder, ignore_cached=True
+        ds = FAPackedDataset(
+            raw_train_data, tokenizer, cached_folder=cached_folder, ignore_cached=False
         )
         print(f"process: {local_rank} finish processing data")
         torch.distributed.barrier()  # allow other ranks to execute
 
     # All ranks will read the processed data from cached_path created by rank 0
-    ds = ds_class(None, tokenizer, cached_folder=cached_folder, ignore_cached=False)
+    ds = FAPackedDataset(
+        None, tokenizer, cached_folder=cached_folder, ignore_cached=False
+    )
     if local_rank == 0:
         ds.stat()  #  print some statistics about the dataset
     return ds
@@ -384,14 +389,16 @@ def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
     attention_mask = []
     for index, item in enumerate(data_points):
         input_ids += item["input_ids"]
-        #assert item["labels"][0] == -100 # This is to make sure that the first token won't be included in computing loss
+        # assert item["labels"][0] == -100 # This is to make sure that the first token won't be included in computing loss
         labels = list(item["labels"])
         labels[0] = -100
         label_ids += labels
         lengths.append(len(item["input_ids"]))
         attention_mask += [index + 1 for _ in range(len(item["input_ids"]))]
 
-    pad_leng = tokenizer.model_max_length - len(input_ids)  # padding to model_max_length
+    pad_leng = tokenizer.model_max_length - len(
+        input_ids
+    )  # padding to model_max_length
     if tokenizer.padding_side == "right":
         input_ids = input_ids + [tokenizer.pad_token_id for _ in range(pad_leng)]
         label_ids = label_ids + [-100 for _ in range(pad_leng)]
@@ -400,12 +407,14 @@ def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
         input_ids = [tokenizer.pad_token_id for _ in range(pad_leng)] + input_ids
         label_ids = [-100 for _ in range(pad_leng)] + label_ids
         attention_mask = [0 for _ in range(pad_leng)] + attention_mask
-        
+
     assert len(input_ids) == len(label_ids) == len(attention_mask)
     return {
-        "input_ids": torch.tensor(input_ids), 
-        "labels": torch.tensor(label_ids), 
-        "attention_mask": torch.tensor(attention_mask)  # unsqueeze <-- because the shape is: B x 1 x N x N
+        "input_ids": torch.tensor(input_ids),
+        "labels": torch.tensor(label_ids),
+        "attention_mask": torch.tensor(
+            attention_mask
+        ),  # unsqueeze <-- because the shape is: B x 1 x N x N
     }
 
 
@@ -537,7 +546,7 @@ class LazyPreprocessDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
     def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer):
-        super(CustomDataset, self).__init__()
+        super().__init__()
         self.tokenizer = tokenizer
 
         self.raw_data = raw_data
