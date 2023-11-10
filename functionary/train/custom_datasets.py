@@ -91,7 +91,7 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
         print(f"{ds_type} size: : {len(raw_train_data)}")
         # ignore_cached=True to ignore the cached if exist, rank 0 will always process the data
         ds = FAPackedDataset(
-            raw_train_data, tokenizer, cached_folder=cached_folder, ignore_cached=False
+            raw_train_data, tokenizer, cached_folder=cached_folder, ignore_cached=True
         )
         print(f"process: {local_rank} finish processing data")
         torch.distributed.barrier()  # allow other ranks to execute

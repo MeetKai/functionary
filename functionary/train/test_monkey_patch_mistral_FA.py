@@ -9,7 +9,7 @@ import copy
 import typer
 import math
 from typing import Optional, List, Any
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 import json 
 from torch.nn import CrossEntropyLoss
 
@@ -114,29 +114,25 @@ def create_data_points():
     ]
 
 
-def prepare_input_dic(input_dic, device):
-    result = copy.deepcopy(input_dic)
-    for key in result:
-        result[key] = torch.unsqueeze(input_dic[key], 0)
-        result[key] = result[key].to(device)
-    result["return_dict"] = True
-    result["loss_reduction"] = "sum"
-    return result
-
-
-def compute_loss_from_ds_by_model(ds: Dataset, model):
+def compute_loss_from_ds_by_model(ds: Dataset, model, batch_size: int):
     total_loss = 0
     model.eval()
-    for i in range(len(ds)):
-        input_dic = ds[i]
-        input_dic = prepare_input_dic(input_dic, model.device)
+    data_loader = DataLoader(ds, batch_size=batch_size, shuffle=False)
+    for index, batch in enumerate(data_loader):
+        print(f"compute loss for batch: {index}")
+        for key in batch:
+            batch[key] = batch[key].to(model.device)
+            
+        batch["return_dict"] = True
+        batch["loss_reduction"] = "sum"
+        
         with torch.no_grad():
-            loss = model.forward(**input_dic).loss.item()
+            loss = model.forward(**batch).loss.item()
             total_loss += loss
     return total_loss 
 
 
-def compute_loss_from_ds(ds: Dataset, pretrained_path, model_class: Any, num_new_tokens: int, tokenizer_len: int):
+def compute_loss_from_ds(ds: Dataset, pretrained_path, model_class: Any, num_new_tokens: int, tokenizer_len: int, batch_size: int):
     model = model_class.from_pretrained(
         pretrained_path, torch_dtype=torch.bfloat16, device_map="auto", use_flash_attention_2=True
     )
@@ -155,14 +151,15 @@ def compute_loss_from_ds(ds: Dataset, pretrained_path, model_class: Any, num_new
         input_embeddings[-num_new_tokens:] = input_embeddings_avg
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
         
-    return compute_loss_from_ds_by_model(ds, model)
+    return compute_loss_from_ds_by_model(ds, model, batch_size)
 
 
 def main(
     pretrained_path: str,  
     test_path: str = typer.Option("functionary/train/small_tests.jsonl"),
     padding_size: str = typer.Option("left"),
-    max_length: int = typer.Option(4096)
+    max_length: int = typer.Option(4096),
+    batch_size: int = typer.Option(3),
 ):
     """This function is used to see the difference between applying packing vs not applying packing.
     We will read the data from test_path, then load into 2 types of datasets: CustomDataset (wo packing) and PackedDataset (with packing)
@@ -189,9 +186,9 @@ def main(
     print("packed da example: ", packed_ds[0])
     print(f"number of data points: {len(dt_points)}, normal dataset size: {len(normal_ds)}; packed dataset size: {len(packed_ds)}")
     
-    normal_loss = compute_loss_from_ds(normal_ds, pretrained_path, OriginalMistral, num_new_tokens, len(tokenizer))
+    normal_loss = compute_loss_from_ds(normal_ds, pretrained_path, OriginalMistral, num_new_tokens, len(tokenizer), batch_size)
     normal_loss = normal_loss / len(dt_points)
-    mk_loss = compute_loss_from_ds(packed_ds, pretrained_path, MonkeyPatchedMistral, num_new_tokens, len(tokenizer))
+    mk_loss = compute_loss_from_ds(packed_ds, pretrained_path, MonkeyPatchedMistral, num_new_tokens, len(tokenizer), batch_size)
     mk_loss = mk_loss / len(dt_points)
     
     diff = math.fabs(normal_loss - mk_loss)
