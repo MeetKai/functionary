@@ -350,6 +350,7 @@ We don't change the logit probabilities to conform a certain schema, but the mod
 | GPT-3.5-turbo         |     7.94 | 
 | Claude-1              |     7.90 |
 | WizardLM-70B-v1.      |     7.71 |
+|**Functionary-7B-v1.4**| **7.22** |
 | WizardLM-13B-v1.2     |     7.20 |
 | Vicuna-33B            |     7.12 |
 | Llama-2-70b-chat      |     6.86 |
@@ -357,7 +358,7 @@ We don't change the logit probabilities to conform a certain schema, but the mod
 | Vicuna-13B            |     6.57 |
 | Tulu-30B              |     6.43 |
 | Vicuna-7B             |     6.17 |
-| **Functionary-7B-v1** | **6.15** |
+| Functionary-7B-v1     |     6.15 |
 | Nous-Hermes-13B       |     5.51 |
 | Koala-13B             |     5.35 |
 | Falcon-40B-Instruct   |     5.17 |
