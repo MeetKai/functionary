@@ -180,6 +180,13 @@ async def show_available_models():
     return ModelList(data=model_cards)
 
 
+@app.get("v1/functions")
+async def show_available_functions():
+    """Show all available functions in function store."""
+    breakpoint()
+    return []
+
+
 def create_logprobs(
     token_ids: List[int],
     id_logprobs: List[Dict[int, float]],
@@ -272,6 +279,9 @@ async def create_chat_completion(raw_request: Request):
 
         return result_generator, request_id
 
+    async def abort_request() -> None:
+        await engine.abort(request_id)
+
     async def wrap_vllm_generator(
         result_generator,
     ) -> AsyncGenerator[Tuple[str, Optional[str]], None]:
@@ -287,9 +297,6 @@ async def create_chat_completion(raw_request: Request):
                 ]:
                     yield delta_text, finish_reason
         yield "", "stop"
-
-    # async def abort_request() -> None:
-    #     await engine.abort(request_id)
 
     async def completion_stream_generator(messages) -> AsyncGenerator[str, None]:
         function_call = None
@@ -380,6 +387,9 @@ async def create_chat_completion(raw_request: Request):
         )
 
     # Non-streaming response
+    result_generator, request_id = perform_inference(messages=request.messages)
+    created_time = int(time.time())
+    model_name = request.model
     final_res: RequestOutput = None
     async for res in result_generator:
         if await raw_request.is_disconnected():
