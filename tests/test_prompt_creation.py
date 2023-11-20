@@ -54,8 +54,13 @@ class TestInsertingEndToken(unittest.TestCase):
             self.final_prompt = self.final_prompt.replace("\n\n<|from|>", "\n<|from|>")
 
     def test_final_prompt_generation(self):
+        tools_or_functions = (
+            self.test_case["tools"]
+            if "tools" in self.test_case
+            else self.test_case["functions"]
+        )
         final_prompt = self.prompt_template.get_prompt_from_messages(
-            self.test_case["messages"], self.test_case["functions"]
+            self.test_case["messages"], tools_or_functions
         )
         # print("-----------------------------------------------")
         # print(final_prompt)

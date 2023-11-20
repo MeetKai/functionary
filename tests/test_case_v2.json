@@ -1,37 +1,44 @@
 {
-    "functions": [
+    "tools": [
         {
-            "name": "get_car_price",
-            "description": "Get the price of a particular car model",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "car_name": {
-                        "type": "string",
-                        "description": "The name of the car model"
-                    }
-                },
-                "required": [
-                    "car_name"
-                ]
+            "type": "function",
+            "function": {
+                "name": "get_car_price",
+                "description": "Get the price of a particular car model",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "car_name": {
+                            "type": "string",
+                            "description": "The name of the car model"
+                        }
+                    },
+                    "required": [
+                        "car_name"
+                    ]
+                }
             }
         },
         {
-            "name": "get_weather",
-            "description": "get the weather of a location",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "where to get weather"
-                    }
-                },
-                "required": [
-                    "location"
-                ]
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "get the weather of a location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "where to get weather"
+                        }
+                    },
+                    "required": [
+                        "location"
+                    ]
+                }
             }
         }
+        
     ],
     "messages": [
         {

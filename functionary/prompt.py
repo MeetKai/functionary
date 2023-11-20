@@ -32,12 +32,19 @@ class PromptTemplate:
         raise NotImplementedError
 
     def get_prompt_from_messages(
-        self, messages: List[Dict], functions: Optional[List[Dict]] = None
+        self, messages: List[Dict], tools_or_functions: Optional[List[Dict]] = None
     ) -> str:
         messages_clone = messages.copy()  # To avoid modifying the original list
 
-        if functions is None:
+        functions = []
+        if tools_or_functions is None:
             functions = []
+        else:
+            for item in tools_or_functions:
+                if "function" in item: #  new data format: tools: [{"type": xx, "function": xxx}]
+                    functions.append(item["function"])
+                else:
+                    functions.append(item)  #  old format
 
         messages_clone.insert(
             0, {"role": "system", "content": generate_schema_from_functions(functions)}
@@ -220,32 +227,37 @@ class PromptTemplateV2(PromptTemplate):
         role = message["role"]
         content = message.get("content", None)
 
-        if role in ["system", "user"]:  # <from>system\n<recipient>all\n<content>xxx
+        if role in [
+            "system",
+            "user",
+        ]:  # <|from|>system\n<|recipient|>all\n<|content|>xxx
             return f"{self.from_token}{role}\n{self.recipient_token}all\n{self.content_token}{content}\n"
 
-        if role == "tool":  # <from>tool_name\n<recipient>all\n<content>xxx
+        if role == "tool":  # <|from|>tool_name\n<|recipient|>all\n<|content|>xxx
             tool_name = message["name"]
             return f"{self.from_token}{tool_name}\n{self.recipient_token}all\n{self.content_token}{content}\n"
 
         assert role == "assistant"
         tool_calls = message.get("tool_calls", [])
+        if tool_calls is None:
+            tool_calls = []
         if (
             len(tool_calls) == 0 and content is None
-        ):  # for inference: <from> assistant\n<recipient>
+        ):  # for inference: <|from|> assistant\n<|recipient|>
             return f"{self.from_token}{role}\n{self.recipient_token}"
 
-        if len(tool_calls) == 0:  # <from>assistant\n<recipient>all\n<content>xxx
+        if len(tool_calls) == 0:  # <|from|>assistant\n<|recipient|>all\n<|content|>xxx
             return f"{self.from_token}{role}\n{self.recipient_token}all\n{self.content_token}{content}{self.stop_token}\n"
 
         result = ""
         if content is not None:  # both text-response and function_call
-            result += f"{self.from_token}assistant\n{self.recipient_token}all\n{self.content_token}{content}\n"
+            result += f"{self.from_token}{role}\n{self.recipient_token}all\n{self.content_token}{content}\n"
 
         for tool in tool_calls:
             func_name = tool["function"]["name"]
             arguments = tool["function"]["arguments"]
-            #  <from>assistant\n<recipient>func_name\n<content>xxxx
-            result += f"{self.from_token}assistant\n{self.recipient_token}{func_name}\n{self.content_token}{arguments}\n"
+            #  <|from|>assistant\n<|recipient|>func_name\n<|content|>xxxx
+            result += f"{self.from_token}{role}\n{self.recipient_token}{func_name}\n{self.content_token}{arguments}\n"
 
         result = result.strip() + f"{self.stop_token}\n"
         return result
@@ -258,18 +270,24 @@ class PromptTemplateV2(PromptTemplate):
 
     def parse_assistant_response(self, llm_ouput: str) -> Dict:
         llm_ouput = f"{self.from_token}assistant\n{self.recipient_token}" + llm_ouput
+        responses = llm_ouput.split(f"{self.from_token}assistant")
+        responses = [response.strip() for response in responses]
+
         functions = []
         text_response = None
-        for match in re.finditer(
-            r"<\|recipient\|>(?P<recipient>(.|\n)+?)<\|content\|>(?P<content>(.|\n)+?)(\n<\|from\|>|$)",
-            llm_ouput,
-        ):
-            recipient = match.group("recipient").strip()
-            content = match.group("content").strip()
+        for response in responses:
+            if len(response) == 0:
+                continue
+            # <|recipient|>xxxx\n<|content|>yyy
+            parts = response.split(self.content_token)
+            recipient = parts[0][len(self.recipient_token) :].strip()
+            content = parts[1].strip()
+
             if recipient == "all":
                 text_response = content
             else:
                 functions.append({"name": recipient, "arguments": content})
+
         tool_calls = []
         for func in functions:
             tool_calls.append({"function": func})

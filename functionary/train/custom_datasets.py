@@ -243,8 +243,13 @@ def prepare_training_inputs_batch(
 
     prompt_str_list = []
     for messages in batch_messages:
+        # old format: functions, new format: tools
+        tools_or_functions = (
+            messages["tools"] if "tools" in messages else messages["functions"]
+        )
+
         prompt_str = prompt_template.get_prompt_from_messages(
-            messages["messages"], messages["functions"]
+            messages["messages"], tools_or_functions
         )  # prompt_str is the concatenation of all prompts from messages
         prompt_str_list.append(prompt_str)
     max_length = max_length if max_length is not None else tokenizer.model_max_length
@@ -294,7 +299,10 @@ def map_raw_data_to_input_dic(
     t1 = datetime.datetime.now()
     for start, end in get_batch_indices(data_size, batch_size):
         batch_result = prepare_training_inputs_batch(
-            raw_data[start:end], tokenizer, padding=padding, return_tensor=False
+            batch_messages=raw_data[start:end],
+            tokenizer=tokenizer,
+            padding=padding,
+            return_tensor=False,
         )
         assert len(batch_result["batch_inputs"]) == len(raw_data[start:end])
         for item in batch_result["batch_inputs"]:
