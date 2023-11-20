@@ -12,14 +12,13 @@ Based on [Llama 2](https://arxiv.org/abs/2307.09288).
 
 ### Setup
 
-Make sure you have [PyTorch](https://pytorch.org/get-started/locally/) installed. Then:
+Make sure you have [PyTorch](https://pytorch.org/get-started/locally/) installed. Then to install the required dependencies, run:
 
 ```shell
 pip install -r requirements.txt
-python3 server.py --model "meetkai/functionary-7b-v1.1"
 ```
 
-Or start blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server:
+Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server:
 
 ```shell
 python3 server_vllm.py --model "meetkai/functionary-7b-v1.1" --host 0.0.0.0
@@ -61,7 +60,7 @@ sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functi
 ```
 
 ### Call Real Python Function
-To call the real python function, get the result and extract the result to respond, you can use [chatlab](https://github.com/rgbkrk/chatlab).
+To call the real python function, get the result and extract the result to respond, you can use [chatlab](https://github.com/rgbkrk/chatlab). The following example uses chatlab==0.16.0:
 
 ```python
 from chatlab import Conversation
