@@ -600,7 +600,7 @@ class LazyPreprocessDataset(Dataset):
         if i in self.cached_data_dict:
             return self.cached_data_dict[i]
 
-        ret = prepare_training_inputs(self.raw_data[i], self.tokenizer)
+        ret = prepare_training_inputs(messages=self.raw_data[i], tokenizer=self.tokenizer)
         ret = {
             "input_ids": ret["inputs"]["input_ids"],
             "labels": ret["inputs"]["labels"],

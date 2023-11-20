@@ -37,9 +37,7 @@ class PromptTemplate:
         messages_clone = messages.copy()  # To avoid modifying the original list
 
         functions = []
-        if tools_or_functions is None:
-            functions = []
-        else:
+        if tools_or_functions is not None:
             for item in tools_or_functions:
                 if "function" in item: #  new data format: tools: [{"type": xx, "function": xxx}]
                     functions.append(item["function"])
