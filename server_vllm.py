@@ -43,6 +43,7 @@ from vllm.utils import random_uuid
 
 from functionary.inference import (parse_generated_content,
                                    prepare_messages_for_inference)
+from functionary.prompt import get_default_prompt_template, PromptTemplate
 from functionary.inference_stream import \
     generate_openai_format_from_stream_async
 from functionary.openai_types import (ChatCompletionChunk, ChatMessage,
@@ -205,7 +206,8 @@ async def create_chat_completion(raw_request: Request):
         # TODO: support logit_bias in vLLM engine.
         return create_error_response(HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported")
 
-    prompt_token_ids = prepare_messages_for_inference(tokenizer, request.messages, request.functions).tolist()[0]
+    prompt_template = get_default_prompt_template()
+    prompt_token_ids = prepare_messages_for_inference(tokenizer, request.messages, prompt_template, request.functions).tolist()[0]
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     if error_check_ret is not None:
         return error_check_ret
@@ -286,7 +288,7 @@ async def create_chat_completion(raw_request: Request):
     choices = []
     for output in final_res.outputs:
         text_response = output.text.strip()
-        chat_mess = parse_generated_content(text_response)
+        chat_mess = prompt_template.parse_assistant_response(text_response) #parse_generated_content(text_response)
         choice_data = ChatCompletionResponseChoice(
             index=output.index,
             message=chat_mess,

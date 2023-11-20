@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
+import re
 
 import torch
 from abc import ABC, abstractmethod
@@ -67,6 +68,10 @@ class PromptTemplate:
                 )  # Llama tokenizer adds this token intentionally
             result[item] = tok_ids[-1]
         return result
+
+    @abstractmethod
+    def parse_assistant_response(self, llm_ouput: str) -> Dict:
+        raise NotImplementedError
 
     @classmethod
     def get_prompt_template(cls):
@@ -171,6 +176,31 @@ class PromptTemplateV1(PromptTemplate):
             result.append(prefix)
         return result
 
+    def parse_assistant_response(self, llm_ouput: str) -> Dict:
+        generated_content = llm_ouput.strip()
+        for endtoken in self.get_stop_tokens_for_generation():
+            if generated_content.endswith(endtoken):
+                generated_content = generated_content[: -len(endtoken)].strip()
+        # First we need to check if llm_output contains start_token or not
+        start_function_index = generated_content.find(self.start_function)
+        text_content = generated_content
+        result = {"role": "assistant", "content": None}
+        if start_function_index >= 0:
+            func_info = generated_content[
+                start_function_index + len(self.start_function) :
+            ].strip()
+            index = func_info.find(":")
+            func_name = func_info[:index].strip()
+            arguments = func_info[index + 1 :].strip()
+            text_content = generated_content[:start_function_index].strip()
+            result["function_call"] = {
+                "name": func_name,
+                "arguments": arguments,
+            }  # FunctionCall(name=func_name, arguments=arguments)
+        if len(text_content) > 0:
+            result["content"] = text_content
+        return result
+
 
 class PromptTemplateV2(PromptTemplate):
     from_token = "<|from|>"
@@ -226,11 +256,36 @@ class PromptTemplateV2(PromptTemplate):
     def get_assistant_prefixes(self) -> List[str]:
         return [f"{self.from_token}assistant\n{self.recipient_token}"]
 
+    def parse_assistant_response(self, llm_ouput: str) -> Dict:
+        llm_ouput = f"{self.from_token}assistant\n{self.recipient_token}" + llm_ouput
+        functions = []
+        text_response = None
+        for match in re.finditer(
+            r"<\|recipient\|>(?P<recipient>(.|\n)+?)<\|content\|>(?P<content>(.|\n)+?)(\n<\|from\|>|$)",
+            llm_ouput,
+        ):
+            recipient = match.group("recipient").strip()
+            content = match.group("content").strip()
+            if recipient == "all":
+                text_response = content
+            else:
+                functions.append({"name": recipient, "arguments": content})
+        tool_calls = []
+        for func in functions:
+            tool_calls.append({"function": func})
+        return {"role": "assistant", "content": text_response, "tool_calls": tool_calls}
 
-def get_default_prompt_template() -> PromptTemplate():
+
+def get_default_prompt_template() -> PromptTemplate:
     """Return default prompt template to be used
 
     Returns:
         _type_: _description_
     """
+    return PromptTemplateV2.get_prompt_template()
+
+
+def get_prompt_template(version: int) -> PromptTemplate:
+    if version == "1":
+        return PromptTemplateV1.get_prompt_template()
     return PromptTemplateV2.get_prompt_template()
