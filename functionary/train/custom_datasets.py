@@ -9,12 +9,7 @@ import torch
 import transformers
 from torch.utils.data import Dataset
 
-from functionary.prompt import (
-    EndToken,
-    get_end_token_to_token_id,
-    get_number_of_tokens_of_prefix_assistant,
-    get_prompt_from_messages,
-)
+from functionary.prompt import PromptTemplate, get_default_prompt_template
 
 
 def get_batch_indices(size: int, batch_size: int) -> List[Tuple[int, int]]:
@@ -29,10 +24,11 @@ def get_batch_indices(size: int, batch_size: int) -> List[Tuple[int, int]]:
     return result
 
 
-def get_prefix_assistant_token_ids(tokenizer: Any):
+def get_prefix_assistant_token_ids(
+    prompt_template: PromptTemplate, tokenizer: Any
+) -> List[List[int]]:
     result = []
-    for e in EndToken:
-        prefix = f"{e.value}\nassistant:"
+    for prefix in prompt_template.get_assistant_prefixes():
         token_ids = tokenizer.encode(prefix, add_special_tokens=False)
         if token_ids[0] == 29871:
             token_ids = token_ids[1:]
@@ -94,7 +90,9 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
             raw_train_data, tokenizer, cached_folder=cached_folder, ignore_cached=True
         )
         print(f"process: {local_rank} finish processing data")
-        torch.distributed.barrier()  # allow other ranks to execute
+        world_size = int(os.environ.get("WORLD_SIZE", 1))
+        if world_size > 1:
+            torch.distributed.barrier()  # allow other ranks to execute
 
     # All ranks will read the processed data from cached_path created by rank 0
     ds = FAPackedDataset(
@@ -106,15 +104,23 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
 
 
 def prepare_training_inputs(
+    *,
     messages: Dict[str, List],
     tokenizer: Any,
+    prompt_template: PromptTemplate = get_default_prompt_template(),
     padding: Optional[str] = "max_length",
     max_length: Optional[int] = None,
     return_tensor: bool = True,
     verbose=False,
 ) -> Dict[str, Union[str, Dict]]:
     batch_result = prepare_training_inputs_batch(
-        [messages], tokenizer, padding, max_length, return_tensor, verbose
+        batch_messages=[messages],
+        tokenizer=tokenizer,
+        prompt_template=prompt_template,
+        padding=padding,
+        max_length=max_length,
+        return_tensor=return_tensor,
+        verbose=verbose,
     )
     return dict(
         final_prompt=batch_result["batch_prompts"][0],
@@ -125,7 +131,8 @@ def prepare_training_inputs(
 def get_masked_labels(
     input_token_ids: List[int],
     tokenizer: Any,
-    endtoken_2_id: Dict,
+    assistant_prefix_tokens: List[List[int]],
+    assistant_stop_tokens: List[int],
     verbose: bool = False,
 ):
     # first we initialize labels with all positions as -100,
@@ -136,23 +143,22 @@ def get_masked_labels(
     # we will find the chunks: "<endtoken>assistant ...(<end_of_function>|<end_of_assistant>) from input_token_ids
     # and unmask: this part: "...(<end_of_function>|<end_of_assistant>"
     # find token_ids of: "<endtoken>assistant"
-    prefix_token_ids = get_prefix_assistant_token_ids(tokenizer)
-    if verbose:
-        print("prefix_token_ids: ", prefix_token_ids)
+    # prefix_token_ids = get_prefix_assistant_token_ids(tokenizer)
+    # if verbose:
+    #    print("prefix_token_ids: ", prefix_token_ids)
     index = 0
     total_input_leng = len(input_token_ids)
     while index < total_input_leng:
         # finding the index that start with: "<endtoken>assistant" --> we will unmask labels from this position
-        matched_prefix = get_matching_prefix(prefix_token_ids, input_token_ids[index:])
+        matched_prefix = get_matching_prefix(
+            assistant_prefix_tokens, input_token_ids[index:]
+        )
         if matched_prefix is not None:
             end_index = -1
             # unmask until reach <end_of_function> or <end_of_assistant>
             for i in range(index + len(matched_prefix), total_input_leng):
                 tok_id = input_token_ids[i]
-                if tok_id in [
-                    endtoken_2_id[EndToken.assistant],
-                    endtoken_2_id[EndToken.function_call],
-                ]:  # check if this is end of turn
+                if tok_id in assistant_stop_tokens:  # check if this is end of turn
                     labels[i] = input_token_ids[i]  # unmask labels at this position
                     end_index = i
                     break
@@ -185,9 +191,30 @@ def get_masked_labels(
     return labels
 
 
+def get_assistant_stop_token_ids(prompt_template, tokenizer: Any) -> Dict[str, int]:
+    """return a dictionary mapping from end_token --> token_id
+
+    Args:
+        tokenizer (Any): tokenizer in transformers
+
+    Returns:
+        Dict[int, EndToken]: the mapping from token_id --> end_token
+    """
+    result = []
+    for stop_token in prompt_template.get_stop_tokens_for_generation():
+        tok_ids = tokenizer.encode(stop_token, add_special_tokens=False)
+        assert len(tok_ids) <= 2
+        if len(tok_ids) == 2:
+            assert tok_ids[0] == 29871  # Llama tokenizer adds this token intentionally
+        result.append(tok_ids[-1])
+    return result
+
+
 def prepare_training_inputs_batch(
+    *,
     batch_messages: Dict[str, List],
     tokenizer: Any,
+    prompt_template: PromptTemplate = get_default_prompt_template(),
     padding: Optional[str] = "max_length",
     max_length: Optional[int] = None,
     return_tensor: bool = True,
@@ -210,11 +237,13 @@ def prepare_training_inputs_batch(
             final_prompt: the final prompt to be used,
             inputs: a dictionary containing: input_ids, attention_mask, labels. This will be used in model.forward(**inputs)
     """
-    # a dictionary mapping from token_id --> end_token
-    endtoken_2_id = get_end_token_to_token_id(tokenizer)
+    # a dictionary mapping from end_token_ --> end_token
+    assistant_stop_token_ids = get_assistant_stop_token_ids(prompt_template, tokenizer)
+    assistant_prefix_tokens = get_prefix_assistant_token_ids(prompt_template, tokenizer)
+
     prompt_str_list = []
     for messages in batch_messages:
-        prompt_str = get_prompt_from_messages(
+        prompt_str = prompt_template.get_prompt_from_messages(
             messages["messages"], messages["functions"]
         )  # prompt_str is the concatenation of all prompts from messages
         prompt_str_list.append(prompt_str)
@@ -227,7 +256,11 @@ def prepare_training_inputs_batch(
     batch_labels = []
     for input_token_ids in input_dic["input_ids"]:
         labels = get_masked_labels(
-            input_token_ids, tokenizer, endtoken_2_id, verbose=verbose
+            input_token_ids=input_token_ids,
+            tokenizer=tokenizer,
+            assistant_prefix_tokens=assistant_prefix_tokens,
+            assistant_stop_tokens=assistant_stop_token_ids,
+            verbose=verbose,
         )
         batch_labels.append(labels)
         assert len(labels) == len(input_token_ids)

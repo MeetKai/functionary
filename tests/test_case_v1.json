@@ -1,0 +1,64 @@
+{
+    "functions": [
+        {
+            "name": "get_car_price",
+            "description": "Get the price of a particular car model",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "car_name": {
+                        "type": "string",
+                        "description": "The name of the car model"
+                    }
+                },
+                "required": [
+                    "get_car_price"
+                ]
+            }
+        }
+    ],
+    "messages": [
+        {
+            "role": "user",
+            "content": "who is the president of US"
+        },
+        {
+            "role": "assistant",
+            "content": "Biden is the president of US"
+        },
+        {
+            "role": "user",
+            "content": "is the car Song more expensive than car Tang?"
+        },
+        {
+            "role": "assistant",
+            "content": "I need to get the price of of the car Song",
+            "function_call": {
+                "name": "get_car_price",
+                "arguments": "{\n  \"car_name\": \"Song\"\n}"
+            }
+        },
+        {
+            "role": "function",
+            "content": "{'price': {'price': '$25000'}}",
+            "name": "get_car_price"
+        },
+        {
+            "role": "assistant",
+            "content": null,
+            "function_call": {
+                "name": "get_car_price",
+                "arguments": "{\n  \"car_name\": \"Tang\"\n}"
+            }
+        },
+        {
+            "role": "function",
+            "content": "{'price': {'price': '$20000'}}",
+            "name": "get_car_price"
+        },
+        {
+            "role": "assistant",
+            "content": "No, the car Tang is less expensive than the car Song. The car Song is priced at $25,000, while the car Tang is priced at $20,000."
+        }
+    ]
+}
