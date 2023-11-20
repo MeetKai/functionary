@@ -13,7 +13,7 @@ from torch.nn import CrossEntropyLoss
 from transformers import AutoTokenizer, Trainer, LlamaTokenizerFast
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-from functionary.prompt import get_additional_tokens
+from functionary.prompt import get_default_prompt_template
 from functionary.train.custom_datasets import read_dataset
 
 
@@ -83,12 +83,15 @@ def initialize_tokenizer(
         padding_side=padding_side,
         legacy=True,
     )
-    print("tokenizer: ", tokenizer)
 
     # Add special tokens
     tokenizer.pad_token = tokenizer.eos_token
-    special_tokens = {"additional_special_tokens": get_additional_tokens()}
+    prompt_template = get_default_prompt_template()
+    special_tokens = {
+        "additional_special_tokens": prompt_template.get_additional_tokens()
+    }
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
+    print("tokenizer: ", tokenizer)
 
     # Resize embedding
     model.resize_token_embeddings(len(tokenizer))

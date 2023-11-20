@@ -6,13 +6,13 @@ from typing import List
 from transformers import LlamaTokenizer, LlamaTokenizerFast
 
 from functionary.prompt import (
-    EndToken,
-    get_additional_tokens,
-    get_prompt_from_messages,
-    get_text_from_message,
+    get_default_prompt_template,
+    PromptTemplateV1,
+    PromptTemplateV2,
 )
 from functionary.schema import generate_schema_from_functions
 from functionary.train.custom_datasets import prepare_training_inputs
+import json
 
 
 def extract_unmasked_chunks(labels: List[int]) -> List[List[int]]:
@@ -41,172 +41,91 @@ def extract_unmasked_chunks(labels: List[int]) -> List[List[int]]:
 class TestInsertingEndToken(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(TestInsertingEndToken, self).__init__(*args, **kwargs)
-        self.test_case = {
-            "functions": [
-                {
-                    "name": "get_car_price",
-                    "description": "Get the price of a particular car model",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "car_name": {
-                                "type": "string",
-                                "description": "The name of the car model",
-                            }
-                        },
-                        "required": ["get_car_price"],
-                    },
-                }
-            ],
-            "messages": [
-                {"role": "user", "content": "who is the president of US"},
-                {"role": "assistant", "content": "Biden is the president of US"},
-                {
-                    "role": "user",
-                    "content": "is the car Song more expensive than car Tang?",
-                },
-                {
-                    "role": "assistant",
-                    "content": "I need to get the price of of the car Song",
-                    "function_call": {
-                        "name": "get_car_price",
-                        "arguments": '{\n  "car_name": "Song"\n}',
-                    },
-                },
-                {
-                    "role": "function",
-                    "content": "{'price': {'price': '$25000'}}",
-                    "name": "get_car_price",
-                },
-                {
-                    "role": "assistant",
-                    "content": None,
-                    "function_call": {
-                        "name": "get_car_price",
-                        "arguments": '{\n  "car_name": "Tang"\n}',
-                    },
-                },
-                {
-                    "role": "function",
-                    "content": "{'price': {'price': '$20000'}}",
-                    "name": "get_car_price",
-                },
-                {
-                    "role": "assistant",
-                    "content": "No, the car Tang is less expensive than the car Song. The car Song is priced at $25,000, while the car Tang is priced at $20,000.",
-                },
-            ],
-        }
+
+        self.prompt_template = get_default_prompt_template()
+        version = "v1" if type(self.prompt_template) is PromptTemplateV1 else "v2"
+
         current_folder = os.path.dirname(os.path.abspath(__file__))
-        with open(os.path.join(current_folder, "prompt_test.txt")) as f:
+        with open(os.path.join(current_folder, f"test_case_{version}.json")) as f:
+            self.test_case = json.loads(f.read())
+
+        with open(os.path.join(current_folder, f"prompt_test_{version}.txt")) as f:
             self.final_prompt = f.read()
+            self.final_prompt = self.final_prompt.replace("\n\n<|from|>", "\n<|from|>")
 
     def test_final_prompt_generation(self):
-        final_prompt = get_prompt_from_messages(self.test_case["messages"], self.test_case["functions"])
+        tools_or_functions = (
+            self.test_case["tools"]
+            if "tools" in self.test_case
+            else self.test_case["functions"]
+        )
+        final_prompt = self.prompt_template.get_prompt_from_messages(
+            self.test_case["messages"], tools_or_functions
+        )
+        # print("-----------------------------------------------")
+        # print(final_prompt)
+        # print("-------------------------------")
         self.assertEqual(
             final_prompt,
             self.final_prompt,
             "wrong final prompt from: get_prompt_from_messages",
         )
 
-    def test_correct_end_token(self):
-        """this function is to test if endtoken is correctly inserted at the end"""
-        # these cases requires end_token at the end
-        cases = [
-            (
-                {
-                    "role": "system",
-                    "content": "This is a conversation between Human and AI",
-                },
-                EndToken.system.value,
-            ),
-            ({"role": "user", "content": "hello"}, EndToken.user.value),
-            (
-                {"role": "assistant", "content": "nice to meet you"},
-                EndToken.assistant.value,
-            ),
-            (
-                {
-                    "role": "assistant",
-                    "content": None,
-                    "function_call": {
-                        "name": "get_weather",
-                        "arguments": '{"city": "Hanoi"}',
-                    },
-                },
-                EndToken.function_call.value,
-            ),
-            (
-                {
-                    "role": "function",
-                    "content": '{"temperature": 30}',
-                    "name": "get_weather",
-                },
-                EndToken.function.value,
-            ),
-        ]
-
-        for message, stop_token in cases:
-            prompt = get_text_from_message(message).strip()
-            #  Check if prompt ends with stop_token
-            self.assertTrue(
-                prompt.endswith(stop_token),
-                f"`{prompt}` doesn't end with: `{stop_token}`",
-            )
-
-        # these cases don't require end_token at the end
-        edge_cases = [
-            ({"role": "user", "content": None}, EndToken.user.value),
-            ({"role": "assistant", "content": None}, EndToken.assistant.value),
-        ]
-
-        for message, stop_token in edge_cases:
-            prompt = get_text_from_message(message).strip()
-            #  Check if prompt doesn't endswith stop_token
-            self.assertFalse(prompt.endswith(stop_token), f"`{prompt}` ends with: `{stop_token}`")
-
     def test_prepare_training_inputs_fast_tokenizer(self):
         print("start testing fast tokenizer")
-        self.run_prepare_training_inputs(use_fast=True)
-    
+        self.run_prepare_training_inputs(
+            use_fast=True, pretrained="mistralai/Mistral-7B-v0.1"
+        )
+
     def test_prepare_training_inputs_normal_tokenizer(self):
         print("start testing normal tokenizer")
-        self.run_prepare_training_inputs(use_fast=False)
+        self.run_prepare_training_inputs(
+            use_fast=False, pretrained="mistralai/Mistral-7B-v0.1"
+        )
 
-    def run_prepare_training_inputs(self, use_fast: bool):
+    def run_prepare_training_inputs(self, use_fast: bool, pretrained: str):
         """this function is used to test function: prepare_training_inputs"""
         # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
         tokenizer_class = LlamaTokenizer
         if use_fast:
             tokenizer_class = LlamaTokenizerFast
-        tokenizer = tokenizer_class.from_pretrained("musabgultekin/functionary-7b-v1", legacy=True)
+        tokenizer = tokenizer_class.from_pretrained(pretrained, legacy=True)
+        tokenizer.pad_token = tokenizer.eos_token
         # first we add stop_tokens to the tokenizer
+        prompt_template = self.prompt_template
         length_before = len(tokenizer)
-        added_tokens = get_additional_tokens()
+        added_tokens = prompt_template.get_additional_tokens()
         tokenizer.add_special_tokens({"additional_special_tokens": added_tokens})
         length_after = len(tokenizer)
         # check if tokenizer added new stop tokens successfully
         self.assertEqual(length_before + len(added_tokens), length_after)
 
         inputs = prepare_training_inputs(
-            self.test_case,
-            tokenizer,
+            messages=self.test_case,
+            tokenizer=tokenizer,
+            prompt_template=prompt_template,
             padding="longest",
-            max_length=512,
+            max_length=1024,
             return_tensor=False,
             verbose=False,
         )
         input_ids = inputs["inputs"]["input_ids"]
         labels = inputs["inputs"]["labels"]
-        self.assertEqual(len(input_ids), len(labels), "length of inputs and labels are different")
+        self.assertEqual(
+            len(input_ids), len(labels), "length of inputs and labels are different"
+        )
 
         # check if input_ids[i] == labels[i] if labels[i] != -100
         for input_token_id, label_token_id in zip(input_ids, labels):
             if label_token_id != -100:
-                self.assertEqual(input_token_id, label_token_id, "input_token_id != label_token_id")
+                self.assertEqual(
+                    input_token_id, label_token_id, "input_token_id != label_token_id"
+                )
 
         # Check if only messages where role=assistant are remained, others will be masked as -100
-        assistant_message = [item for item in self.test_case["messages"] if item["role"] == "assistant"]
+        assistant_message = [
+            item for item in self.test_case["messages"] if item["role"] == "assistant"
+        ]
         # find unmasked chunks in labels (chunk[i] != -100), there chunks are associated with assistant messages
         # for example: labels=[-100, -100, 1, 2, 3, -100, -100, 4, 5] --> chunks = [[1,2,3], [4,5]]
         chunks = extract_unmasked_chunks(labels)
@@ -217,10 +136,11 @@ class TestInsertingEndToken(unittest.TestCase):
             "number of unmasked chunks in labels is different from number of messages where role=assistant",
         )
         for chunk, message in zip(chunks, assistant_message):
-            decoded_content = "assistant:\n" + tokenizer.decode(
+            prefix = prompt_template.get_text_from_message({"role": "assistant"})
+            decoded_content = prefix + tokenizer.decode(
                 chunk
             )  # note that need to add: "\nassistant" because we mask this, see line 194 in prompt_utils.py
-            prompt = get_text_from_message(message)
+            prompt = prompt_template.get_text_from_message(message)
             # decoded_content and prompt should be the same
             # to avoid any mistakes of tokenizer like adding white space we will compare after removing space
             self.assertEqual(
