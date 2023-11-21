@@ -7,6 +7,12 @@ from pydantic import BaseModel, Field
 class FunctionCall(BaseModel):
     name: Optional[str] = None
     arguments: str
+    
+
+class ToolCall(BaseModel):
+    id: Optional[str] = None
+    function: FunctionCall
+    type: str = "function"
 
 
 class Function(BaseModel):
@@ -15,11 +21,18 @@ class Function(BaseModel):
     parameters: dict
 
 
+class Tool(BaseModel):
+    type: str = "function"
+    function: Function
+
+
 class ChatMessage(BaseModel):
     role: Optional[str] = None
+    tool_call_id: Optional[str] = None
     content: Optional[str] = None
     name: Optional[str] = None
     function_call: Optional[FunctionCall] = None
+    tool_calls: Optional[List[ToolCall]]
 
     def __str__(self) -> str:
         if self.role == "system":
@@ -54,6 +67,7 @@ class ChatMessage(BaseModel):
 class ChatInput(BaseModel):
     messages: List[ChatMessage]
     functions: Optional[List[Function]] = None
+    tools: Optional[List[Tool]] = None
     temperature: float = 0.9
     stream: bool = False
 

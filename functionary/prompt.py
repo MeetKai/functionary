@@ -4,7 +4,8 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 import re
 
-import torch
+import string
+import random 
 from abc import ABC, abstractmethod
 
 from functionary.schema import generate_schema_from_functions
@@ -30,6 +31,9 @@ class PromptTemplate:
     @abstractmethod
     def get_assistant_prefixes(self) -> List[str]:
         raise NotImplementedError
+    
+    def pre_process_messages_before_inference(self, messages: List[Dict]) -> List[Dict]:
+        return messages
 
     def get_prompt_from_messages(
         self, messages: List[Dict], tools_or_functions: Optional[List[Dict]] = None
@@ -267,7 +271,12 @@ class PromptTemplateV2(PromptTemplate):
         return [f"{self.from_token}assistant\n{self.recipient_token}"]
 
     def parse_assistant_response(self, llm_ouput: str) -> Dict:
+        for stop in self.get_stop_tokens_for_generation():
+            if llm_ouput.endswith(stop):
+                llm_ouput = llm_ouput[: - len(stop)]
+        print("---------------------------")
         llm_ouput = f"{self.from_token}assistant\n{self.recipient_token}" + llm_ouput
+        print(llm_ouput)
         responses = llm_ouput.split(f"{self.from_token}assistant")
         responses = [response.strip() for response in responses]
 
@@ -288,8 +297,40 @@ class PromptTemplateV2(PromptTemplate):
 
         tool_calls = []
         for func in functions:
-            tool_calls.append({"function": func})
+            tool_calls.append({"function": func, "id": get_random_tool_call_id(), "type": "function"})
         return {"role": "assistant", "content": text_response, "tool_calls": tool_calls}
+    
+    def pre_process_messages_before_inference(self, messages: List[Dict]) -> List[Dict]:
+        """re-order the messages where role = tool to match the order in tool_calls by tool_call_id
+        Args:
+            messages (List[Dict]): list of messages containing: tool_call_id
+
+        Returns:
+            List[Dict]: _description_
+        """
+        result = []
+        index = 0
+        while index < len(messages):
+            message = messages[index]
+            tool_calls = message.get("tool_calls", None)
+            result.append(message)
+            if message["role"] == "assistant" and tool_calls:
+                num_calls = len(tool_calls)
+                tool_call_ids = [item["id"] for item in tool_calls]
+                
+                tool_messages = [messages[index + 1 + j] for j in range(num_calls)]
+                id_2_tool_messages = {item["tool_call_id"]: item for item in tool_messages}
+                new_messages = [id_2_tool_messages[cid] for cid in tool_call_ids]
+                
+                result.extend(new_messages)
+                index += num_calls + 1
+            else:
+                index += 1
+        return result
+
+
+def get_random_tool_call_id():
+    return "call_" + "".join([random.choice(string.ascii_letters + string.digits) for _ in range(24)])
 
 
 def get_default_prompt_template() -> PromptTemplate:

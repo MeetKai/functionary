@@ -41,14 +41,12 @@ from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
-from functionary.inference import (parse_generated_content,
-                                   prepare_messages_for_inference)
+from functionary.inference import prepare_messages_for_inference
 from functionary.prompt import get_default_prompt_template, PromptTemplate
-from functionary.inference_stream import \
-    generate_openai_format_from_stream_async
+#from functionary.inference_stream import \
+#    generate_openai_format_from_stream_async
 from functionary.openai_types import (ChatCompletionChunk, ChatMessage,
-                                      Function, FunctionCall, StreamChoice)
-from functionary.prompt import EndToken
+                                      Function, FunctionCall, StreamChoice, Tool)
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -61,6 +59,7 @@ class ChatCompletionRequest(BaseModel):
     model: str
     messages: List[ChatMessage]
     functions: Optional[List[Function]] = []
+    tools: Optional[List[Tool]]
     temperature: Optional[float] = 0.7
     top_p: Optional[float] = 1.0
     n: Optional[int] = 1
@@ -207,7 +206,13 @@ async def create_chat_completion(raw_request: Request):
         return create_error_response(HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported")
 
     prompt_template = get_default_prompt_template()
-    prompt_token_ids = prepare_messages_for_inference(tokenizer, request.messages, prompt_template, request.functions).tolist()[0]
+    prompt_token_ids = prepare_messages_for_inference(
+        tokenizer = tokenizer, 
+        messages=request.messages, 
+        prompt_template=prompt_template,
+        functions=request.functions,
+        tools=request.tools
+    ).tolist()[0]
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     if error_check_ret is not None:
         return error_check_ret
@@ -218,7 +223,7 @@ async def create_chat_completion(raw_request: Request):
 
     # compute stop_token_ids
     stop_token_ids = []
-    for stop_tok in [EndToken.assistant.value, EndToken.function_call.value]:
+    for stop_tok in prompt_template.get_stop_tokens_for_generation():
         tok_ids = tokenizer.encode(stop_tok, add_special_tokens=False)
         stop_token_ids.append(tok_ids[-1])
 
@@ -291,7 +296,7 @@ async def create_chat_completion(raw_request: Request):
         chat_mess = prompt_template.parse_assistant_response(text_response) #parse_generated_content(text_response)
         choice_data = ChatCompletionResponseChoice(
             index=output.index,
-            message=chat_mess,
+            message=ChatMessage(**chat_mess),
             finish_reason=output.finish_reason,
         )
         choices.append(choice_data)
