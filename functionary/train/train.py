@@ -8,6 +8,8 @@ import os
 
 import torch
 import torch.distributed
+from torch.utils.data import DataLoader
+from typing import List
 import transformers
 from torch.nn import CrossEntropyLoss
 from transformers import AutoTokenizer, Trainer, LlamaTokenizerFast
@@ -15,7 +17,11 @@ from transformers import AutoTokenizer, Trainer, LlamaTokenizerFast
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 from functionary.prompt import get_default_prompt_template
 from functionary.train.custom_datasets import read_dataset
+LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
+def print_rank0(*arg):
+    if LOCAL_RANK == 0:
+        print(*arg)
 
 @dataclass
 class ModelArguments:
@@ -87,8 +93,9 @@ def initialize_tokenizer(
     # Add special tokens
     tokenizer.pad_token = tokenizer.eos_token
     prompt_template = get_default_prompt_template()
+    added_tokens = prompt_template.get_additional_tokens()
     special_tokens = {
-        "additional_special_tokens": prompt_template.get_additional_tokens()
+        "additional_special_tokens": added_tokens
     }
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
     print("tokenizer: ", tokenizer)
@@ -109,7 +116,61 @@ def initialize_tokenizer(
         input_embeddings[-num_new_tokens:] = input_embeddings_avg
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
 
-    return tokenizer
+    return tokenizer, added_tokens
+
+
+def extract_unmasked_chunks(labels: List[int], masked_value) -> List[List[int]]:
+    """This function is used to extract unmasked chunks of integer
+    For example, labels = [-100, -100, 1, 2, 3, -100, -100, 4, 5] --> chunks = [[1,2,3], [4,5]]
+    Args:
+        labels (List[int]): list of integer containing token_id and -100
+
+    Returns:
+        List[List[int]]: list of chunk, for example: [[1,2,3], [4,5]]
+    """
+    chunks = []
+    chunk = []
+    for token_id in labels:
+        if token_id != masked_value:
+            chunk.append(token_id)
+        else:
+            if len(chunk) > 0:
+                chunks.append(chunk)
+                chunk = []
+    if len(chunk) > 0:
+        chunks.append(chunk)
+    return chunks
+
+
+def print_some_examples(ds, tokenizer):
+    data_loader = DataLoader(ds, batch_size=3)
+    count = 0
+    for batch in data_loader:
+        if count == 0:
+            print_rank0("keys in batch: ", batch.keys())
+        print_rank0("--------------****Example data point****---------------")
+        print_rank0("device: ", batch["input_ids"].device)
+        print_rank0("shape of input_ids: ", batch["input_ids"].shape)  # B x L
+        print_rank0("shape of labels: ", batch["labels"].shape)
+        print_rank0("shape of attention_mask: ", batch["attention_mask"].shape)
+        # print_rank0('input_ids: ', batch["input_ids"].tolist())
+        # print_rank0('labels: ', batch["labels"].tolist())
+        print_rank0("attention mask: ", batch["attention_mask"])
+        input_ids = batch["input_ids"][0].tolist()
+        input_chunk = extract_unmasked_chunks(input_ids, tokenizer.pad_token_id)
+        assert len(input_chunk) == 1
+        print_rank0("+ inputs: ")
+        print_rank0(tokenizer.decode(input_chunk[0]))
+        labels = batch["labels"][0].tolist()
+        label_chunks = extract_unmasked_chunks(labels, -100)
+        print_rank0("----------")
+        for chunk in label_chunks:
+            print_rank0("+ chunk: ")
+            print_rank0(tokenizer.decode(chunk))
+        count += 1
+        if count == 5:
+            break
+
 
 
 def train():
@@ -153,16 +214,21 @@ def train():
     )
     model.config.use_cache = False
 
-    tokenizer = initialize_tokenizer(
+    tokenizer, added_tokens = initialize_tokenizer(
         model,
         model_args.model_name_or_path,
         training_args.model_max_length,
         training_args.cache_dir,
     )
+    # get id of added tokens to compute the accuracy of predicing the token
+    id2token = {tokenizer.encode(token)[-1]: token for token in added_tokens}
+    print_rank0("id to tokens: ", id2token)
 
     assert data_args.train_data_path is not None, "Please provide a training data file."
 
     train_dataset = read_dataset(data_args, training_args, tokenizer, "train")
+    
+    print_some_examples(train_dataset, tokenizer)
 
     if torch.distributed.get_rank() == 0:
         print(f"Training Data Loaded: #{len(train_dataset)}")
@@ -197,6 +263,7 @@ def train():
         # Calculate accuracy
         acc_count = 0
         total_num = 0
+        dic = {token_id: {"acc": 0, "total": 0} for token_id in id2token}
         for pred, label in zip(
             predictions.flatten().tolist(), labels.flatten().tolist()
         ):
@@ -204,13 +271,27 @@ def train():
                 if label == pred:
                     acc_count += 1
                 total_num += 1
+            if label in dic:
+                dic[label]["total"] += 1
+                if label == pred:
+                    dic[label]["acc"] += 1
 
         # Calculate perplexity
         loss = eval_preds.predictions[1].tolist()
         loss = sum(loss) / len(loss)
         perplexity = math.exp(loss)
 
-        return {"accuracy": acc_count / total_num, "perplexity": perplexity}
+        metrics = {"accuracy": acc_count / total_num, "perplexity": perplexity}
+        for token_id in dic:
+            token = id2token[token_id]
+            total_num = dic[token_id]["total"]
+            acc = -1
+            if total_num > 0:
+                acc = dic[token_id]["acc"] / total_num
+            metrics[f"accuracy_{token}"] = acc
+            metrics[f"accuracy_total_num_{token}"] = total_num
+            
+        return metrics
 
     if training_args.do_eval:
         trainer = Trainer(
