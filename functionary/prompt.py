@@ -81,6 +81,30 @@ class PromptTemplate:
     @abstractmethod
     def parse_assistant_response(self, llm_ouput: str) -> Dict:
         raise NotImplementedError
+    
+    @abstractmethod
+    def update_response_state_from_delta_text(
+        self, 
+        *,
+        current_state: Dict[str, Any], 
+        current_text: str, 
+        delta_text: str,
+        finish_reason: Optional[str]
+    ) -> Tuple[Dict[str, Any], Optional[Dict]]:
+        """This function is used for streaming
+
+        Args:
+            current_state (Dict[str, Any]): a dictionary:
+                + func_name: Optional[str], 
+                + response_type: Optional[str] text/function
+            current_text: the llm_output until now
+            delta_text: new token generated
+            finish_reason: if finished or not 
+
+        Returns:
+            Tuple[Dict[str, Any], Optional[Dict]]: {func_name, response_type}, response
+        """
+        raise NotImplementedError
 
     @classmethod
     def get_prompt_template(cls):
@@ -209,6 +233,69 @@ class PromptTemplateV1(PromptTemplate):
         if len(text_content) > 0:
             result["content"] = text_content
         return result
+
+    def update_response_state_from_delta_text(
+        self, 
+        *,
+        current_state: Dict[str, Any], 
+        cur_text: str, 
+        delta_text: str,
+        finish_reason: Optional[str]
+    ) -> Tuple[Dict[str, Any], Optional[Dict]]:
+        cur_text += delta_text
+        response_type = current_state["response_type"]
+        func_name = current_state["func_name"]
+        
+        response: Optional[Dict[str, Any]] = None
+        if response_type is None:
+            if cur_text.strip().startswith(self.start_function):  # if function_call
+                if cur_text.endswith(":"):
+                    f_index = cur_text.find(self.start_function)
+                    func_name = cur_text[f_index + len(self.start_function): -1].strip()
+                    response = {
+                        "delta": {
+                            "role": "assistant",
+                            "content": None,
+                            "function_call": {"arguments": "", "name": func_name},
+                        },
+                        "finish_reason": None,
+                    }
+                    response_type = "function"
+            else:  # if text_response
+                response_type = "text"
+                response = {"delta": {"content": "", "role": "assistant"}, "finish_reason": None}
+                
+        elif response_type == "function":
+            if finish_reason is None:
+                response = {
+                    "delta": {
+                        "role": "assistant",
+                        "function_call": {"arguments": delta_text},
+                    },  # format of openAI at the second return, don't need to add function_name
+                    "finish_reason": None,
+                }
+            else:
+                response = {
+                    "delta": {},
+                    "finish_reason": "function_call",
+                }  # format of openAI at the end, delta must be empty
+                
+        elif response_type == "text":
+            if finish_reason is None:
+                # need to check if call a function or not
+                if cur_text.endswith(self.start_function):  # if call another function
+                    print("call another function in the mean time")
+                    cur_text = self.start_function
+                    response_type = None
+                else:
+                    response = {"delta": {"content": delta_text, "role": "assistant"}, "finish_reason": None}
+            else:  # finish generating
+                response = {
+                    "delta": {},
+                    "finish_reason": finish_reason,
+                }  # format of openAI at the end, delta must be empty
+        return {"response_type":response_type, "func_name": func_name}, response
+
 
 
 class PromptTemplateV2(PromptTemplate):

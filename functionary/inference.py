@@ -57,6 +57,8 @@ def prepare_messages_for_inference(
     print(final_prompt)
     input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
     input_ids = input_ids.to(device)
+    print("-------decoded_tokens---------")
+    print(tokenizer.decode(input_ids[0].tolist()))
     return input_ids
 
 
@@ -113,6 +115,8 @@ def generate_message(
         ):  # this is the issue of Llamatokenizer, sometimes they add this token
             tok_ids = tok_ids[1:]
         stop_words_ids.append(tok_ids)
+    
+    print("stop_words_ids: ", stop_words_ids)
 
     print("inputs: ", inputs)
     stopping_criteria = StoppingCriteriaList([StopWordsCriteria(stops=stop_words_ids)])
