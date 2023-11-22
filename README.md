@@ -382,6 +382,15 @@ We don't change the logit probabilities to conform a certain schema, but the mod
 | alpaca-7b             |     26.5 |       1.5 |
 | text_davinci_001      |     15.2 |       1.2 |
 
+### Function Prediction Evaluation
+Evaluation function call prediction in our in-house dataset. We focus on two key metrics: the accuracy of function call prediction and the F1 score for argument extraction. The accuracy metric measures the overall correctness of predicted function calls, while the F1 score assesses the precision and recall of argument extraction. 
+| Dataset       | Model Name          | Function Prediction Accuracy | Arguments extraction F-1 Score |
+| :-------------| :-------------------| ---------------------------: |  ---------------------------:  |
+| In-house data | functionary-7b-v1.4 |                        0.840 |                         0.9005 |
+| In-house data | gpt-3.5-turbo-0613  |                        0.861 |                         0.898  |
+| In-house data | gpt-3.5-turbo-1106  |                        0.836 |                         0.9095 |
+| In-house data | gpt-4-1106-preview  |                        0.878 |                         0.9155 |
+
 </details>
 
 ## Dataset
