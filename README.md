@@ -21,7 +21,7 @@ pip install -r requirements.txt
 Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server:
 
 ```shell
-python3 server_vllm.py --model "meetkai/functionary-7b-v1.1" --host 0.0.0.0
+python3 server_vllm.py --model "meetkai/functionary-7b-v1.4" --host 0.0.0.0
 ```
 
 ### Server Usage
@@ -33,7 +33,7 @@ openai.api_base = "http://localhost:8000/v1"
 openai.api_key = "functionary" # We just need to set this something other than None, so it works with openai package. No API key is required.
 
 openai.ChatCompletion.create(
-    model="meetkai/functionary-7b-v1.1",
+    model="meetkai/functionary-7b-v1.4",
     messages=[{"role": "user", "content": "What is the weather for Istanbul?"}],
     functions=[{
         "name": "get_current_weather",
@@ -84,7 +84,7 @@ def get_car_price(car_name: str):
             return {"price": car_price[key]}
     return {"price": "unknown"}
 
-chat = Conversation(model="meetkai/functionary-7b-v1.1")
+chat = Conversation(model="meetkai/functionary-7b-v1.4")
 chat.register(get_car_price)  # register this function
 chat.submit("what is the price of the car named Tang?") # submit user prompt
 
@@ -122,7 +122,7 @@ The function `plan_trip(destination: string, duration: int, interests: list)` ca
 
 ```python
 openai.ChatCompletion.create(
-    model="meetkai/functionary-7b-v1.1",
+    model="meetkai/functionary-7b-v1.4",
     messages=[
         {"role": "user", "content": 'I want to plan a 7-day trip to Paris with a focus on art and culture'},
     ], 
@@ -174,7 +174,7 @@ A function like estimate_property_value(property_details: dict) could allow user
 
 ```python
 openai.ChatCompletion.create(
-    model="meetkai/functionary-7b-v1.1",
+    model="meetkai/functionary-7b-v1.4",
     messages=[
         {"role": "user", "content": 'What is the estimated value of a 3-bedroom house in San Francisco with 2000 sq ft area?'},
         {"role": "assistant", "function_call": {"name": "estimate_property_value", "arguments": '{\n  "property_details": {"location": "San Francisco", "size": 2000, "rooms": 3}\n}'}},
@@ -232,7 +232,7 @@ A function `parse_customer_complaint(complaint: {issue: string, frequency: strin
 
 ```python
 openai.ChatCompletion.create(
-    model="meetkai/functionary-7b-v1.1",
+    model="meetkai/functionary-7b-v1.4",
     messages=[
         {"role": "user", "content": 'My internet has been disconnecting frequently for the past week'},
     ], 
