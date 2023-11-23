@@ -9,8 +9,7 @@ from transformers import (
 )
 
 from functionary.openai_types import ChatMessage, Function, FunctionCall, Tool
-from functionary.prompt import get_default_prompt_template, PromptTemplate
-from functionary.schema import generate_schema_from_functions
+from functionary.prompt import get_prompt_template_from_tokenizer, PromptTemplate
 
 
 class StopWordsCriteria(StoppingCriteria):
@@ -37,11 +36,13 @@ def prepare_messages_for_inference(
     *,
     tokenizer: LlamaTokenizer,
     messages: List[ChatMessage],
-    prompt_template: PromptTemplate,
     functions: Optional[List[Function]] = None,
     tools: Optional[List[Tool]] = None,
     device="cuda:0",
 ) -> torch.Tensor:
+    
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+    
     dic_messages = [mess.dict() for mess in messages]
     dic_messages.append({"role": "assistant"})
 
@@ -93,11 +94,10 @@ def generate_message(
     device="cuda:0",
     **kwargs,
 ) -> ChatMessage:
-    prompt_template = get_default_prompt_template()
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
     inputs = prepare_messages_for_inference(
         tokenizer=tokenizer,
         messages=messages,
-        prompt_template=prompt_template,
         functions=functions,
         tools=tools,
         device=device,

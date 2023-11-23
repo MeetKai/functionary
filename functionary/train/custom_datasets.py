@@ -9,7 +9,7 @@ import torch
 import transformers
 from torch.utils.data import Dataset
 
-from functionary.prompt import PromptTemplate, get_default_prompt_template
+from functionary.prompt import PromptTemplate, get_prompt_template_from_tokenizer
 
 
 def get_batch_indices(size: int, batch_size: int) -> List[Tuple[int, int]]:
@@ -107,7 +107,6 @@ def prepare_training_inputs(
     *,
     messages: Dict[str, List],
     tokenizer: Any,
-    prompt_template: PromptTemplate = get_default_prompt_template(),
     padding: Optional[str] = "max_length",
     max_length: Optional[int] = None,
     return_tensor: bool = True,
@@ -117,7 +116,6 @@ def prepare_training_inputs(
     batch_result = prepare_training_inputs_batch(
         batch_messages=[messages],
         tokenizer=tokenizer,
-        prompt_template=prompt_template,
         padding=padding,
         max_length=max_length,
         return_tensor=return_tensor,
@@ -173,7 +171,7 @@ def get_masked_labels(
                     labels[i] = input_token_ids[i]  # unmask labels at this position
             if verbose:
                 print("------------------------")
-                start = start_masked_index #index + len(matched_prefix)
+                start = start_masked_index  # index + len(matched_prefix)
                 chunk_ids = (
                     input_token_ids[start : end_index + 1]
                     if end_index > -1
@@ -221,7 +219,6 @@ def prepare_training_inputs_batch(
     *,
     batch_messages: Dict[str, List],
     tokenizer: Any,
-    prompt_template: PromptTemplate = get_default_prompt_template(),
     padding: Optional[str] = "max_length",
     max_length: Optional[int] = None,
     return_tensor: bool = True,
@@ -246,6 +243,7 @@ def prepare_training_inputs_batch(
             inputs: a dictionary containing: input_ids, attention_mask, labels. This will be used in model.forward(**inputs)
     """
     # a dictionary mapping from end_token_ --> end_token
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
     assistant_stop_token_ids = get_assistant_stop_token_ids(prompt_template, tokenizer)
     assistant_prefix_tokens = get_prefix_assistant_token_ids(prompt_template, tokenizer)
 
@@ -301,9 +299,9 @@ def prepare_training_inputs_batch(
 
 def map_raw_data_to_input_dic(
     *,
-    raw_data: List[Dict], 
-    tokenizer: Any, 
-    padding: str, 
+    raw_data: List[Dict],
+    tokenizer: Any,
+    padding: str,
     batch_size: int = 5000,
     keep_assistant_prefix: bool = False,
 ) -> List[Dict]:
@@ -317,7 +315,7 @@ def map_raw_data_to_input_dic(
             tokenizer=tokenizer,
             padding=padding,
             return_tensor=False,
-            keep_assistant_prefix=keep_assistant_prefix
+            keep_assistant_prefix=keep_assistant_prefix,
         )
         assert len(batch_result["batch_inputs"]) == len(raw_data[start:end])
         for item in batch_result["batch_inputs"]:
@@ -585,11 +583,11 @@ class CustomDataset(CachedDataset):
 
         if not self.load_from_cache:  # if not loaded from cached
             self.data_points = map_raw_data_to_input_dic(
-                raw_data=raw_data, 
-                tokenizer=tokenizer, 
-                padding="max_length", 
-                batch_size=batch_size, 
-                keep_assistant_prefix=keep_assistant_prefix
+                raw_data=raw_data,
+                tokenizer=tokenizer,
+                padding="max_length",
+                batch_size=batch_size,
+                keep_assistant_prefix=keep_assistant_prefix,
             )
             if cached_folder is not None:
                 print(f"dump data to cached: {cached_folder}")
@@ -606,7 +604,12 @@ class CustomDataset(CachedDataset):
 class LazyPreprocessDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
-    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer, keep_assistant_prefix: bool = False):
+    def __init__(
+        self,
+        raw_data,
+        tokenizer: transformers.PreTrainedTokenizer,
+        keep_assistant_prefix: bool = False,
+    ):
         super().__init__()
         self.tokenizer = tokenizer
 
@@ -621,7 +624,11 @@ class LazyPreprocessDataset(Dataset):
         if i in self.cached_data_dict:
             return self.cached_data_dict[i]
 
-        ret = prepare_training_inputs(messages=self.raw_data[i], tokenizer=self.tokenizer, keep_assistant_prefix=self.keep_assistant_prefix)
+        ret = prepare_training_inputs(
+            messages=self.raw_data[i],
+            tokenizer=self.tokenizer,
+            keep_assistant_prefix=self.keep_assistant_prefix,
+        )
         ret = {
             "input_ids": ret["inputs"]["input_ids"],
             "labels": ret["inputs"]["labels"],
@@ -644,11 +651,11 @@ class PackedDataset(CachedDataset):
         super().__init__(tokenizer, cached_folder, ignore_cached)
         if not self.load_from_cache:
             self.data_points = map_raw_data_to_input_dic(
-                raw_data=raw_data, 
-                tokenizer=tokenizer, 
-                padding="do_not_pad", 
+                raw_data=raw_data,
+                tokenizer=tokenizer,
+                padding="do_not_pad",
                 batch_size=batch_size,
-                keep_assistant_prefix=keep_assistant_prefix
+                keep_assistant_prefix=keep_assistant_prefix,
             )
             self.update_packing_info()
             if cached_folder is not None:

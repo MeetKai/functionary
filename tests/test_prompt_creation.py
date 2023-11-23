@@ -109,7 +109,6 @@ class TestInsertingEndToken(unittest.TestCase):
         inputs = prepare_training_inputs(
             messages=self.test_case,
             tokenizer=tokenizer,
-            prompt_template=prompt_template,
             padding="longest",
             max_length=1024,
             return_tensor=False,

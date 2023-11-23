@@ -14,7 +14,7 @@ from transformers.generation.logits_process import (
 
 from functionary.inference import prepare_messages_for_inference
 from functionary.openai_types import ChatMessage, Function, Tool
-from functionary.prompt import get_default_prompt_template, PromptTemplate
+from functionary.prompt import get_prompt_template_from_tokenizer, PromptTemplate
 
 
 def prepare_logits_processor(
@@ -56,14 +56,12 @@ def generate_text_stream(
     if tokenizer.eos_token_id not in _stop_token_ids:
         _stop_token_ids.append(tokenizer.eos_token_id)
 
-    prompt_template = get_default_prompt_template()
     logits_processor = prepare_logits_processor(
         temperature, repetition_penalty, top_p, top_k
     )
     input_ids = prepare_messages_for_inference(
         tokenizer=tokenizer,
         messages=messages,
-        prompt_template=prompt_template,
         functions=functions,
         tools=tools,
         device=device,
@@ -179,7 +177,7 @@ def generate_with_check_stop(
 
 def generate_openai_format_from_stream(
     generator: Generator[Tuple[str, Optional[str]], Any, Any],
-    prompt_template: PromptTemplate = get_default_prompt_template(),
+    prompt_template: PromptTemplate,
 ) -> Generator[Dict, Any, Any]:
     state = {}  # # = function if it is function call; = text if it is chit-chat
     for delta_text, finish_reason in generator:
@@ -203,9 +201,9 @@ def generate_stream(
     tools: Optional[List[Tool]] = None,
     temperature: float = 0.7,
     max_new_tokens=256,
-    promt_template: PromptTemplate = get_default_prompt_template(),
     **kwargs,
 ) -> Generator[Dict, Any, Any]:
+    promt_template = get_prompt_template_from_tokenizer(tokenizer)
     stop_tokens = promt_template.get_stop_tokens_for_generation()
     stop_token_lists = []
     for stop in stop_tokens:
@@ -230,7 +228,7 @@ def generate_stream(
 
 async def generate_openai_format_from_stream_async(
     generator: AsyncGenerator[Tuple[str, Optional[str]], None],
-    prompt_template: PromptTemplate = get_default_prompt_template(),
+    prompt_template: PromptTemplate,
 ) -> AsyncGenerator[Dict, None]:
     state = {}  # # = function if it is function call; = text if it is chit-chat
     async for delta_text, finish_reason in generator:

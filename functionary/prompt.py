@@ -242,12 +242,17 @@ class PromptTemplateV1(PromptTemplate):
         delta_text: str,
         finish_reason: Optional[str],
     ) -> Tuple[Dict[str, Any], Optional[Dict]]:
-        cur_text += delta_text
-        response_type = current_state["response_type"]
-        func_name = current_state["func_name"]
+        if len(current_state) == 0:
+            current_state = {
+                "response_type": None,
+                "func_name": None,
+                "current_text": "",
+            }
+        current_state["current_text"] += delta_text
+        cur_text = current_state["current_text"]
 
         response: Optional[Dict[str, Any]] = None
-        if response_type is None:
+        if current_state["response_type"] is None:
             if cur_text.strip().startswith(self.start_function):  # if function_call
                 if cur_text.endswith(":"):
                     f_index = cur_text.find(self.start_function)
@@ -262,15 +267,16 @@ class PromptTemplateV1(PromptTemplate):
                         },
                         "finish_reason": None,
                     }
-                    response_type = "function"
+                    current_state["response_type"] = "function"
             else:  # if text_response
-                response_type = "text"
+                current_state["response_type"] = "text"
                 response = {
                     "delta": {"content": "", "role": "assistant"},
                     "finish_reason": None,
+                    "index": 0,
                 }
 
-        elif response_type == "function":
+        elif current_state["response_type"] == "function":
             if finish_reason is None:
                 response = {
                     "delta": {
@@ -278,31 +284,36 @@ class PromptTemplateV1(PromptTemplate):
                         "function_call": {"arguments": delta_text},
                     },  # format of openAI at the second return, don't need to add function_name
                     "finish_reason": None,
+                    "index": 0,
                 }
             else:
                 response = {
                     "delta": {},
                     "finish_reason": "function_call",
+                    "index": 0,
                 }  # format of openAI at the end, delta must be empty
 
-        elif response_type == "text":
+        elif current_state["response_type"] == "text":
             if finish_reason is None:
                 # need to check if call a function or not
                 if cur_text.endswith(self.start_function):  # if call another function
                     print("call another function in the mean time")
                     cur_text = self.start_function
-                    response_type = None
+                    current_state["current_text"] = self.start_function
+                    current_state["response_type"] = None
                 else:
                     response = {
                         "delta": {"content": delta_text, "role": "assistant"},
                         "finish_reason": None,
+                        "index": 0,
                     }
             else:  # finish generating
                 response = {
                     "delta": {},
                     "finish_reason": finish_reason,
+                    "index": 0,
                 }  # format of openAI at the end, delta must be empty
-        return {"response_type": response_type, "func_name": func_name}, response
+        return current_state, response
 
 
 class PromptTemplateV2(PromptTemplate):
@@ -579,3 +590,23 @@ def get_prompt_template(version: int) -> PromptTemplate:
     if version == "1":
         return PromptTemplateV1.get_prompt_template()
     return PromptTemplateV2.get_prompt_template()
+
+
+def get_prompt_template_from_tokenizer(tokenizer: Any):
+    """This function will determine the prompt template based on tokenizer.
+    Under the hood, this function will check if tokenizer contains some special tokens from template or not
+
+    Args:
+        tokenizer (Any): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    p1 = PromptTemplateV1.get_prompt_template()
+    p2 = PromptTemplateV2.get_prompt_template()
+    token_ids = tokenizer.encode(p1.start_function, add_special_tokens=False)
+    if token_ids[0] == 29871:
+        token_ids = token_ids[1:]
+    if len(token_ids) == 1:
+        return p1
+    return p2

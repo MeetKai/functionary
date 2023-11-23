@@ -46,7 +46,7 @@ from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
 from functionary.inference import prepare_messages_for_inference
-from functionary.prompt import get_default_prompt_template, PromptTemplate
+from functionary.prompt import get_prompt_template_from_tokenizer, PromptTemplate
 
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
@@ -212,8 +212,8 @@ async def create_chat_completion(raw_request: Request):
         - logit_bias (to be supported by vLLM engine)
     """
     request_json = await raw_request.json()
-    #print("request inofo: ")
-    #print(json.dumps(request_json, ensure_ascii=False, indent=4))
+    # print("request inofo: ")
+    # print(json.dumps(request_json, ensure_ascii=False, indent=4))
     request = ChatCompletionRequest(**request_json)
 
     logger.info(f"Received chat completion request: {request}")
@@ -228,11 +228,9 @@ async def create_chat_completion(raw_request: Request):
             HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
         )
 
-    prompt_template = get_default_prompt_template()
     prompt_token_ids = prepare_messages_for_inference(
         tokenizer=tokenizer,
         messages=request.messages,
-        prompt_template=prompt_template,
         functions=request.functions,
         tools=request.tools,
     ).tolist()[0]
@@ -246,6 +244,7 @@ async def create_chat_completion(raw_request: Request):
 
     # compute stop_token_ids
     stop_token_ids = []
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
     for stop_tok in prompt_template.get_stop_tokens_for_generation():
         tok_ids = tokenizer.encode(stop_tok, add_special_tokens=False)
         stop_token_ids.append(tok_ids[-1])
@@ -292,7 +291,9 @@ async def create_chat_completion(raw_request: Request):
 
     async def completion_stream_generator() -> AsyncGenerator[str, None]:
         generator = wrap_vllm_generator()
-        async for response in generate_openai_format_from_stream_async(generator):
+        async for response in generate_openai_format_from_stream_async(
+            generator, prompt_template
+        ):
             chunk = StreamChoice(**response)
             result = ChatCompletionChunk(id=request_id, choices=[chunk])
             chunk_dic = result.dict(exclude_unset=True)
