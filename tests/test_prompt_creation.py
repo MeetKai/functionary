@@ -73,17 +73,23 @@ class TestInsertingEndToken(unittest.TestCase):
 
     def test_prepare_training_inputs_fast_tokenizer(self):
         print("start testing fast tokenizer")
-        self.run_prepare_training_inputs(
-            use_fast=True, pretrained="mistralai/Mistral-7B-v0.1"
-        )
+        for keep_assistant_prefix in [True, False]:
+            self.run_prepare_training_inputs(
+                use_fast=True, 
+                pretrained="mistralai/Mistral-7B-v0.1",
+                keep_assistant_prefix=keep_assistant_prefix
+            )
 
     def test_prepare_training_inputs_normal_tokenizer(self):
         print("start testing normal tokenizer")
-        self.run_prepare_training_inputs(
-            use_fast=False, pretrained="mistralai/Mistral-7B-v0.1"
-        )
+        for keep_assistant_prefix in [True, False]:
+            self.run_prepare_training_inputs(
+                use_fast=False, 
+                pretrained="mistralai/Mistral-7B-v0.1",
+                keep_assistant_prefix=keep_assistant_prefix
+            )
 
-    def run_prepare_training_inputs(self, use_fast: bool, pretrained: str):
+    def run_prepare_training_inputs(self, use_fast: bool, pretrained: str, keep_assistant_prefix: bool=False):
         """this function is used to test function: prepare_training_inputs"""
         # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
         tokenizer_class = LlamaTokenizer
@@ -108,6 +114,7 @@ class TestInsertingEndToken(unittest.TestCase):
             max_length=1024,
             return_tensor=False,
             verbose=True,
+            keep_assistant_prefix=keep_assistant_prefix
         )
         input_ids = inputs["inputs"]["input_ids"]
         labels = inputs["inputs"]["labels"]
@@ -136,7 +143,10 @@ class TestInsertingEndToken(unittest.TestCase):
             "number of unmasked chunks in labels is different from number of messages where role=assistant",
         )
         for chunk, message in zip(chunks, assistant_message):
-            prefix = prompt_template.get_text_from_message({"role": "assistant"})
+            if keep_assistant_prefix:
+                prefix = ""
+            else:
+                prefix = prompt_template.get_text_from_message({"role": "assistant"})
             decoded_content = prefix + tokenizer.decode(
                 chunk
             )  # note that need to add: "\nassistant" because we mask this, see line 194 in prompt_utils.py

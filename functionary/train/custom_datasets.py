@@ -111,6 +111,7 @@ def prepare_training_inputs(
     padding: Optional[str] = "max_length",
     max_length: Optional[int] = None,
     return_tensor: bool = True,
+    keep_assistant_prefix: bool = False,
     verbose=False,
 ) -> Dict[str, Union[str, Dict]]:
     batch_result = prepare_training_inputs_batch(
@@ -120,6 +121,7 @@ def prepare_training_inputs(
         padding=padding,
         max_length=max_length,
         return_tensor=return_tensor,
+        keep_assistant_prefix=keep_assistant_prefix,
         verbose=verbose,
     )
     return dict(
@@ -129,10 +131,12 @@ def prepare_training_inputs(
 
 
 def get_masked_labels(
+    *,
     input_token_ids: List[int],
     tokenizer: Any,
     assistant_prefix_tokens: List[List[int]],
     assistant_stop_tokens: List[int],
+    keep_assistant_prefix: bool = False,
     verbose: bool = False,
 ):
     # first we initialize labels with all positions as -100,
@@ -156,7 +160,10 @@ def get_masked_labels(
         if matched_prefix is not None:
             end_index = -1
             # unmask until reach <end_of_function> or <end_of_assistant>
-            for i in range(index + len(matched_prefix), total_input_leng):
+            start_masked_index = index + len(matched_prefix)
+            if keep_assistant_prefix:  # unmask prefix of assistant
+                start_masked_index = index
+            for i in range(start_masked_index, total_input_leng):
                 tok_id = input_token_ids[i]
                 if tok_id in assistant_stop_tokens:  # check if this is end of turn
                     labels[i] = input_token_ids[i]  # unmask labels at this position
@@ -166,7 +173,7 @@ def get_masked_labels(
                     labels[i] = input_token_ids[i]  # unmask labels at this position
             if verbose:
                 print("------------------------")
-                start = index + len(matched_prefix)
+                start = start_masked_index #index + len(matched_prefix)
                 chunk_ids = (
                     input_token_ids[start : end_index + 1]
                     if end_index > -1
@@ -218,6 +225,7 @@ def prepare_training_inputs_batch(
     padding: Optional[str] = "max_length",
     max_length: Optional[int] = None,
     return_tensor: bool = True,
+    keep_assistant_prefix: bool = False,
     verbose=False,
 ) -> List[Dict[str, Union[str, Dict]]]:
     """This function is used for when you want to get a dictionary input for the model.forward.
@@ -265,6 +273,7 @@ def prepare_training_inputs_batch(
             tokenizer=tokenizer,
             assistant_prefix_tokens=assistant_prefix_tokens,
             assistant_stop_tokens=assistant_stop_token_ids,
+            keep_assistant_prefix=keep_assistant_prefix,
             verbose=verbose,
         )
         batch_labels.append(labels)
@@ -291,7 +300,12 @@ def prepare_training_inputs_batch(
 
 
 def map_raw_data_to_input_dic(
-    raw_data: List[Dict], tokenizer: Any, padding: str, batch_size: int = 5000
+    *,
+    raw_data: List[Dict], 
+    tokenizer: Any, 
+    padding: str, 
+    batch_size: int = 5000,
+    keep_assistant_prefix: bool = False,
 ) -> List[Dict]:
     invalid_count = 0
     data_size = len(raw_data)
@@ -303,6 +317,7 @@ def map_raw_data_to_input_dic(
             tokenizer=tokenizer,
             padding=padding,
             return_tensor=False,
+            keep_assistant_prefix=keep_assistant_prefix
         )
         assert len(batch_result["batch_inputs"]) == len(raw_data[start:end])
         for item in batch_result["batch_inputs"]:
@@ -564,12 +579,17 @@ class CustomDataset(CachedDataset):
         cached_folder: Optional[str] = None,
         ignore_cached: bool = False,
         batch_size: int = 5000,
+        keep_assistant_prefix: bool = False,
     ):
         super().__init__(tokenizer, cached_folder, ignore_cached)
 
         if not self.load_from_cache:  # if not loaded from cached
             self.data_points = map_raw_data_to_input_dic(
-                raw_data, tokenizer, padding="max_length", batch_size=batch_size
+                raw_data=raw_data, 
+                tokenizer=tokenizer, 
+                padding="max_length", 
+                batch_size=batch_size, 
+                keep_assistant_prefix=keep_assistant_prefix
             )
             if cached_folder is not None:
                 print(f"dump data to cached: {cached_folder}")
@@ -586,12 +606,13 @@ class CustomDataset(CachedDataset):
 class LazyPreprocessDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
-    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer):
+    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer, keep_assistant_prefix: bool = False):
         super().__init__()
         self.tokenizer = tokenizer
 
         self.raw_data = raw_data
         self.cached_data_dict = {}
+        self.keep_assistant_prefix = keep_assistant_prefix
 
     def __len__(self):
         return len(self.raw_data)
@@ -600,7 +621,7 @@ class LazyPreprocessDataset(Dataset):
         if i in self.cached_data_dict:
             return self.cached_data_dict[i]
 
-        ret = prepare_training_inputs(messages=self.raw_data[i], tokenizer=self.tokenizer)
+        ret = prepare_training_inputs(messages=self.raw_data[i], tokenizer=self.tokenizer, keep_assistant_prefix=self.keep_assistant_prefix)
         ret = {
             "input_ids": ret["inputs"]["input_ids"],
             "labels": ret["inputs"]["labels"],
@@ -618,11 +639,16 @@ class PackedDataset(CachedDataset):
         cached_folder: Optional[str] = None,
         ignore_cached: bool = False,
         batch_size: int = 5000,
+        keep_assistant_prefix: bool = False,
     ):
         super().__init__(tokenizer, cached_folder, ignore_cached)
         if not self.load_from_cache:
             self.data_points = map_raw_data_to_input_dic(
-                raw_data, tokenizer, padding="do_not_pad", batch_size=batch_size
+                raw_data=raw_data, 
+                tokenizer=tokenizer, 
+                padding="do_not_pad", 
+                batch_size=batch_size,
+                keep_assistant_prefix=keep_assistant_prefix
             )
             self.update_packing_info()
             if cached_folder is not None:

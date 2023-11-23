@@ -364,19 +364,19 @@ class PromptTemplateV2(PromptTemplate):
         print("---------------------------")
         llm_ouput = f"{self.from_token}assistant\n{self.recipient_token}" + llm_ouput
         print(llm_ouput)
-        responses = llm_ouput.split(f"{self.from_token}assistant")
+        responses = llm_ouput.split(self.from_token)
         responses = [response.strip() for response in responses]
-
         functions = []
         text_response = None
         for response in responses:
             if len(response) == 0:
                 continue
-            # <|recipient|>xxxx\n<|content|>yyy
-            parts = response.split(self.content_token)
-            recipient = parts[0][len(self.recipient_token) :].strip()
-            content = parts[1].strip()
-
+            # response = assistant<|recipient|>xxxx\n<|content|>yyy
+            recipient_index = response.find(self.recipient_token)
+            content_index = response.find(self.content_token)
+            recipient = response[recipient_index + len(self.recipient_token): content_index].strip()
+            content = response[content_index + len(self.content_token): ].strip()
+            #print(f"recipient: {recipient}, content={content}")
             if recipient == "all":
                 text_response = content
             else:
