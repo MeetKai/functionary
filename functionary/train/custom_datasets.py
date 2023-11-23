@@ -9,7 +9,7 @@ import torch
 import transformers
 from torch.utils.data import Dataset
 
-from functionary.prompt import PromptTemplate, get_default_prompt_template
+from functionary.prompt import PromptTemplate, get_prompt_template_from_tokenizer
 
 
 def get_batch_indices(size: int, batch_size: int) -> List[Tuple[int, int]]:
@@ -117,7 +117,6 @@ def prepare_training_inputs(
     *,
     messages: Dict[str, List],
     tokenizer: Any,
-    prompt_template: PromptTemplate = get_default_prompt_template(),
     padding: Optional[str] = "max_length",
     max_length: Optional[int] = None,
     return_tensor: bool = True,
@@ -127,7 +126,6 @@ def prepare_training_inputs(
     batch_result = prepare_training_inputs_batch(
         batch_messages=[messages],
         tokenizer=tokenizer,
-        prompt_template=prompt_template,
         padding=padding,
         max_length=max_length,
         return_tensor=return_tensor,
@@ -231,7 +229,6 @@ def prepare_training_inputs_batch(
     *,
     batch_messages: Dict[str, List],
     tokenizer: Any,
-    prompt_template: PromptTemplate = get_default_prompt_template(),
     padding: Optional[str] = "max_length",
     max_length: Optional[int] = None,
     return_tensor: bool = True,
@@ -256,6 +253,7 @@ def prepare_training_inputs_batch(
             inputs: a dictionary containing: input_ids, attention_mask, labels. This will be used in model.forward(**inputs)
     """
     # a dictionary mapping from end_token_ --> end_token
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
     assistant_stop_token_ids = get_assistant_stop_token_ids(prompt_template, tokenizer)
     assistant_prefix_tokens = get_prefix_assistant_token_ids(prompt_template, tokenizer)
 

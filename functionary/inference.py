@@ -9,8 +9,7 @@ from transformers import (
 )
 
 from functionary.openai_types import ChatMessage, Function, FunctionCall, Tool
-from functionary.prompt import get_default_prompt_template, PromptTemplate
-from functionary.schema import generate_schema_from_functions
+from functionary.prompt import get_prompt_template_from_tokenizer, PromptTemplate
 
 
 class StopWordsCriteria(StoppingCriteria):
@@ -37,28 +36,28 @@ def prepare_messages_for_inference(
     *,
     tokenizer: LlamaTokenizer,
     messages: List[ChatMessage],
-    prompt_template: PromptTemplate,
     functions: Optional[List[Function]] = None,
     tools: Optional[List[Tool]] = None,
     device="cuda:0",
 ) -> torch.Tensor:
+    
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+    
     dic_messages = [mess.dict() for mess in messages]
     dic_messages.append({"role": "assistant"})
-    
+
     tools_or_functions = []
-    if functions is not None:
+    if functions:
         tools_or_functions = [item.dict() for item in functions]
-    elif tools is not None:
+    elif tools:
         tools_or_functions = [item.dict() for item in tools]
-    
+
     dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)
-    final_prompt = prompt_template.get_prompt_from_messages(dic_messages, tools_or_functions=tools_or_functions)
-    print("--------------FINAL_PROMPT-----------")
-    print(final_prompt)
+    final_prompt = prompt_template.get_prompt_from_messages(
+        dic_messages, tools_or_functions=tools_or_functions
+    )
     input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
     input_ids = input_ids.to(device)
-    print("-------decoded_tokens---------")
-    print(tokenizer.decode(input_ids[0].tolist()))
     return input_ids
 
 
@@ -95,11 +94,10 @@ def generate_message(
     device="cuda:0",
     **kwargs,
 ) -> ChatMessage:
-    prompt_template = get_default_prompt_template()
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
     inputs = prepare_messages_for_inference(
         tokenizer=tokenizer,
         messages=messages,
-        prompt_template=prompt_template,
         functions=functions,
         tools=tools,
         device=device,
@@ -115,10 +113,7 @@ def generate_message(
         ):  # this is the issue of Llamatokenizer, sometimes they add this token
             tok_ids = tok_ids[1:]
         stop_words_ids.append(tok_ids)
-    
-    print("stop_words_ids: ", stop_words_ids)
 
-    print("inputs: ", inputs)
     stopping_criteria = StoppingCriteriaList([StopWordsCriteria(stops=stop_words_ids)])
     generate_ids = model.generate(
         inputs,
@@ -127,9 +122,6 @@ def generate_message(
         stopping_criteria=stopping_criteria,
     )
     token_ids = generate_ids[:, inputs.shape[1] :][0].tolist()
-    print("token_ids: ", token_ids)
-
-    # token_ids = remove_stop_tokens_from_end(token_ids, stop_words_ids)
 
     generated_content = tokenizer.decode(
         token_ids,

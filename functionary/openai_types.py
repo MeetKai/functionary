@@ -10,9 +10,10 @@ class FunctionCall(BaseModel):
     
 
 class ToolCall(BaseModel):
+    index: Optional[int] = None
     id: Optional[str] = None
     function: FunctionCall
-    type: str = "function"
+    type: Optional[str] = "function"
 
 
 class Function(BaseModel):
@@ -32,7 +33,7 @@ class ChatMessage(BaseModel):
     content: Optional[str] = None
     name: Optional[str] = None
     function_call: Optional[FunctionCall] = None
-    tool_calls: Optional[List[ToolCall]]
+    tool_calls: Optional[List[ToolCall]] = None
 
     def __str__(self) -> str:
         if self.role == "system":

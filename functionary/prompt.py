@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 import re
 
 import string
-import random 
+import random
 from abc import ABC, abstractmethod
 
 from functionary.schema import generate_schema_from_functions
@@ -31,7 +31,7 @@ class PromptTemplate:
     @abstractmethod
     def get_assistant_prefixes(self) -> List[str]:
         raise NotImplementedError
-    
+
     def pre_process_messages_before_inference(self, messages: List[Dict]) -> List[Dict]:
         return messages
 
@@ -43,7 +43,9 @@ class PromptTemplate:
         functions = []
         if tools_or_functions is not None:
             for item in tools_or_functions:
-                if "function" in item: #  new data format: tools: [{"type": xx, "function": xxx}]
+                if (
+                    "function" in item
+                ):  #  new data format: tools: [{"type": xx, "function": xxx}]
                     functions.append(item["function"])
                 else:
                     functions.append(item)  #  old format
@@ -81,25 +83,24 @@ class PromptTemplate:
     @abstractmethod
     def parse_assistant_response(self, llm_ouput: str) -> Dict:
         raise NotImplementedError
-    
+
     @abstractmethod
     def update_response_state_from_delta_text(
-        self, 
+        self,
         *,
-        current_state: Dict[str, Any], 
-        current_text: str, 
+        current_state: Dict[str, Any],
         delta_text: str,
-        finish_reason: Optional[str]
-    ) -> Tuple[Dict[str, Any], Optional[Dict]]:
+        finish_reason: Optional[str],
+    ) -> Tuple[Dict[str, Any], Union[None, Dict, List[Dict]]]:
         """This function is used for streaming
 
         Args:
             current_state (Dict[str, Any]): a dictionary:
-                + func_name: Optional[str], 
+                + func_name: Optional[str],
                 + response_type: Optional[str] text/function
             current_text: the llm_output until now
             delta_text: new token generated
-            finish_reason: if finished or not 
+            finish_reason: if finished or not
 
         Returns:
             Tuple[Dict[str, Any], Optional[Dict]]: {func_name, response_type}, response
@@ -235,23 +236,29 @@ class PromptTemplateV1(PromptTemplate):
         return result
 
     def update_response_state_from_delta_text(
-        self, 
+        self,
         *,
-        current_state: Dict[str, Any], 
-        cur_text: str, 
+        current_state: Dict[str, Any],
         delta_text: str,
-        finish_reason: Optional[str]
+        finish_reason: Optional[str],
     ) -> Tuple[Dict[str, Any], Optional[Dict]]:
-        cur_text += delta_text
-        response_type = current_state["response_type"]
-        func_name = current_state["func_name"]
-        
+        if len(current_state) == 0:
+            current_state = {
+                "response_type": None,
+                "func_name": None,
+                "current_text": "",
+            }
+        current_state["current_text"] += delta_text
+        cur_text = current_state["current_text"]
+
         response: Optional[Dict[str, Any]] = None
-        if response_type is None:
+        if current_state["response_type"] is None:
             if cur_text.strip().startswith(self.start_function):  # if function_call
                 if cur_text.endswith(":"):
                     f_index = cur_text.find(self.start_function)
-                    func_name = cur_text[f_index + len(self.start_function): -1].strip()
+                    func_name = cur_text[
+                        f_index + len(self.start_function) : -1
+                    ].strip()
                     response = {
                         "delta": {
                             "role": "assistant",
@@ -260,12 +267,16 @@ class PromptTemplateV1(PromptTemplate):
                         },
                         "finish_reason": None,
                     }
-                    response_type = "function"
+                    current_state["response_type"] = "function"
             else:  # if text_response
-                response_type = "text"
-                response = {"delta": {"content": "", "role": "assistant"}, "finish_reason": None}
-                
-        elif response_type == "function":
+                current_state["response_type"] = "text"
+                response = {
+                    "delta": {"content": "", "role": "assistant"},
+                    "finish_reason": None,
+                    "index": 0,
+                }
+
+        elif current_state["response_type"] == "function":
             if finish_reason is None:
                 response = {
                     "delta": {
@@ -273,29 +284,36 @@ class PromptTemplateV1(PromptTemplate):
                         "function_call": {"arguments": delta_text},
                     },  # format of openAI at the second return, don't need to add function_name
                     "finish_reason": None,
+                    "index": 0,
                 }
             else:
                 response = {
                     "delta": {},
                     "finish_reason": "function_call",
+                    "index": 0,
                 }  # format of openAI at the end, delta must be empty
-                
-        elif response_type == "text":
+
+        elif current_state["response_type"] == "text":
             if finish_reason is None:
                 # need to check if call a function or not
                 if cur_text.endswith(self.start_function):  # if call another function
                     print("call another function in the mean time")
                     cur_text = self.start_function
-                    response_type = None
+                    current_state["current_text"] = self.start_function
+                    current_state["response_type"] = None
                 else:
-                    response = {"delta": {"content": delta_text, "role": "assistant"}, "finish_reason": None}
+                    response = {
+                        "delta": {"content": delta_text, "role": "assistant"},
+                        "finish_reason": None,
+                        "index": 0,
+                    }
             else:  # finish generating
                 response = {
                     "delta": {},
                     "finish_reason": finish_reason,
+                    "index": 0,
                 }  # format of openAI at the end, delta must be empty
-        return {"response_type":response_type, "func_name": func_name}, response
-
+        return current_state, response
 
 
 class PromptTemplateV2(PromptTemplate):
@@ -360,7 +378,7 @@ class PromptTemplateV2(PromptTemplate):
     def parse_assistant_response(self, llm_ouput: str) -> Dict:
         for stop in self.get_stop_tokens_for_generation():
             if llm_ouput.endswith(stop):
-                llm_ouput = llm_ouput[: - len(stop)]
+                llm_ouput = llm_ouput[: -len(stop)]
         print("---------------------------")
         llm_ouput = f"{self.from_token}assistant\n{self.recipient_token}" + llm_ouput
         print(llm_ouput)
@@ -374,9 +392,11 @@ class PromptTemplateV2(PromptTemplate):
             # response = assistant<|recipient|>xxxx\n<|content|>yyy
             recipient_index = response.find(self.recipient_token)
             content_index = response.find(self.content_token)
-            recipient = response[recipient_index + len(self.recipient_token): content_index].strip()
-            content = response[content_index + len(self.content_token): ].strip()
-            #print(f"recipient: {recipient}, content={content}")
+            recipient = response[
+                recipient_index + len(self.recipient_token) : content_index
+            ].strip()
+            content = response[content_index + len(self.content_token) :].strip()
+            # print(f"recipient: {recipient}, content={content}")
             if recipient == "all":
                 text_response = content
             else:
@@ -384,9 +404,11 @@ class PromptTemplateV2(PromptTemplate):
 
         tool_calls = []
         for func in functions:
-            tool_calls.append({"function": func, "id": get_random_tool_call_id(), "type": "function"})
+            tool_calls.append(
+                {"function": func, "id": get_random_tool_call_id(), "type": "function"}
+            )
         return {"role": "assistant", "content": text_response, "tool_calls": tool_calls}
-    
+
     def pre_process_messages_before_inference(self, messages: List[Dict]) -> List[Dict]:
         """re-order the messages where role = tool to match the order in tool_calls by tool_call_id
         Args:
@@ -404,20 +426,155 @@ class PromptTemplateV2(PromptTemplate):
             if message["role"] == "assistant" and tool_calls:
                 num_calls = len(tool_calls)
                 tool_call_ids = [item["id"] for item in tool_calls]
-                
+
                 tool_messages = [messages[index + 1 + j] for j in range(num_calls)]
-                id_2_tool_messages = {item["tool_call_id"]: item for item in tool_messages}
+                id_2_tool_messages = {
+                    item["tool_call_id"]: item for item in tool_messages
+                }
                 new_messages = [id_2_tool_messages[cid] for cid in tool_call_ids]
-                
+
                 result.extend(new_messages)
                 index += num_calls + 1
             else:
                 index += 1
         return result
 
+    def get_function_delta_response(
+        self,
+        current_state: Dict,
+        delta_text: str,
+        first_call: bool,
+        return_role: bool,
+        finish_reason: Optional[str],
+    ) -> Dict:
+        return {
+            "delta": {
+                "content": None,
+                "function_call": None,
+                "role": None if not return_role else "assistant",
+                "tool_calls": [
+                    {
+                        "index": current_state["func_index"],
+                        "id": current_state["call_id"]
+                        if first_call
+                        else None,  # only return call_id at the first time
+                        "function": {
+                            "arguments": delta_text,
+                            "name": current_state["func_name"] if first_call else None,
+                        },
+                        "type": "function" if first_call else None,
+                    }
+                ],
+            },
+            "finish_reason": finish_reason,
+            "index": 0,
+        }
+
+    def get_text_delta_response(
+        self, delta_text: Optional[str], return_role: bool, finish_reason: Optional[str]
+    ) -> Dict:
+        return {
+            "delta": {
+                "content": delta_text,
+                "function_call": None,
+                "role": None if not return_role else "assistant",
+                "tool_calls": None,
+            },
+            "finish_reason": finish_reason,
+            "index": 0,
+        }
+
+    def get_recipient(self, current_text: str) -> str:
+        recipient_index = current_text.find(self.recipient_token)
+        start_index = 0
+        if recipient_index >= 0:
+            start_index = recipient_index + len(self.recipient_token)
+        end_index = current_text.find(f"\n{self.content_token}")
+        return current_text[start_index:end_index].strip()
+
+    def update_response_state_from_delta_text(
+        self,
+        *,
+        current_state: Dict[str, Any],
+        delta_text: str,
+        finish_reason: Optional[str],
+    ) -> Tuple[Dict[str, Any], Union[None, Dict, List[Dict]]]:
+        if len(current_state) == 0:  # empty dict, at the first_time
+            current_state = {
+                "current_text": "",
+                "func_name": None,
+                "response_type": None,
+                "func_index": -1,
+                "call_id": None,
+                "skip_until_reach": self.content_token,  # at first we will skip until reach <|content|>
+                "first_time": True,
+            }
+        current_state["current_text"] += delta_text
+
+        if finish_reason is not None:
+            if current_state["response_type"] == "function":
+                finish_reason = "tool_calls"
+            return current_state, self.get_text_delta_response(
+                None, False, finish_reason
+            )
+
+        skip_until_reach = current_state.get("skip_until_reach", "")
+        if skip_until_reach:
+            if delta_text != skip_until_reach:
+                return current_state, None
+            else:
+                current_state["skip_until_reach"] = ""  # once hit, no need to skip
+                recipient = self.get_recipient(current_state["current_text"])
+                first_time = current_state["first_time"]
+                current_state["first_time"] = False
+                if recipient == "all":
+                    current_state["response_type"] = "text"
+                    return current_state, self.get_text_delta_response(
+                        "", True, finish_reason
+                    )
+                else:
+                    current_state["response_type"] = "function"
+                    current_state["func_name"] = recipient
+                    current_state["call_id"] = get_random_tool_call_id()
+                    current_state["func_index"] += 1
+
+                    responses = []
+                    if (
+                        first_time
+                    ):  # first chunk of function_call is a message where all fields are None, except role
+                        responses.append(
+                            self.get_text_delta_response(None, True, finish_reason)
+                        )
+                    responses.append(
+                        self.get_function_delta_response(
+                            current_state, "", True, False, finish_reason
+                        )
+                    )
+                    return current_state, responses
+        else:
+            assert current_state["response_type"] is not None
+            if (
+                delta_text == self.from_token
+            ):  # skip until reach <content> to check type of response
+                current_state["current_text"] = ""
+                current_state["skip_until_reach"] = self.content_token
+                current_state["response_type"] = None
+                return current_state, None
+            else:
+                if current_state["response_type"] == "function":
+                    return current_state, self.get_function_delta_response(
+                        current_state, delta_text, False, False, finish_reason
+                    )
+                else:  # response_type=text
+                    return current_state, self.get_text_delta_response(
+                        delta_text, True, finish_reason
+                    )
+
 
 def get_random_tool_call_id():
-    return "call_" + "".join([random.choice(string.ascii_letters + string.digits) for _ in range(24)])
+    return "call_" + "".join(
+        [random.choice(string.ascii_letters + string.digits) for _ in range(24)]
+    )
 
 
 def get_default_prompt_template() -> PromptTemplate:
@@ -433,3 +590,23 @@ def get_prompt_template(version: int) -> PromptTemplate:
     if version == "1":
         return PromptTemplateV1.get_prompt_template()
     return PromptTemplateV2.get_prompt_template()
+
+
+def get_prompt_template_from_tokenizer(tokenizer: Any):
+    """This function will determine the prompt template based on tokenizer.
+    Under the hood, this function will check if tokenizer contains some special tokens from template or not
+
+    Args:
+        tokenizer (Any): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    p1 = PromptTemplateV1.get_prompt_template()
+    p2 = PromptTemplateV2.get_prompt_template()
+    token_ids = tokenizer.encode(p1.start_function, add_special_tokens=False)
+    if token_ids[0] == 29871:
+        token_ids = token_ids[1:]
+    if len(token_ids) == 1:
+        return p1
+    return p2

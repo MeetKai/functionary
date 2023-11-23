@@ -10,9 +10,14 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from transformers import LlamaForCausalLM, LlamaTokenizerFast, AutoModelForCausalLM
 
 from functionary.inference import generate_message
-#from functionary.inference_stream import generate_stream
-from functionary.openai_types import (ChatCompletion, ChatCompletionChunk,
-                                      ChatInput, Choice, StreamChoice)
+from functionary.inference_stream import generate_stream
+from functionary.openai_types import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatInput,
+    Choice,
+    StreamChoice,
+)
 
 app = FastAPI(title="Functionary API")
 
@@ -30,22 +35,28 @@ async def chat_endpoint(chat_input: ChatInput):
             tokenizer=tokenizer,
             device=model.device,
         )
-        finish_reason = "stop" 
+        finish_reason = "stop"
         if response_message.function_call is not None:
             finish_reason = "function_call"  # need to add this to follow the format of openAI function calling
-        result = ChatCompletion(id=request_id, choices=[Choice.from_message(response_message, finish_reason)])
+        result = ChatCompletion(
+            id=request_id,
+            choices=[Choice.from_message(response_message, finish_reason)],
+        )
         return result.dict(exclude_none=True)
     else:
         response_generator = generate_stream(
             messages=chat_input.messages,
             functions=chat_input.functions,
+            tools=chat_input.tools,
             temperature=chat_input.temperature,
             model=model,  # type: ignore
             tokenizer=tokenizer,
         )
+
         def get_response_stream():
             for response in response_generator:
                 chunk = StreamChoice(**response)
+                print("chunk: ", chunk)
                 result = ChatCompletionChunk(id=request_id, choices=[chunk])
                 chunk_dic = result.dict(exclude_unset=True)
                 chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
