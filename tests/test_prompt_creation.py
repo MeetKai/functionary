@@ -73,7 +73,7 @@ class TestInsertingEndToken(unittest.TestCase):
 
     def test_prepare_training_inputs_fast_tokenizer(self):
         print("start testing fast tokenizer")
-        for keep_assistant_prefix in [True, False]:
+        for keep_assistant_prefix in [False, True]:
             self.run_prepare_training_inputs(
                 use_fast=True, 
                 pretrained="mistralai/Mistral-7B-v0.1",
@@ -82,7 +82,7 @@ class TestInsertingEndToken(unittest.TestCase):
 
     def test_prepare_training_inputs_normal_tokenizer(self):
         print("start testing normal tokenizer")
-        for keep_assistant_prefix in [True, False]:
+        for keep_assistant_prefix in [False, True]:
             self.run_prepare_training_inputs(
                 use_fast=False, 
                 pretrained="mistralai/Mistral-7B-v0.1",

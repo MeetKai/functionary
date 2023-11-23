@@ -20,8 +20,7 @@ import asyncio
 import json
 import time
 from http import HTTPStatus
-from typing import (Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple,
-                    Union)
+from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
 
 import fastapi
 import uvicorn
@@ -32,9 +31,14 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
-from vllm.entrypoints.openai.protocol import (ErrorResponse, LogProbs,
-                                              ModelCard, ModelList,
-                                              ModelPermission, UsageInfo)
+from vllm.entrypoints.openai.protocol import (
+    ErrorResponse,
+    LogProbs,
+    ModelCard,
+    ModelList,
+    ModelPermission,
+    UsageInfo,
+)
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
@@ -43,10 +47,16 @@ from vllm.utils import random_uuid
 
 from functionary.inference import prepare_messages_for_inference
 from functionary.prompt import get_default_prompt_template, PromptTemplate
-#from functionary.inference_stream import \
-#    generate_openai_format_from_stream_async
-from functionary.openai_types import (ChatCompletionChunk, ChatMessage,
-                                      Function, FunctionCall, StreamChoice, Tool)
+
+from functionary.inference_stream import generate_openai_format_from_stream_async
+from functionary.openai_types import (
+    ChatCompletionChunk,
+    ChatMessage,
+    Function,
+    FunctionCall,
+    StreamChoice,
+    Tool,
+)
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -58,8 +68,8 @@ app = fastapi.FastAPI()
 class ChatCompletionRequest(BaseModel):
     model: str
     messages: List[ChatMessage]
-    functions: Optional[List[Function]] = []
-    tools: Optional[List[Tool]]
+    functions: Optional[List[Function]] = None
+    tools: Optional[List[Tool]] = None
     temperature: Optional[float] = 0.7
     top_p: Optional[float] = 1.0
     n: Optional[int] = 1
@@ -113,7 +123,8 @@ class ChatCompletionStreamResponse(BaseModel):
 
 def create_error_response(status_code: HTTPStatus, message: str) -> JSONResponse:
     return JSONResponse(
-        ErrorResponse(message=message, type="invalid_request_error").dict(), status_code=status_code.value
+        ErrorResponse(message=message, type="invalid_request_error").dict(),
+        status_code=status_code.value,
     )
 
 
@@ -162,12 +173,16 @@ async def check_length(request, input_ids, model_config):
 @app.get("/v1/models")
 async def show_available_models():
     """Show available models. Right now we only have one model."""
-    model_cards = [ModelCard(id=served_model, root=served_model, permission=[ModelPermission()])]
+    model_cards = [
+        ModelCard(id=served_model, root=served_model, permission=[ModelPermission()])
+    ]
     return ModelList(data=model_cards)
 
 
 def create_logprobs(
-    token_ids: List[int], id_logprobs: List[Dict[int, float]], initial_text_offset: int = 0
+    token_ids: List[int],
+    id_logprobs: List[Dict[int, float]],
+    initial_text_offset: int = 0,
 ) -> LogProbs:
     """Create OpenAI-style logprobs."""
     logprobs = LogProbs()
@@ -182,7 +197,9 @@ def create_logprobs(
             logprobs.text_offset.append(logprobs.text_offset[-1] + last_token_len)
         last_token_len = len(token)
 
-        logprobs.top_logprobs.append({tokenizer.convert_ids_to_tokens(i): p for i, p in id_logprob.items()})
+        logprobs.top_logprobs.append(
+            {tokenizer.convert_ids_to_tokens(i): p for i, p in id_logprob.items()}
+        )
     return logprobs
 
 
@@ -194,7 +211,11 @@ async def create_chat_completion(raw_request: Request):
     NOTE: Currently we do not support the following features:
         - logit_bias (to be supported by vLLM engine)
     """
-    request = ChatCompletionRequest(**await raw_request.json())
+    request_json = await raw_request.json()
+    #print("request inofo: ")
+    #print(json.dumps(request_json, ensure_ascii=False, indent=4))
+    request = ChatCompletionRequest(**request_json)
+
     logger.info(f"Received chat completion request: {request}")
 
     error_check_ret = await check_model(request)
@@ -203,15 +224,17 @@ async def create_chat_completion(raw_request: Request):
 
     if request.logit_bias is not None:
         # TODO: support logit_bias in vLLM engine.
-        return create_error_response(HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported")
+        return create_error_response(
+            HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
+        )
 
     prompt_template = get_default_prompt_template()
     prompt_token_ids = prepare_messages_for_inference(
-        tokenizer = tokenizer, 
-        messages=request.messages, 
+        tokenizer=tokenizer,
+        messages=request.messages,
         prompt_template=prompt_template,
         functions=request.functions,
-        tools=request.tools
+        tools=request.tools,
     ).tolist()[0]
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     if error_check_ret is not None:
@@ -246,7 +269,9 @@ async def create_chat_completion(raw_request: Request):
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
 
-    result_generator = engine.generate(None, sampling_params, request_id, prompt_token_ids=prompt_token_ids)
+    result_generator = engine.generate(
+        None, sampling_params, request_id, prompt_token_ids=prompt_token_ids
+    )
 
     async def abort_request() -> None:
         await engine.abort(request_id)
@@ -258,7 +283,10 @@ async def create_chat_completion(raw_request: Request):
                 delta_text = output.text[len(previous_texts) :]
                 previous_texts = output.text
                 finish_reason = output.finish_reason
-                if delta_text not in [EndToken.assistant.value, EndToken.function_call.value]:
+                if (
+                    delta_text.strip()
+                    not in prompt_template.get_stop_tokens_for_generation()
+                ):
                     yield delta_text, finish_reason
         yield "", "stop"
 
@@ -278,7 +306,9 @@ async def create_chat_completion(raw_request: Request):
         # Abort the request if the client disconnects.
         background_tasks.add_task(abort_request)
         return StreamingResponse(
-            completion_stream_generator(), media_type="text/event-stream", background=background_tasks
+            completion_stream_generator(),
+            media_type="text/event-stream",
+            background=background_tasks,
         )
 
     # Non-streaming response
@@ -293,7 +323,9 @@ async def create_chat_completion(raw_request: Request):
     choices = []
     for output in final_res.outputs:
         text_response = output.text.strip()
-        chat_mess = prompt_template.parse_assistant_response(text_response) #parse_generated_content(text_response)
+        chat_mess = prompt_template.parse_assistant_response(
+            text_response
+        )  # parse_generated_content(text_response)
         choice_data = ChatCompletionResponseChoice(
             index=output.index,
             message=ChatMessage(**chat_mess),
@@ -325,19 +357,31 @@ async def create_chat_completion(raw_request: Request):
             yield f"data: {response_json}\n\n"
             yield "data: [DONE]\n\n"
 
-        return StreamingResponse(fake_stream_generator(), media_type="text/event-stream")
+        return StreamingResponse(
+            fake_stream_generator(), media_type="text/event-stream"
+        )
 
     return response
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="vLLM OpenAI-Compatible RESTful API server.")
+    parser = argparse.ArgumentParser(
+        description="vLLM OpenAI-Compatible RESTful API server."
+    )
     parser.add_argument("--host", type=str, default="localhost", help="host name")
     parser.add_argument("--port", type=int, default=8000, help="port number")
-    parser.add_argument("--allow-credentials", action="store_true", help="allow credentials")
-    parser.add_argument("--allowed-origins", type=json.loads, default=["*"], help="allowed origins")
-    parser.add_argument("--allowed-methods", type=json.loads, default=["*"], help="allowed methods")
-    parser.add_argument("--allowed-headers", type=json.loads, default=["*"], help="allowed headers")
+    parser.add_argument(
+        "--allow-credentials", action="store_true", help="allow credentials"
+    )
+    parser.add_argument(
+        "--allowed-origins", type=json.loads, default=["*"], help="allowed origins"
+    )
+    parser.add_argument(
+        "--allowed-methods", type=json.loads, default=["*"], help="allowed methods"
+    )
+    parser.add_argument(
+        "--allowed-headers", type=json.loads, default=["*"], help="allowed headers"
+    )
     parser.add_argument(
         "--served-model-name",
         type=str,
@@ -370,6 +414,14 @@ if __name__ == "__main__":
     engine_model_config = asyncio.run(engine.get_model_config())
 
     # A separate tokenizer to map token IDs to strings.
-    tokenizer = get_tokenizer(engine_args.tokenizer, tokenizer_mode=engine_args.tokenizer_mode)
+    tokenizer = get_tokenizer(
+        engine_args.tokenizer, tokenizer_mode=engine_args.tokenizer_mode
+    )
 
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info", timeout_keep_alive=TIMEOUT_KEEP_ALIVE)
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        log_level="info",
+        timeout_keep_alive=TIMEOUT_KEEP_ALIVE,
+    )

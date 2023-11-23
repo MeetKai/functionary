@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from transformers import LlamaForCausalLM, LlamaTokenizerFast, AutoModelForCausalLM
 
 from functionary.inference import generate_message
-#from functionary.inference_stream import generate_stream
+from functionary.inference_stream import generate_stream
 from functionary.openai_types import (ChatCompletion, ChatCompletionChunk,
                                       ChatInput, Choice, StreamChoice)
 
@@ -39,6 +39,7 @@ async def chat_endpoint(chat_input: ChatInput):
         response_generator = generate_stream(
             messages=chat_input.messages,
             functions=chat_input.functions,
+            tools=chat_input.tools,
             temperature=chat_input.temperature,
             model=model,  # type: ignore
             tokenizer=tokenizer,
@@ -46,6 +47,7 @@ async def chat_endpoint(chat_input: ChatInput):
         def get_response_stream():
             for response in response_generator:
                 chunk = StreamChoice(**response)
+                print("chunk: ", chunk)
                 result = ChatCompletionChunk(id=request_id, choices=[chunk])
                 chunk_dic = result.dict(exclude_unset=True)
                 chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
