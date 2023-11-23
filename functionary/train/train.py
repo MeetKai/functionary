@@ -1,27 +1,30 @@
 import json
 import math
-import pathlib
-from dataclasses import dataclass, field
-from typing import Optional
-import sys
 import os
+import pathlib
+import sys
+from dataclasses import dataclass, field
+from typing import List, Optional
 
+import numpy as np
 import torch
 import torch.distributed
-from torch.utils.data import DataLoader
-from typing import List
 import transformers
 from torch.nn import CrossEntropyLoss
-from transformers import AutoTokenizer, Trainer, LlamaTokenizerFast
+from torch.utils.data import DataLoader
+from transformers import AutoTokenizer, LlamaTokenizerFast, Trainer
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 from functionary.prompt import get_default_prompt_template
 from functionary.train.custom_datasets import read_dataset
+
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
+
 
 def print_rank0(*arg):
     if LOCAL_RANK == 0:
         print(*arg)
+
 
 @dataclass
 class ModelArguments:
@@ -55,6 +58,12 @@ class TrainingArguments(transformers.TrainingArguments):
         default=4096,
         metadata={
             "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
+        },
+    )
+    keep_assistant_prefix: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to mask the assistant prefix `<|from|>assistant\n<|recipient|>` during training"
         },
     )
 
@@ -94,9 +103,7 @@ def initialize_tokenizer(
     tokenizer.pad_token = tokenizer.eos_token
     prompt_template = get_default_prompt_template()
     added_tokens = prompt_template.get_additional_tokens()
-    special_tokens = {
-        "additional_special_tokens": added_tokens
-    }
+    special_tokens = {"additional_special_tokens": added_tokens}
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
     print("tokenizer: ", tokenizer)
 
@@ -172,7 +179,6 @@ def print_some_examples(ds, tokenizer):
             break
 
 
-
 def train():
     argument_parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments)
@@ -227,8 +233,6 @@ def train():
     assert data_args.train_data_path is not None, "Please provide a training data file."
 
     train_dataset = read_dataset(data_args, training_args, tokenizer, "train")
-    
-    print_some_examples(train_dataset, tokenizer)
 
     if torch.distributed.get_rank() == 0:
         print(f"Training Data Loaded: #{len(train_dataset)}")
@@ -238,6 +242,9 @@ def train():
 
         if torch.distributed.get_rank() == 0:
             print(f"Eval Data Loaded: #{len(eval_dataset)}")
+
+    print_some_examples(train_dataset, tokenizer)
+    print_some_examples(eval_dataset, tokenizer)
 
     def preprocess_logits_for_metrics(logits, labels):
         """Preprocesses the logits during evaluation by computing the greedy token predictions for
@@ -255,10 +262,35 @@ def train():
 
         return pred_ids, loss
 
+    # Compute assistant prefix token_id sequence so compute_metrics can mask those sequences
+    # when computing special tokens accuracy
+    assistant_prefix_seq = tokenizer.encode(
+        "<|from|>assistant\n<|recipient|>", add_special_tokens=False
+    )
+
     def compute_metrics(eval_preds):
         """Computes next-token accuracy and perplexity metrics for evaluation"""
         predictions = eval_preds.predictions[0][:, :-1]
         labels = eval_preds.label_ids[:, 1:]
+
+        # Mask away all instances of assistant prefix subsequence
+        # nonlocal assistant_prefix_seq
+        # seq_to_mask = [-100] + assistant_prefix_seq
+
+        # def replace_subsequence(array, target, replacement):
+        #     rows, cols = array.shape
+        #     target_length = len(target)
+
+        #     for i in range(rows):
+        #         for j in range(cols - target_length + 1):
+        #             if np.array_equal(array[i, j : j + target_length], target):
+        #                 array[i, j : j + target_length] = replacement
+
+        #     return array
+
+        # labels = replace_subsequence(
+        #     array=labels, target=seq_to_mask, replacement=[-100] * len(seq_to_mask)
+        # )
 
         # Calculate accuracy
         acc_count = 0
@@ -290,7 +322,7 @@ def train():
                 acc = dic[token_id]["acc"] / total_num
             metrics[f"accuracy_{token}"] = acc
             metrics[f"accuracy_total_num_{token}"] = total_num
-            
+
         return metrics
 
     if training_args.do_eval:

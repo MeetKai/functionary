@@ -7,7 +7,7 @@ python3 -m venv venv && source venv/bin/activate
 pip3 install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
 
 # Install Dependencies
-pip install accelerate==0.23.0 transformers==4.34.0 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 deepspeed==0.11.1 typer==0.9.0
+pip install accelerate==0.23.0 transformers==4.35.0 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 deepspeed==0.11.1 typer==0.9.0
 
 # Install Flash Attention 2
 pip install flash-attn==2.3.2 --no-build-isolation
