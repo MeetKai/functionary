@@ -122,6 +122,11 @@ class ChatCompletionStreamResponse(BaseModel):
     choices: List[ChatCompletionResponseStreamChoice]
 
 
+class FunctionsList(BaseModel):
+    object: str = "list"
+    data: List[Function] = Field(default_factory=list)
+
+
 def create_error_response(status_code: HTTPStatus, message: str) -> JSONResponse:
     return JSONResponse(
         ErrorResponse(message=message, type="invalid_request_error").dict(),
@@ -180,11 +185,12 @@ async def show_available_models():
     return ModelList(data=model_cards)
 
 
-@app.get("v1/functions")
+@app.get("/v1/functions")
 async def show_available_functions():
     """Show all available functions in function store."""
-    breakpoint()
-    return []
+    response = requests.get("http://0.0.0.0:8002/functions")
+    functions = [Function(**fn) for fn in response.json()]
+    return FunctionsList(data=functions)
 
 
 def create_logprobs(
@@ -311,7 +317,7 @@ async def create_chat_completion(raw_request: Request):
                 chunk_dic = result.dict(exclude_unset=True)
                 chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
 
-                # Store the chunks if the model generates a function call
+                # Store and yield the chunks if the model generates a function call
                 # {'delta': {'role': 'assistant', 'content': None, 'function_call': xxx}, 'finish_reason': None}]
                 if (
                     "function_call" in chunk_dic["choices"][0]["delta"]
@@ -325,6 +331,7 @@ async def create_chat_completion(raw_request: Request):
                         function_call = chunk_dic["choices"][0]["delta"][
                             "function_call"
                         ]
+                    yield f"data: {chunk_data}\n\n"
                 # Skip this step if the chunk indicates the end of function_call
                 # [{'delta': {}, 'finish_reason': 'function_call'}]
                 elif chunk_dic["choices"][0]["finish_reason"] == "function_call":
@@ -359,8 +366,9 @@ async def create_chat_completion(raw_request: Request):
                 # Send data to the frontend to show that a function is called
                 fn_call_chunk = {
                     "delta": {
-                        "role": "assistant",
-                        "content": f"**Calling function:**\nName: {function_call['name']}\nArguments: {function_call['arguments'].lstrip().rstrip()}\n**Function response:**\n{response}\n\n",
+                        "role": "function",
+                        "name": function_call["name"],
+                        "content": response,
                     },
                     "finish_reason": None,
                 }
