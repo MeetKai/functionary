@@ -9,9 +9,12 @@ import torch
 import transformers
 from torch.utils.data import Dataset
 
-from functionary.prompt import (EndToken, get_end_token_to_token_id,
-                                get_number_of_tokens_of_prefix_assistant,
-                                get_prompt_from_messages)
+from functionary.prompt import (
+    EndToken,
+    get_end_token_to_token_id,
+    get_number_of_tokens_of_prefix_assistant,
+    get_prompt_from_messages,
+)
 
 
 def get_batch_indices(size: int, batch_size: int) -> List[Tuple[int, int]]:
@@ -45,6 +48,58 @@ def get_matching_prefix(prefix_tokens, sequence_ids):
     return None
 
 
+def read_dataset(data_args, training_args, tokenizer, ds_type):
+    local_rank = int(os.getenv("LOCAL_RANK", "0"))
+    ds_class = CustomDataset
+    if data_args.packing:
+        ds_class = PackedDataset  # if packing --> Use PackedDataset
+
+    # The way we read dataset is:
+    # Rank 0 will process the dataset and save the result to cached_folder, other ranks will read from the cached_folder
+    cached_folder = os.path.join(training_args.output_dir, f"{ds_type}_cached")
+
+    if (
+        training_args.local_rank > 0
+    ):  # If this is not rank 0, stay here, wait for rank 0 to process the data
+        print(
+            f"process: {local_rank} wait for main process to prepare the training data"
+        )
+        torch.distributed.barrier()
+    else:  # rank 0 process the data and save to cached_folder
+        if not os.path.exists(training_args.output_dir):
+            os.mkdir(training_args.output_dir)
+        if not os.path.exists(cached_folder):
+            os.mkdir(cached_folder)
+
+        data_path = (
+            data_args.train_data_path
+            if ds_type == "train"
+            else data_args.eval_data_path
+        )
+        data_ratio = (
+            data_args.training_ratio if ds_type == "train" else data_args.eval_ratio
+        )
+
+        with open(data_path, "r") as file:
+            raw_train_data = [json.loads(line) for line in file]
+            if data_ratio < 1:
+                raw_train_data = raw_train_data[: int(data_ratio * len(raw_train_data))]
+
+        print(f"{ds_type} size: : {len(raw_train_data)}")
+        # ignore_cached=True to ignore the cached if exist, rank 0 will always process the data
+        ds = ds_class(
+            raw_train_data, tokenizer, cached_folder=cached_folder, ignore_cached=True
+        )
+        print(f"process: {local_rank} finish processing data")
+        torch.distributed.barrier()  # allow other ranks to execute
+
+    # All ranks will read the processed data from cached_path created by rank 0
+    ds = ds_class(None, tokenizer, cached_folder=cached_folder, ignore_cached=False)
+    if local_rank == 0:
+        ds.stat()  #  print some statistics about the dataset
+    return ds
+
+
 def prepare_training_inputs(
     messages: Dict[str, List],
     tokenizer: Any,
@@ -53,11 +108,21 @@ def prepare_training_inputs(
     return_tensor: bool = True,
     verbose=False,
 ) -> Dict[str, Union[str, Dict]]:
-    batch_result = prepare_training_inputs_batch([messages], tokenizer, padding, max_length, return_tensor, verbose)
-    return dict(final_prompt=batch_result["batch_prompts"][0], inputs=batch_result["batch_inputs"][0])
+    batch_result = prepare_training_inputs_batch(
+        [messages], tokenizer, padding, max_length, return_tensor, verbose
+    )
+    return dict(
+        final_prompt=batch_result["batch_prompts"][0],
+        inputs=batch_result["batch_inputs"][0],
+    )
 
 
-def get_masked_labels(input_token_ids: List[int], tokenizer: Any, endtoken_2_id: Dict, verbose: bool = False):
+def get_masked_labels(
+    input_token_ids: List[int],
+    tokenizer: Any,
+    endtoken_2_id: Dict,
+    verbose: bool = False,
+):
     # first we initialize labels with all positions as -100,
     # then we will fill in positions where role=assistant as we only include these in computing the loss
     labels = [-100 for _ in range(len(input_token_ids))]
@@ -91,11 +156,17 @@ def get_masked_labels(input_token_ids: List[int], tokenizer: Any, endtoken_2_id:
             if verbose:
                 print("------------------------")
                 start = index + len(matched_prefix)
-                chunk_ids = input_token_ids[start : end_index + 1] if end_index > -1 else input_token_ids[start:]
+                chunk_ids = (
+                    input_token_ids[start : end_index + 1]
+                    if end_index > -1
+                    else input_token_ids[start:]
+                )
                 print("chunk_ids: ", chunk_ids)
                 print(
                     "longer chunk: ",
-                    input_token_ids[index : end_index + 1] if end_index > 1 else input_token_ids[index:],
+                    input_token_ids[index : end_index + 1]
+                    if end_index > 1
+                    else input_token_ids[index:],
                 )
                 print(f"chunk:{tokenizer.decode(chunk_ids)}")
                 print("-------------------")
@@ -144,17 +215,26 @@ def prepare_training_inputs_batch(
         prompt_str_list.append(prompt_str)
     max_length = max_length if max_length is not None else tokenizer.model_max_length
 
-    input_dic = tokenizer(prompt_str_list, padding=padding, max_length=max_length, truncation=True)
-    #input_token_ids = input_dic["input_ids"]
+    input_dic = tokenizer(
+        prompt_str_list, padding=padding, max_length=max_length, truncation=True
+    )
+    # input_token_ids = input_dic["input_ids"]
     batch_labels = []
     for input_token_ids in input_dic["input_ids"]:
-        labels = get_masked_labels(input_token_ids, tokenizer, endtoken_2_id, verbose=verbose)
+        labels = get_masked_labels(
+            input_token_ids, tokenizer, endtoken_2_id, verbose=verbose
+        )
         batch_labels.append(labels)
         assert len(labels) == len(input_token_ids)
 
     input_dic["labels"] = batch_labels
-    assert len(input_dic["labels"]) == len(input_dic["input_ids"]) == len(input_dic["attention_mask"]) == len(batch_messages)
-    
+    assert (
+        len(input_dic["labels"])
+        == len(input_dic["input_ids"])
+        == len(input_dic["attention_mask"])
+        == len(batch_messages)
+    )
+
     batch_inputs = []
     for i in range(len(input_dic["input_ids"])):
         inputs = {}
@@ -167,25 +247,33 @@ def prepare_training_inputs_batch(
     return dict(batch_prompts=prompt_str_list, batch_inputs=batch_inputs)
 
 
-def map_raw_data_to_input_dic(raw_data: List[Dict], tokenizer: Any, padding: str, batch_size: int = 5000) -> List[Dict]:
+def map_raw_data_to_input_dic(
+    raw_data: List[Dict], tokenizer: Any, padding: str, batch_size: int = 5000
+) -> List[Dict]:
     invalid_count = 0
     data_size = len(raw_data)
     data_points = []
     t1 = datetime.datetime.now()
     for start, end in get_batch_indices(data_size, batch_size):
-        batch_result = prepare_training_inputs_batch(raw_data[start: end], tokenizer, padding=padding, return_tensor=False)
-        assert len(batch_result["batch_inputs"]) == len(raw_data[start: end])
+        batch_result = prepare_training_inputs_batch(
+            raw_data[start:end], tokenizer, padding=padding, return_tensor=False
+        )
+        assert len(batch_result["batch_inputs"]) == len(raw_data[start:end])
         for item in batch_result["batch_inputs"]:
             if is_valid_labels(item["labels"]):
                 data_points.append(item)
-            else: 
+            else:
                 invalid_count += 1
         t2 = datetime.datetime.now()
         avg_time = (t2 - t1).total_seconds() / len(data_points)
         remaining_time = avg_time * (data_size - len(data_points))
-        print(f"{len(data_points)}/{data_size}, avg_time per 1000 data points: {avg_time * 1000}, remaining time: {remaining_time}")
+        print(
+            f"{len(data_points)}/{data_size}, avg_time per 1000 data points: {avg_time * 1000}, remaining time: {remaining_time}"
+        )
     if invalid_count > 0:
-        print(f"*****WARNING: invalid data points: {invalid_count} because of labels=-100 all the time")
+        print(
+            f"*****WARNING: invalid data points: {invalid_count} because of labels=-100 all the time"
+        )
     assert len(data_points) == data_size - invalid_count
     return data_points
 
@@ -230,8 +318,10 @@ def get_causal_mask(length: int, m_value: float) -> torch.tensor:
     mask.masked_fill_(mask_cond < (mask_cond + 1).view(mask.size(-1), 1), 0)
     return mask
 
-    
-def create_mask_from_lengths(lengths: List[int], tokenizer: Any, m_value: float) -> torch.tensor:
+
+def create_mask_from_lengths(
+    lengths: List[int], tokenizer: Any, m_value: float
+) -> torch.tensor:
     """create attention_mask: N x N where masked value = m_value
     Args:
         lengths (List[int]): length of data points
@@ -247,12 +337,12 @@ def create_mask_from_lengths(lengths: List[int], tokenizer: Any, m_value: float)
     for length in lengths:
         # mask for a data point with length
         x = get_causal_mask(length, m_value)
-        result[acc_leng: acc_leng + length, acc_leng: acc_leng + length] = x
+        result[acc_leng : acc_leng + length, acc_leng : acc_leng + length] = x
         acc_leng += length
     pad_length = max_length - sum(lengths)
     if pad_length > 0:
-        result[-pad_length: , :] = 0
-        result[:, -pad_length: ] = m_value
+        result[-pad_length:, :] = 0
+        result[:, -pad_length:] = m_value
     return result
 
 
@@ -262,13 +352,15 @@ def merge_data_points(data_points: List[Dict], tokenizer: Any) -> Dict:
     label_ids = []
     for item in data_points:
         input_ids += item["input_ids"]
-        #assert item["labels"][0] == -100 # This is to make sure that the first token won't be included in computing loss
+        # assert item["labels"][0] == -100 # This is to make sure that the first token won't be included in computing loss
         labels = list(item["labels"])
         labels[0] = -100
         label_ids += labels
         lengths.append(len(item["input_ids"]))
     attention_mask = create_mask_from_lengths(lengths, tokenizer, float("-inf"))
-    pad_leng = tokenizer.model_max_length - len(input_ids)  # padding to model_max_length
+    pad_leng = tokenizer.model_max_length - len(
+        input_ids
+    )  # padding to model_max_length
     if tokenizer.padding_side == "right":
         input_ids = input_ids + [tokenizer.pad_token_id for _ in range(pad_leng)]
         label_ids = label_ids + [-100 for _ in range(pad_leng)]
@@ -277,9 +369,11 @@ def merge_data_points(data_points: List[Dict], tokenizer: Any) -> Dict:
         label_ids = [-100 for _ in range(pad_leng)] + label_ids
     assert len(input_ids) == len(label_ids) == attention_mask.size(0)
     return {
-        "input_ids": torch.tensor(input_ids), 
-        "labels": torch.tensor(label_ids), 
-        "attention_mask": torch.unsqueeze(attention_mask, 0)  # unsqueeze <-- because the shape is: B x 1 x N x N
+        "input_ids": torch.tensor(input_ids),
+        "labels": torch.tensor(label_ids),
+        "attention_mask": torch.unsqueeze(
+            attention_mask, 0
+        ),  # unsqueeze <-- because the shape is: B x 1 x N x N
     }
 
 
@@ -322,7 +416,9 @@ def remove_invalid_label_items(data_points: List[Dict]) -> List[Dict]:
 
 
 class CachedDataset(Dataset):
-    def __init__(self, tokenizer: Any, cached_folder: str, ignore_cached: bool=False) -> None:
+    def __init__(
+        self, tokenizer: Any, cached_folder: str, ignore_cached: bool = False
+    ) -> None:
         super().__init__()
         self.tokenizer = tokenizer
         self.data_points = []
@@ -333,54 +429,66 @@ class CachedDataset(Dataset):
                 print(f"cached found, load from cached: {cached_folder}")
                 self.load(cached_folder)
                 self.load_from_cache = True
-    
+
     def __len__(self):
         return len(self.data_points)
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         return self.data_points[i]
-    
+
     def create_meta_info(self):
-        return {"max_length": self.tokenizer.model_max_length, "size": len(self.data_points)}
-    
+        return {
+            "max_length": self.tokenizer.model_max_length,
+            "size": len(self.data_points),
+        }
+
     def load(self, folder: str):
         t1 = datetime.datetime.now()
-        with open(self.get_data_point_path(folder), 'rb') as file:
+        with open(self.get_data_point_path(folder), "rb") as file:
             self.data_points = pickle.load(file)
         t2 = datetime.datetime.now()
         print("time for loading cached data: ", (t2 - t1).total_seconds())
-    
+
     def get_data_point_path(self, folder: str) -> str:
         return os.path.join(folder, "data_points.pkl")
 
     def get_metainfo_path(self, folder: str) -> str:
         return os.path.join(folder, "meta_info.json")
-    
+
     def dump(self, folder: str):
         t1 = datetime.datetime.now()
         if not os.path.exists(folder):
             os.mkdir(folder)
-            
-        with open(self.get_data_point_path(folder), 'wb') as file:
+
+        with open(self.get_data_point_path(folder), "wb") as file:
             pickle.dump(self.data_points, file)
-        
+
         with open(self.get_metainfo_path(folder), "w") as f:
-            f.write(json.dumps(self.create_meta_info()))        
-        t2 = datetime.datetime.now()  
+            f.write(json.dumps(self.create_meta_info()))
+        t2 = datetime.datetime.now()
         print("time for dumping data: ", (t2 - t1).total_seconds())
-    
+
     def stat(self):
         print(json.dumps(self.create_meta_info()))
-        
+
 
 class CustomDataset(CachedDataset):
     """Dataset for supervised fine-tuning."""
 
-    def __init__(self, raw_data: List[Dict], tokenizer: transformers.PreTrainedTokenizer, cached_folder: Optional[str] = None, ignore_cached: bool = False, batch_size: int = 5000):
+    def __init__(
+        self,
+        raw_data: List[Dict],
+        tokenizer: transformers.PreTrainedTokenizer,
+        cached_folder: Optional[str] = None,
+        ignore_cached: bool = False,
+        batch_size: int = 5000,
+    ):
         super().__init__(tokenizer, cached_folder, ignore_cached)
-        
-        if not self.load_from_cache: # if not loaded from cached
-            self.data_points = map_raw_data_to_input_dic(raw_data, tokenizer, padding="max_length", batch_size=batch_size)
+
+        if not self.load_from_cache:  # if not loaded from cached
+            self.data_points = map_raw_data_to_input_dic(
+                raw_data, tokenizer, padding="max_length", batch_size=batch_size
+            )
             if cached_folder is not None:
                 print(f"dump data to cached: {cached_folder}")
                 self.dump(cached_folder)
@@ -391,23 +499,61 @@ class CustomDataset(CachedDataset):
         for key in dp:
             result[key] = torch.tensor(dp[key])
         return result
-    
+
+
+class LazyPreprocessDataset(Dataset):
+    """Dataset for supervised fine-tuning."""
+
+    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer):
+        super(CustomDataset, self).__init__()
+        self.tokenizer = tokenizer
+
+        self.raw_data = raw_data
+        self.cached_data_dict = {}
+
+    def __len__(self):
+        return len(self.raw_data)
+
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        if i in self.cached_data_dict:
+            return self.cached_data_dict[i]
+
+        ret = prepare_training_inputs(self.raw_data[i], self.tokenizer)
+        ret = {
+            "input_ids": ret["inputs"]["input_ids"],
+            "labels": ret["inputs"]["labels"],
+            "attention_mask": ret["inputs"]["attention_mask"],
+        }
+        self.cached_data_dict[i] = ret
+        return ret
+
 
 class PackedDataset(CachedDataset):
-    def __init__(self, raw_data: List[Dict], tokenizer: transformers.PreTrainedTokenizer, cached_folder: Optional[str] = None, ignore_cached: bool = False, batch_size: int = 5000):
+    def __init__(
+        self,
+        raw_data: List[Dict],
+        tokenizer: transformers.PreTrainedTokenizer,
+        cached_folder: Optional[str] = None,
+        ignore_cached: bool = False,
+        batch_size: int = 5000,
+    ):
         super().__init__(tokenizer, cached_folder, ignore_cached)
         if not self.load_from_cache:
-            self.data_points = map_raw_data_to_input_dic(raw_data, tokenizer, padding="do_not_pad", batch_size=batch_size)
+            self.data_points = map_raw_data_to_input_dic(
+                raw_data, tokenizer, padding="do_not_pad", batch_size=batch_size
+            )
             self.update_packing_info()
-            if cached_folder is not None: 
+            if cached_folder is not None:
                 print(f"dump data to cached: {cached_folder}")
                 self.dump(cached_folder)
         else:  # update packing
             self.update_packing_info()
-    
+
     def update_packing_info(self):
         self.lengths = [len(item["input_ids"]) for item in self.data_points]
-        self.groups = merge_data_points_by_length(self.lengths, self.tokenizer.model_max_length)
+        self.groups = merge_data_points_by_length(
+            self.lengths, self.tokenizer.model_max_length
+        )
 
     def __len__(self):
         return len(self.groups)
@@ -418,11 +564,15 @@ class PackedDataset(CachedDataset):
         return merge_data_points(group_data_points, self.tokenizer)
 
     def stat(self):
-        print(f"number of original data points:{len(self.data_points)}; packed to: {len(self.groups)} data points")
+        print(
+            f"number of original data points:{len(self.data_points)}; packed to: {len(self.groups)} data points"
+        )
         original_avg_length = sum(self.lengths) / len(self.lengths)
         packed_lengths = []
         for group in self.groups:
             lengths = [self.lengths[index] for index in group]
             packed_lengths.append(sum(lengths))
         avg_packed_length = sum(packed_lengths) / len(packed_lengths)
-        print(f"original avg length: {original_avg_length}; avg packed length: {avg_packed_length}")
+        print(
+            f"original avg length: {original_avg_length}; avg packed length: {avg_packed_length}"
+        )
