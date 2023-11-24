@@ -1,7 +1,7 @@
 from transformers import LlamaTokenizerFast
 from functionary.train import custom_datasets
-from functionary.prompt import get_additional_tokens
-from functionary.train.llama_attention_mask_monkey_patch import LlamaForCausalLM
+from functionary.prompt import get_default_prompt_template
+from functionary.train.monkey_patch.llama_attention_mask_monkey_patch import LlamaForCausalLM
 import torch
 import copy
 import typer
@@ -54,8 +54,9 @@ def compute_loss_from_ds(ds, model, device):
 
 def main(pretrained_path: str, device: str = typer.Option("cuda:0")):
     tokenizer = LlamaTokenizerFast.from_pretrained(pretrained_path, legacy=True, model_max_length=300)
+    promt_template = get_default_prompt_template()
     tokenizer.pad_token = tokenizer.unk_token
-    special_tokens = {"additional_special_tokens": get_additional_tokens()}
+    special_tokens = {"additional_special_tokens": promt_template.get_additional_tokens()}
     tokenizer.add_special_tokens(special_tokens)
 
     model = LlamaForCausalLM.from_pretrained(

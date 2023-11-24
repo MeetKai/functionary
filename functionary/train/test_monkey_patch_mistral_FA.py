@@ -1,7 +1,7 @@
 import transformers
 from transformers import LlamaTokenizerFast
 from functionary.train import custom_datasets
-from functionary.prompt import get_additional_tokens
+from functionary.prompt import get_default_prompt_template
 from functionary.train.monkey_patch.mistral_monkey_patched import MistralForCausalLM as MonkeyPatchedMistral
 from transformers.modeling_outputs import CausalLMOutputWithPast
 import torch
@@ -174,7 +174,8 @@ def main(
     tokenizer = LlamaTokenizerFast.from_pretrained(pretrained_path, legacy=True, model_max_length=max_length)
     tokenizer.padding_size = padding_size
     tokenizer.pad_token = tokenizer.unk_token
-    special_tokens = {"additional_special_tokens": get_additional_tokens()}
+    prompt_template = get_default_prompt_template()
+    special_tokens = {"additional_special_tokens": prompt_template.get_additional_tokens()}
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
     
     with open(test_path, "r") as f:
