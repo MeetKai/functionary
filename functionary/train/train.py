@@ -243,7 +243,10 @@ def train():
         if torch.distributed.get_rank() == 0:
             print(f"Eval Data Loaded: #{len(eval_dataset)}")
 
+    print_rank0("***** HERE ARE SOME EXAMPLES FROM TRAINING ****")
     print_some_examples(train_dataset, tokenizer)
+
+    print_rank0("***** HERE ARE SOME EXAMPLES FROM EVALUATION ***")
     print_some_examples(eval_dataset, tokenizer)
 
     def preprocess_logits_for_metrics(logits, labels):
@@ -262,37 +265,11 @@ def train():
 
         return pred_ids, loss
 
-    # Compute assistant prefix token_id sequence so compute_metrics can mask those sequences
-    # when computing special tokens accuracy
-    assistant_prefix_seq = tokenizer.encode(
-        "<|from|>assistant\n<|recipient|>", add_special_tokens=False
-    )
-
     def compute_metrics(eval_preds):
         """Computes next-token accuracy and perplexity metrics for evaluation"""
         predictions = eval_preds.predictions[0][:, :-1]
         labels = eval_preds.label_ids[:, 1:]
 
-        # Mask away all instances of assistant prefix subsequence
-        # nonlocal assistant_prefix_seq
-        # seq_to_mask = [-100] + assistant_prefix_seq
-
-        # def replace_subsequence(array, target, replacement):
-        #     rows, cols = array.shape
-        #     target_length = len(target)
-
-        #     for i in range(rows):
-        #         for j in range(cols - target_length + 1):
-        #             if np.array_equal(array[i, j : j + target_length], target):
-        #                 array[i, j : j + target_length] = replacement
-
-        #     return array
-
-        # labels = replace_subsequence(
-        #     array=labels, target=seq_to_mask, replacement=[-100] * len(seq_to_mask)
-        # )
-
-        # Calculate accuracy
         acc_count = 0
         total_num = 0
         dic = {token_id: {"acc": 0, "total": 0} for token_id in id2token}
