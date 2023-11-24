@@ -28,7 +28,7 @@ from transformers import (
 
 from functionary.prompt import get_additional_tokens
 from functionary.train.custom_datasets import read_dataset
-from functionary.train.llama_attention_mask_monkey_patch import LlamaForCausalLM
+from functionary.train.monkey_patch.llama_attention_mask_monkey_patch import LlamaForCausalLM
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 

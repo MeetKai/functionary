@@ -46,10 +46,7 @@ from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
-from functionary.inference import (
-    parse_generated_content,
-    prepare_messages_for_inference,
-)
+from functionary.inference import prepare_messages_for_inference
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
     ChatCompletionChunk,
@@ -57,8 +54,9 @@ from functionary.openai_types import (
     Function,
     FunctionCall,
     StreamChoice,
+    Tool,
 )
-from functionary.prompt import EndToken
+from functionary.prompt import PromptTemplate, get_prompt_template_from_tokenizer
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -70,7 +68,8 @@ app = fastapi.FastAPI()
 class ChatCompletionRequest(BaseModel):
     model: str
     messages: List[ChatMessage]
-    functions: Optional[List[Function]] = []
+    functions: Optional[List[Function]] = None
+    tools: Optional[List[Tool]] = None
     temperature: Optional[float] = 0.7
     top_p: Optional[float] = 1.0
     n: Optional[int] = 1
@@ -225,7 +224,11 @@ async def create_chat_completion(raw_request: Request):
     NOTE: Currently we do not support the following features:
         - logit_bias (to be supported by vLLM engine)
     """
-    request = ChatCompletionRequest(**await raw_request.json())
+    request_json = await raw_request.json()
+    # print("request inofo: ")
+    # print(json.dumps(request_json, ensure_ascii=False, indent=4))
+    request = ChatCompletionRequest(**request_json)
+
     logger.info(f"Received chat completion request: {request}")
 
     error_check_ret = await check_model(request)
@@ -238,12 +241,15 @@ async def create_chat_completion(raw_request: Request):
             HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
         )
 
-    response = requests.get("http://0.0.0.0:8002/functions")
-    functions = [Function(**fn) for fn in response.json()]
+    functions = None
+    if request.tools is None:
+        response = requests.get("http://0.0.0.0:8002/functions")
+        functions = [Function(**fn) for fn in response.json()]
 
     # compute stop_token_ids
     stop_token_ids = []
-    for stop_tok in [EndToken.assistant.value, EndToken.function_call.value]:
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+    for stop_tok in prompt_template.get_stop_tokens_for_generation():
         tok_ids = tokenizer.encode(stop_tok, add_special_tokens=False)
         stop_token_ids.append(tok_ids[-1])
 
@@ -266,9 +272,9 @@ async def create_chat_completion(raw_request: Request):
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
 
-    def perform_inference(messages):
+    def perform_inference(messages, functions, tools):
         prompt_token_ids = prepare_messages_for_inference(
-            tokenizer, messages, functions
+            tokenizer=tokenizer, messages=messages, functions=functions, tools=tools
         ).tolist()[0]
 
         error_check_ret = check_length(request, prompt_token_ids, engine_model_config)
@@ -297,25 +303,31 @@ async def create_chat_completion(raw_request: Request):
                 delta_text = output.text[len(previous_texts) :]
                 previous_texts = output.text
                 finish_reason = output.finish_reason
-                if delta_text not in [
-                    EndToken.assistant.value,
-                    EndToken.function_call.value,
-                ]:
+                if (
+                    delta_text.strip()
+                    not in prompt_template.get_stop_tokens_for_generation()
+                ):
                     yield delta_text, finish_reason
         yield "", "stop"
 
-    async def completion_stream_generator(messages) -> AsyncGenerator[str, None]:
+    async def completion_stream_generator(messages, tools) -> AsyncGenerator[str, None]:
         function_call = None
 
         while True:
-            result_generator, request_id = perform_inference(messages=messages)
+            result_generator, request_id = perform_inference(
+                messages=messages, functions=functions, tools=tools
+            )
             generator = wrap_vllm_generator(result_generator=result_generator)
 
-            async for response in generate_openai_format_from_stream_async(generator):
+            async for response in generate_openai_format_from_stream_async(
+                generator, prompt_template
+            ):
                 chunk = StreamChoice(**response)
                 result = ChatCompletionChunk(id=request_id, choices=[chunk])
                 chunk_dic = result.dict(exclude_unset=True)
                 chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
+
+                breakpoint()
 
                 # Store and yield the chunks if the model generates a function call
                 # {'delta': {'role': 'assistant', 'content': None, 'function_call': xxx}, 'finish_reason': None}]
@@ -389,13 +401,15 @@ async def create_chat_completion(raw_request: Request):
         # Abort the request if the client disconnects.
         # background_tasks.add_task(abort_request)
         return StreamingResponse(
-            completion_stream_generator(messages=request.messages),
+            completion_stream_generator(messages=request.messages, tools=request.tools),
             media_type="text/event-stream",
             background=background_tasks,
         )
 
     # Non-streaming response
-    result_generator, request_id = perform_inference(messages=request.messages)
+    result_generator, request_id = perform_inference(
+        messages=request.messages, functions=functions, tools=request.tools
+    )
     created_time = int(time.time())
     model_name = request.model
     final_res: RequestOutput = None
@@ -409,10 +423,12 @@ async def create_chat_completion(raw_request: Request):
     choices = []
     for output in final_res.outputs:
         text_response = output.text.strip()
-        chat_mess = parse_generated_content(text_response)
+        chat_mess = prompt_template.parse_assistant_response(
+            text_response
+        )  # parse_generated_content(text_response)
         choice_data = ChatCompletionResponseChoice(
             index=output.index,
-            message=chat_mess,
+            message=ChatMessage(**chat_mess),
             finish_reason=output.finish_reason,
         )
         choices.append(choice_data)
