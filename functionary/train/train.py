@@ -105,6 +105,9 @@ def initialize_tokenizer(
     added_tokens = prompt_template.get_additional_tokens()
     special_tokens = {"additional_special_tokens": added_tokens}
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
+
+    # add chat_template for tokenizer
+    tokenizer.chat_template = prompt_template.get_chat_template()
     print("tokenizer: ", tokenizer)
 
     # Resize embedding

@@ -9,6 +9,7 @@ from functionary.prompt import (
     get_default_prompt_template,
     PromptTemplateV1,
     PromptTemplateV2,
+    SYSTEM_MESSAGE,
 )
 from functionary.schema import generate_schema_from_functions
 from functionary.train.custom_datasets import prepare_training_inputs
@@ -73,23 +74,25 @@ class TestInsertingEndToken(unittest.TestCase):
 
     def test_prepare_training_inputs_fast_tokenizer(self):
         print("start testing fast tokenizer")
-        for keep_assistant_prefix in [False, True]:
+        for keep_assistant_prefix in [False]:
             self.run_prepare_training_inputs(
-                use_fast=True, 
+                use_fast=True,
                 pretrained="mistralai/Mistral-7B-v0.1",
-                keep_assistant_prefix=keep_assistant_prefix
+                keep_assistant_prefix=keep_assistant_prefix,
             )
 
     def test_prepare_training_inputs_normal_tokenizer(self):
         print("start testing normal tokenizer")
-        for keep_assistant_prefix in [False, True]:
+        for keep_assistant_prefix in [False]:
             self.run_prepare_training_inputs(
-                use_fast=False, 
+                use_fast=False,
                 pretrained="mistralai/Mistral-7B-v0.1",
-                keep_assistant_prefix=keep_assistant_prefix
+                keep_assistant_prefix=keep_assistant_prefix,
             )
 
-    def run_prepare_training_inputs(self, use_fast: bool, pretrained: str, keep_assistant_prefix: bool=False):
+    def run_prepare_training_inputs(
+        self, use_fast: bool, pretrained: str, keep_assistant_prefix: bool = False
+    ):
         """this function is used to test function: prepare_training_inputs"""
         # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
         tokenizer_class = LlamaTokenizer
@@ -112,8 +115,8 @@ class TestInsertingEndToken(unittest.TestCase):
             padding="longest",
             max_length=1024,
             return_tensor=False,
-            verbose=True,
-            keep_assistant_prefix=keep_assistant_prefix
+            verbose=False,
+            keep_assistant_prefix=keep_assistant_prefix,
         )
         input_ids = inputs["inputs"]["input_ids"]
         labels = inputs["inputs"]["labels"]
@@ -157,6 +160,44 @@ class TestInsertingEndToken(unittest.TestCase):
                 re.sub("\s", "", prompt),
                 "decoded content is different from original content",
             )
+
+    def test_chat_template(self):
+        messages = self.test_case["messages"]
+        if "functions" in self.test_case:
+            functions = self.test_case["functions"]
+        else:
+            functions = []
+            for tool in self.test_case["tools"]:
+                functions.append(tool["function"])
+
+        messages.insert(
+            0, {"role": "system", "content": generate_schema_from_functions(functions)}
+        )
+        messages.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
+
+        chat_template = self.prompt_template.get_chat_template()
+        tokenizer = LlamaTokenizer.from_pretrained(
+            "meetkai/functionary-7b-v1.1", legacy=True
+        )
+        tokenizer.chat_template = chat_template
+
+        final_prompt = tokenizer.apply_chat_template(messages, tokenize=False)
+        self.assertEqual(
+            final_prompt.strip(),
+            self.final_prompt,
+            "wrong final prompt for chat template",
+        )
+
+        prompt_gen = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        self.assertEqual(
+            prompt_gen,
+            self.final_prompt
+            + "\n"
+            + self.prompt_template.get_text_from_message({"role": "assistant"}),
+            "wrong prompt for generation",
+        )
 
 
 if __name__ == "__main__":

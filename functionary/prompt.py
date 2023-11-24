@@ -18,26 +18,69 @@ class PromptTemplate:
 
     @abstractmethod
     def get_additional_tokens(self) -> List[str]:
+        """return list of added tokens if using this template
+        Returns:
+            List[str]: list of tokens, each token is a string
+        """
         raise NotImplementedError
 
     @abstractmethod
     def get_text_from_message(self, message: Dict) -> str:
+        """Return the prompt of this message
+
+        Args:
+            message (Dict): Dictionary of openAI format
+
+        Returns:
+            str: prompt of this message
+        """
         raise NotImplementedError
 
     @abstractmethod
     def get_stop_tokens_for_generation(self) -> List[str]:
+        """Function to get list of stop tokens in generation
+
+        Returns:
+            List[str]: list of stop tokens
+        """
         raise NotImplementedError
 
     @abstractmethod
     def get_assistant_prefixes(self) -> List[str]:
+        """Return the assistant prefixs in the final prompt, this is used for masking the labels
+        in unmasking labels, the system will unmask chunks that start with assistant prefixs and end with stop tokens.
+        For example, assistant_prefixes might be: "<|from|>assistant\n<|recipient|>"
+        In this case unmasked chunks in labels would be tokens in ... of: <|from|>assistant\n<|recipient|> ... <|stop|>
+        Returns:
+            List[str]: list of possible assistant prefixs
+        """
         raise NotImplementedError
 
     def pre_process_messages_before_inference(self, messages: List[Dict]) -> List[Dict]:
+        """This function is used if we need to process messages before doing inference.
+        This is used when the messages in training and inference are different.
+        For example, in training we have no: tool_call_id, but in inference, we have tool_call_id to know the order of function calls.
+        This function woule be called to convert inference messages to the format of training messages.
+        Args:
+            messages (List[Dict]): list of input messages
+
+        Returns:
+            List[Dict]: list of output messages
+        """
         return messages
 
     def get_prompt_from_messages(
         self, messages: List[Dict], tools_or_functions: Optional[List[Dict]] = None
     ) -> str:
+        """This function is used to get the complete prompt for list of messages
+
+        Args:
+            messages (List[Dict]): List of messages
+            tools_or_functions (Optional[List[Dict]], optional): List of tools or functions. Defaults to None.
+
+        Returns:
+            str: the prompt for inference/training
+        """
         messages_clone = messages.copy()  # To avoid modifying the original list
 
         functions = []
@@ -62,7 +105,6 @@ class PromptTemplate:
 
     def get_end_token_to_token_id(self, tokenizer: Any) -> Dict[str, int]:
         """return a dictionary mapping from end_token --> token_id
-
         Args:
             tokenizer (Any): tokenizer in transformers
 
@@ -82,6 +124,14 @@ class PromptTemplate:
 
     @abstractmethod
     def parse_assistant_response(self, llm_ouput: str) -> Dict:
+        """This function is used to parse llm_output to the Message of OpenAI ({"role": xxx, "content": xxx, ...})
+        this is used in inference.
+        Args:
+            llm_ouput (str): The generated content from Model
+
+        Returns:
+            Dict: Dictionary of OpenAI message format
+        """
         raise NotImplementedError
 
     @abstractmethod
@@ -95,16 +145,18 @@ class PromptTemplate:
         """This function is used for streaming
 
         Args:
-            current_state (Dict[str, Any]): a dictionary:
-                + func_name: Optional[str],
-                + response_type: Optional[str] text/function
-            current_text: the llm_output until now
+            current_state (Dict[str, Any]):  a dictionary containing the state of the streaming: such as current function_name,
             delta_text: new token generated
             finish_reason: if finished or not
 
         Returns:
-            Tuple[Dict[str, Any], Optional[Dict]]: {func_name, response_type}, response
+            Tuple[Dict[str, Any], Optional[Dict]]: updated state, response: can be None, a dictionary: {} or a list of dictionary: [{}, ..., {}]
         """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_chat_template(self):
+        """Return chat_template in jinja format"""
         raise NotImplementedError
 
     @classmethod
@@ -315,6 +367,33 @@ class PromptTemplateV1(PromptTemplate):
                 }  # format of openAI at the end, delta must be empty
         return current_state, response
 
+    def get_chat_template(self) -> str:
+        chat_template = """{% for message in messages %}
+        {% if message['role'] == 'user' %}
+            {{ message['role'] + ':\n' + message['content'] + '<|END_OF_USER|>' + '\n' }}<br>
+        {% elif message['role'] == 'system' %}
+            {{ message['role'] + ':\n' + message['content'] + '<|END_OF_SYSTEM|>' + '\n' }}<br>
+        {% elif message['role'] == 'function' %}
+            {{ 'function name=' + message['name'] + ':\n' + message['content']+ '<|END_OF_FUNCTION_RESULT|>\n' }}<br>
+        {% elif message['role'] == 'assistant' %}
+            {% if 'function_call' in message and message['function_call'] is not none %}
+                {% if message['content'] is not none %}
+                    {{ 'assistant:\n' + message['content'] + '\n<|START_OF_FUNCTION_CALL|>' + message['function_call']['name'] + ':\n' + message['function_call']['arguments'] + '<|END_OF_FUNCTION_CALL|>\n' }}<br>
+                {% else %}
+                    {{ 'assistant:\n<|START_OF_FUNCTION_CALL|>' + message['function_call']['name'] +  ':\n' + message['function_call']['arguments'] + '<|END_OF_FUNCTION_CALL|>\n' }}<br>
+                {% endif %}
+            {% else %}
+                {{ 'assistant:\n' + message['content'] + '<|END_OF_ASSISTANT|>' + '\n' }}<br>
+            {% endif %}
+        {% endif %}
+        {% endfor %}
+        {% if add_generation_prompt %}{{ 'assistant:' }}{% endif %}
+        """
+        chat_template = chat_template.replace("    ", "")
+        chat_template = chat_template.replace("<br>\n", "")
+        chat_template = chat_template.strip()
+        return chat_template
+
 
 class PromptTemplateV2(PromptTemplate):
     from_token = "<|from|>"
@@ -379,11 +458,11 @@ class PromptTemplateV2(PromptTemplate):
         for stop in self.get_stop_tokens_for_generation():
             if llm_ouput.endswith(stop):
                 llm_ouput = llm_ouput[: -len(stop)]
-        print("---------------------------")
+
         llm_ouput = f"{self.from_token}assistant\n{self.recipient_token}" + llm_ouput
-        print(llm_ouput)
         responses = llm_ouput.split(self.from_token)
         responses = [response.strip() for response in responses]
+
         functions = []
         text_response = None
         for response in responses:
@@ -422,19 +501,25 @@ class PromptTemplateV2(PromptTemplate):
         while index < len(messages):
             message = messages[index]
             tool_calls = message.get("tool_calls", None)
+
             result.append(message)
             if message["role"] == "assistant" and tool_calls:
                 num_calls = len(tool_calls)
-                tool_call_ids = [item["id"] for item in tool_calls]
+                if (
+                    tool_calls[0].get("id", None) is not None
+                ):  # if tool_call contains "id" for mapping
+                    tool_call_ids = [item["id"] for item in tool_calls]
 
-                tool_messages = [messages[index + 1 + j] for j in range(num_calls)]
-                id_2_tool_messages = {
-                    item["tool_call_id"]: item for item in tool_messages
-                }
-                new_messages = [id_2_tool_messages[cid] for cid in tool_call_ids]
+                    tool_messages = [messages[index + 1 + j] for j in range(num_calls)]
+                    id_2_tool_messages = {
+                        item["tool_call_id"]: item for item in tool_messages
+                    }
+                    new_messages = [id_2_tool_messages[cid] for cid in tool_call_ids]
 
-                result.extend(new_messages)
-                index += num_calls + 1
+                    result.extend(new_messages)
+                    index += num_calls + 1
+                else:
+                    index += 1
             else:
                 index += 1
         return result
@@ -491,6 +576,38 @@ class PromptTemplateV2(PromptTemplate):
             start_index = recipient_index + len(self.recipient_token)
         end_index = current_text.find(f"\n{self.content_token}")
         return current_text[start_index:end_index].strip()
+
+    def get_chat_template(self) -> str:
+        chat_template = """{% for message in messages %}
+        {% if message['role'] == 'user' or message['role'] == 'system' %}
+            {{ '<|from|>' + message['role'] + '\n<|recipient|>all\n<|content|>' + message['content'] + '\n' }}<br>
+        {% elif message['role'] == 'tool' %}
+            {{ '<|from|>' + message['name'] + '\n<|recipient|>all\n<|content|>' + message['content'] + '\n' }}<br>
+        {% else %}
+            {% set contain_content='no'%}
+            {% if message['content'] is not none %}
+                {{ '<|from|>assistant\n<|recipient|>all\n<|content|>' + message['content'] }}<br>
+                {% set contain_content='yes'%}
+            {% endif %}
+            {% if 'tool_calls' in message and message['tool_calls'] is not none %}
+                {% for tool_call in message['tool_calls'] %}
+                    {% set prompt='<|from|>assistant\n<|recipient|>' + tool_call['function']['name'] + '\n<|content|>' + tool_call['function']['arguments'] %}
+                    {% if loop.index == 1 and contain_content == "no" %}
+                        {{ prompt }}<br>
+                    {% else %}
+                        {{ '\n' + prompt}}<br>
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+            {{ '<|stop|>\n' }}<br>
+        {% endif %}
+        {% endfor %}
+        {% if add_generation_prompt %}{{ '<|from|>assistant\n<|recipient|>' }}{% endif %}
+        """
+        chat_template = chat_template.replace("    ", "")
+        chat_template = chat_template.replace("<br>\n", "")
+        chat_template = chat_template.strip()
+        return chat_template
 
     def update_response_state_from_delta_text(
         self,
@@ -592,12 +709,12 @@ def get_prompt_template(version: int) -> PromptTemplate:
     return PromptTemplateV2.get_prompt_template()
 
 
-def get_prompt_template_from_tokenizer(tokenizer: Any):
+def get_prompt_template_from_tokenizer(tokenizer: Any) -> PromptTemplate:
     """This function will determine the prompt template based on tokenizer.
     Under the hood, this function will check if tokenizer contains some special tokens from template or not
 
     Args:
-        tokenizer (Any): _description_
+        tokenizer (Any): Tokenizer
 
     Returns:
         _type_: _description_

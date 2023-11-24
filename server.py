@@ -56,7 +56,6 @@ async def chat_endpoint(chat_input: ChatInput):
         def get_response_stream():
             for response in response_generator:
                 chunk = StreamChoice(**response)
-                print("chunk: ", chunk)
                 result = ChatCompletionChunk(id=request_id, choices=[chunk])
                 chunk_dic = result.dict(exclude_unset=True)
                 chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
