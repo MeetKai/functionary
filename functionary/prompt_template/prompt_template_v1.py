@@ -137,9 +137,9 @@ class PromptTemplateV1(PromptTemplate):
     ) -> Tuple[Dict[str, Any], Optional[Dict]]:
         if len(current_state) == 0:
             current_state = {
-                "response_type": None,
-                "func_name": None,
-                "current_text": "",
+                "response_type": None,  # the type of current response text (text_response)/function (function_call)
+                "func_name": None,  # if response_type=function, this is the function_name
+                "current_text": "",  # the concatenation of generated tokens so far
             }
         current_state["current_text"] += delta_text
         cur_text = current_state["current_text"]
@@ -234,3 +234,4 @@ class PromptTemplateV1(PromptTemplate):
         chat_template = chat_template.replace("<br>\n", "")
         chat_template = chat_template.strip()
         return chat_template
+    

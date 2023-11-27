@@ -211,8 +211,6 @@ async def create_chat_completion(raw_request: Request):
         - logit_bias (to be supported by vLLM engine)
     """
     request_json = await raw_request.json()
-    # print("request inofo: ")
-    # print(json.dumps(request_json, ensure_ascii=False, indent=4))
     request = ChatCompletionRequest(**request_json)
 
     logger.info(f"Received chat completion request: {request}")
@@ -368,7 +366,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="vLLM OpenAI-Compatible RESTful API server."
     )
-    parser.add_argument("--host", type=str, default="localhost", help="host name")
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="host name")
     parser.add_argument("--port", type=int, default=8000, help="port number")
     parser.add_argument(
         "--allow-credentials", action="store_true", help="allow credentials"

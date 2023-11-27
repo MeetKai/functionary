@@ -260,13 +260,14 @@ class PromptTemplateV2(PromptTemplate):
     ) -> Tuple[Dict[str, Any], Union[None, Dict, List[Dict]]]:
         if len(current_state) == 0:  # empty dict, at the first_time
             current_state = {
-                "current_text": "",
-                "func_name": None,
-                "response_type": None,
-                "func_index": -1,
-                "call_id": None,
+                "current_text": "",  # the concatenation of all tokens so far
+                "func_name": None,  # function_name of the current tool, if the response requires to use tool
+                "response_type": None,  # response_type=text(text response)/function (using tool)
+                "func_index": -1,  # index of the tool in tool_calls
+                "call_id": None,  # call_id of the current tool 
+                # skip_until_reach we skip new tokens until we reach certain token. This is used when we hit special tokens
                 "skip_until_reach": self.content_token,  # at first we will skip until reach <|content|>
-                "first_time": True,
+                "first_time": True,  # if first_time we return an tempty delta with role=assistant
             }
         current_state["current_text"] += delta_text
 
