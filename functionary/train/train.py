@@ -14,7 +14,7 @@ from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, Trainer
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
+#  sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 from functionary.prompt_template import get_prompt_template_by_version, PromptTemplate
 from functionary.train.custom_datasets import read_dataset
 
@@ -66,12 +66,9 @@ class TrainingArguments(transformers.TrainingArguments):
             "help": "Whether to mask the assistant prefix `<|from|>assistant\n<|recipient|>` during training"
         },
     )
-    
+
     prompt_template_version: str = field(
-        default="v2",
-        metadata={
-            "help": "choose prompt template to use for training"
-        }
+        default="v2", metadata={"help": "choose prompt template to use for training"}
     )
 
 
@@ -230,19 +227,35 @@ def train():
         use_flash_attention_2=True,
     )
     model.config.use_cache = False
-    
+
     print_rank0("Prompt template to use: ", training_args.prompt_template_version)
-    prompt_template = get_prompt_template_by_version(training_args.prompt_template_version)
+    prompt_template = get_prompt_template_by_version(
+        training_args.prompt_template_version
+    )
 
     tokenizer = initialize_tokenizer(
-        model=model, 
-        model_name_or_path=model_args.model_name_or_path, 
-        prompt_template=prompt_template, 
-        model_max_length=training_args.model_max_length, 
-        cache_dir=training_args.cache_dir
+        model=model,
+        model_name_or_path=model_args.model_name_or_path,
+        prompt_template=prompt_template,
+        model_max_length=training_args.model_max_length,
+        cache_dir=training_args.cache_dir,
     )
+    
+    if LOCAL_RANK == 0:
+        if not os.path.exists(training_args.output_dir):
+            os.mkdir(training_args.output_dir)
+        
+        tokenizer_folder = os.path.join(training_args.output_dir, "tokenizer")
+        if not os.path.exists(tokenizer_folder):
+            os.mkdir(tokenizer_folder)
+        # Save tokenizer 
+        tokenizer.save_pretrained(tokenizer_folder)
+    
     # get id of added tokens to compute the accuracy of predicing the token
-    id2token = {tokenizer.encode(token)[-1]: token for token in prompt_template.get_additional_tokens()}
+    id2token = {
+        tokenizer.encode(token)[-1]: token
+        for token in prompt_template.get_additional_tokens()
+    }
     print_rank0("id to tokens: ", id2token)
 
     assert data_args.train_data_path is not None, "Please provide a training data file."

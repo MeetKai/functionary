@@ -7,17 +7,13 @@ import torch
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, StreamingResponse
-from transformers import LlamaForCausalLM, LlamaTokenizerFast, AutoModelForCausalLM
+from transformers import (AutoModelForCausalLM, LlamaForCausalLM,
+                          LlamaTokenizerFast)
 
 from functionary.inference import generate_message
 from functionary.inference_stream import generate_stream
-from functionary.openai_types import (
-    ChatCompletion,
-    ChatCompletionChunk,
-    ChatInput,
-    Choice,
-    StreamChoice,
-)
+from functionary.openai_types import (ChatCompletion, ChatCompletionChunk,
+                                      ChatInput, Choice, StreamChoice)
 
 app = FastAPI(title="Functionary API")
 

@@ -1,15 +1,12 @@
 from typing import List, Optional
 
 import torch
-from transformers import (
-    LlamaForCausalLM,
-    LlamaTokenizer,
-    StoppingCriteria,
-    StoppingCriteriaList,
-)
+from transformers import (LlamaForCausalLM, LlamaTokenizer, StoppingCriteria,
+                          StoppingCriteriaList)
 
 from functionary.openai_types import ChatMessage, Function, FunctionCall, Tool
-from functionary.prompt_template import get_prompt_template_from_tokenizer, PromptTemplate
+from functionary.prompt_template import (PromptTemplate,
+                                         get_prompt_template_from_tokenizer)
 
 
 class StopWordsCriteria(StoppingCriteria):

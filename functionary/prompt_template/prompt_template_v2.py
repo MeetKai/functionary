@@ -1,7 +1,8 @@
-from typing import Dict, List, Any, Tuple, Optional, Union
-from functionary.prompt_template.base_template import PromptTemplate
 import random
 import string
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+from functionary.prompt_template.base_template import PromptTemplate
 
 
 class PromptTemplateV2(PromptTemplate):
@@ -214,7 +215,7 @@ class PromptTemplateV2(PromptTemplate):
         start_index = 0
         if recipient_index >= 0:
             start_index = recipient_index + len(self.recipient_token)
-            
+
         end_index = current_text.find(f"\n{self.content_token}")
         return current_text[start_index:end_index].strip()
 
@@ -285,7 +286,7 @@ class PromptTemplateV2(PromptTemplate):
                 recipient = self.get_recipient(current_state["current_text"])
                 first_time = current_state["first_time"]
                 current_state["first_time"] = False
-                
+
                 if recipient == "all":
                     current_state["response_type"] = "text"
                     return current_state, self.get_text_delta_response(
@@ -319,7 +320,7 @@ class PromptTemplateV2(PromptTemplate):
                 current_state["skip_until_reach"] = self.content_token
                 current_state["response_type"] = None
                 return current_state, None
-            
+
             else:
                 if current_state["response_type"] == "function":
                     return current_state, self.get_function_delta_response(

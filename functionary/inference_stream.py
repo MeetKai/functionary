@@ -5,16 +5,13 @@ from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Tuple
 import torch
 from transformers import LlamaForCausalLM, LlamaTokenizer
 from transformers.generation.logits_process import (
-    LogitsProcessorList,
-    RepetitionPenaltyLogitsProcessor,
-    TemperatureLogitsWarper,
-    TopKLogitsWarper,
-    TopPLogitsWarper,
-)
+    LogitsProcessorList, RepetitionPenaltyLogitsProcessor,
+    TemperatureLogitsWarper, TopKLogitsWarper, TopPLogitsWarper)
 
 from functionary.inference import prepare_messages_for_inference
 from functionary.openai_types import ChatMessage, Function, Tool
-from functionary.prompt_template import get_prompt_template_from_tokenizer, PromptTemplate
+from functionary.prompt_template import (PromptTemplate,
+                                         get_prompt_template_from_tokenizer)
 
 
 def prepare_logits_processor(

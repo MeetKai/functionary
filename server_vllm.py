@@ -55,7 +55,7 @@ from functionary.openai_types import (
     StreamChoice,
     Tool,
 )
-from functionary.prompt import PromptTemplate, get_prompt_template_from_tokenizer
+from functionary.prompt_template import PromptTemplate, get_prompt_template_from_tokenizer
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 

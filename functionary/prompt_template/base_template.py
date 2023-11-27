@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Union
 from abc import abstractmethod
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from functionary.schema import generate_schema_from_functions
 
@@ -111,9 +111,10 @@ class PromptTemplate:
             tok_ids = tokenizer.encode(item, add_special_tokens=False)
             assert len(tok_ids) <= 2, ""
             if len(tok_ids) == 2:
-                assert (
-                    tok_ids[0] in [29871, 28705]
-                )  # Llama tokenizer adds this token intentionally
+                assert tok_ids[0] in [
+                    29871,
+                    28705,
+                ]  # Llama tokenizer adds this token intentionally
             result[item] = tok_ids[-1]
         return result
 

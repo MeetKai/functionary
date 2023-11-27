@@ -1,4 +1,5 @@
-from typing import Dict, List, Any, Tuple, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from functionary.prompt_template.base_template import PromptTemplate
 
 
@@ -100,16 +101,16 @@ class PromptTemplateV1(PromptTemplate):
 
     def parse_assistant_response(self, llm_output: str) -> Dict:
         generated_content = llm_output.strip()
-        
+
         for endtoken in self.get_stop_tokens_for_generation():
             if generated_content.endswith(endtoken):
                 generated_content = generated_content[: -len(endtoken)].strip()
-                
+
         # First we need to check if llm_output contains start_token or not
         start_function_index = generated_content.find(self.start_function)
         text_content = generated_content
         result = {"role": "assistant", "content": None}
-        
+
         if start_function_index >= 0:
             func_info = generated_content[
                 start_function_index + len(self.start_function) :
@@ -117,7 +118,7 @@ class PromptTemplateV1(PromptTemplate):
             index = func_info.find(":")
             func_name = func_info[:index].strip()
             arguments = func_info[index + 1 :].strip()
-            
+
             text_content = generated_content[:start_function_index].strip()
             result["function_call"] = {
                 "name": func_name,

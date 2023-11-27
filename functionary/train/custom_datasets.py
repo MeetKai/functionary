@@ -9,7 +9,8 @@ import torch
 import transformers
 from torch.utils.data import Dataset
 
-from functionary.prompt_template import PromptTemplate, get_prompt_template_from_tokenizer
+from functionary.prompt_template import (PromptTemplate,
+                                         get_prompt_template_from_tokenizer)
 
 
 def get_batch_indices(size: int, batch_size: int) -> List[Tuple[int, int]]:
@@ -55,7 +56,9 @@ def get_prefix_assistant_token_ids(
     return result
 
 
-def get_matching_prefix(prefix_tokens: List[List[int]], sequence_ids: List[int]) -> List[int]:
+def get_matching_prefix(
+    prefix_tokens: List[List[int]], sequence_ids: List[int]
+) -> List[int]:
     """This function is used to check if sequence_ids starts with any prefix
 
     Args:
@@ -91,7 +94,7 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
     data_ratio = (
         data_args.training_ratio if ds_type == "train" else data_args.eval_ratio
     )
-    
+
     # Do not unmask assistant prefix for validation ds.
     if ds_type == "train":
         keep_assistant_prefix = training_args.keep_assistant_prefix
@@ -103,7 +106,9 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
             raw_data = [json.loads(line) for line in file]
             if data_ratio < 1:
                 raw_data = raw_data[: int(data_ratio * len(raw_data))]
-        ds = LazyPreprocessDataset(raw_data, tokenizer, keep_assistant_prefix=keep_assistant_prefix)
+        ds = LazyPreprocessDataset(
+            raw_data, tokenizer, keep_assistant_prefix=keep_assistant_prefix
+        )
         return ds
 
     local_rank = int(os.getenv("LOCAL_RANK", "0"))
@@ -146,7 +151,11 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
 
     # All ranks will read the processed data from cached_path created by rank 0
     ds = PackedDataset(
-        None, tokenizer, cached_folder=cached_folder, ignore_cached=False, use_flash_attention=True,
+        None,
+        tokenizer,
+        cached_folder=cached_folder,
+        ignore_cached=False,
+        use_flash_attention=True,
     )
     if local_rank == 0:
         ds.stat()  #  print some statistics about the dataset
@@ -202,7 +211,7 @@ def get_masked_labels(
     keep_assistant_prefix: bool = False,
     verbose: bool = False,
 ):
-    """This function is used to mask labels. 
+    """This function is used to mask labels.
     This will retain only chunks: (prefix assistant tokens) CHUNK_TO_UNMASK (stop tokens) for computing loss
 
     Args:
@@ -240,7 +249,7 @@ def get_masked_labels(
             start_masked_index = index + len(matched_prefix)
             if keep_assistant_prefix:  # unmask prefix of assistant
                 start_masked_index = index
-                
+
             for i in range(start_masked_index, total_input_leng):
                 tok_id = input_token_ids[i]
                 if tok_id in assistant_stop_tokens:  # check if this is end of turn
@@ -249,7 +258,7 @@ def get_masked_labels(
                     break
                 else:
                     labels[i] = input_token_ids[i]  # unmask labels at this position
-                    
+
             if verbose:
                 print("------------------------")
                 start = start_masked_index  # index + len(matched_prefix)
@@ -291,7 +300,10 @@ def get_assistant_stop_token_ids(prompt_template, tokenizer: Any) -> Dict[str, i
         tok_ids = tokenizer.encode(stop_token, add_special_tokens=False)
         assert len(tok_ids) <= 2, f"stop token: {stop_token} is not added"
         if len(tok_ids) == 2:
-            assert tok_ids[0] in [29871, 28705], f"stop token: {stop_token} is not added"  # Llama tokenizer adds this token intentionally
+            assert tok_ids[0] in [
+                29871,
+                28705,
+            ], f"stop token: {stop_token} is not added"  # Llama tokenizer adds this token intentionally
         result.append(tok_ids[-1])
     return result
 
@@ -355,7 +367,7 @@ def prepare_training_inputs_batch(
             keep_assistant_prefix=keep_assistant_prefix,
             verbose=verbose,
         )
-        
+
         batch_labels.append(labels)
         assert len(labels) == len(input_token_ids)
 
@@ -410,14 +422,14 @@ def map_raw_data_to_input_dic(
             return_tensor=False,
             keep_assistant_prefix=keep_assistant_prefix,
         )
-        
+
         assert len(batch_result["batch_inputs"]) == len(raw_data[start:end])
         for item in batch_result["batch_inputs"]:
             if is_valid_labels(item["labels"]):
                 data_points.append(item)
             else:
                 invalid_count += 1
-                
+
         t2 = datetime.datetime.now()
         avg_time = (t2 - t1).total_seconds() / len(data_points)
         remaining_time = avg_time * (data_size - len(data_points))
@@ -457,10 +469,10 @@ def merge_data_points_by_length(lengths: List[int], max_length: int) -> List[Lis
             merges.append(current_list)
             current_list = [i]
             current_sum = cur_length
-            
+
     if len(current_list) > 0:
         merges.append(current_list)
-        
+
     result = []
     for merge in merges:
         sub_items = [items[index]["index"] for index in merge]
@@ -504,7 +516,7 @@ def create_mask_from_lengths(
         x = get_causal_mask(length, m_value)
         result[acc_leng : acc_leng + length, acc_leng : acc_leng + length] = x
         acc_leng += length
-        
+
     pad_length = max_length - sum(lengths)
     if pad_length > 0:
         result[-pad_length:, :] = 0
@@ -532,21 +544,26 @@ def pack_data_points(data_points: List[Dict], tokenizer: Any) -> Dict:
         labels[0] = -100
         label_ids += labels
         lengths.append(len(item["input_ids"]))
-        
+
     attention_mask = create_mask_from_lengths(lengths, tokenizer, float("-inf"))
     pad_leng = tokenizer.model_max_length - len(
         input_ids
     )  # padding to model_max_length
-    
+
     if tokenizer.padding_side == "right":
         input_ids = input_ids + [tokenizer.pad_token_id for _ in range(pad_leng)]
         label_ids = label_ids + [-100 for _ in range(pad_leng)]
     else:
         input_ids = [tokenizer.pad_token_id for _ in range(pad_leng)] + input_ids
         label_ids = [-100 for _ in range(pad_leng)] + label_ids
-        
-    assert len(input_ids) == len(label_ids) == attention_mask.size(0) == tokenizer.model_max_length
-    
+
+    assert (
+        len(input_ids)
+        == len(label_ids)
+        == attention_mask.size(0)
+        == tokenizer.model_max_length
+    )
+
     return {
         "input_ids": torch.tensor(input_ids),
         "labels": torch.tensor(label_ids),
@@ -557,32 +574,32 @@ def pack_data_points(data_points: List[Dict], tokenizer: Any) -> Dict:
 
 
 def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
-    """This method is used to pack multiple data_points into a single data point usable for Flash Attention 
-    
-    For example, we want to pack 2 inputs with padding_size=right: 
+    """This method is used to pack multiple data_points into a single data point usable for Flash Attention
+
+    For example, we want to pack 2 inputs with padding_size=right:
     input1= {"input_ids": token_ids1, "labels": label_ids1}
     input2= {"input_ids": token_ids2, "labels": label_ids2}
     --> output would be:
-    
+
     output = {"input_ids": token_ids1 + token_ids + [pad_token, ...]} padding to tokenizer.model_max_length
     output["labels"] =  label_ids1 + label_ids2 + [-100, -100, ...]
     output["attention_mask"] = [1,...,1, 2,...,2, 0...0]
-        number of 1s = len(input_ids1)  
+        number of 1s = len(input_ids1)
         number of 2s = len(input_ids2)
         number of 0s = padding_length
-    
+
     Args:
         data_points (List[Dict]): List of data points to pack: [{"input_ids": xxx, "labels": xxx}, ...]
         tokenizer (Any): _description_
 
     Returns:
-        Dict: final single data point 
+        Dict: final single data point
     """
     input_ids = []
     lengths = []
     label_ids = []
     attention_mask = []
-    
+
     for index, item in enumerate(data_points):
         input_ids += item["input_ids"]
         # assert item["labels"][0] == -100 # This is to make sure that the first token won't be included in computing loss
@@ -595,7 +612,7 @@ def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
     pad_leng = tokenizer.model_max_length - len(
         input_ids
     )  # padding to model_max_length
-    
+
     if tokenizer.padding_side == "right":
         input_ids = input_ids + [tokenizer.pad_token_id for _ in range(pad_leng)]
         label_ids = label_ids + [-100 for _ in range(pad_leng)]
@@ -628,7 +645,7 @@ def is_valid_labels(labels: Union[List[int], torch.Tensor]) -> bool:
         for label in labels:
             if label != -100:
                 non_mask_count += 1
-                
+
         if non_mask_count == 0:
             return False
         return True
@@ -655,11 +672,12 @@ def remove_invalid_label_items(data_points: List[Dict]) -> List[Dict]:
 
 
 class CachedDataset(Dataset):
-    """This class implements a dataset that can be cached in a folder 
+    """This class implements a dataset that can be cached in a folder
 
     Args:
         Dataset (_type_): _description_
     """
+
     def __init__(
         self, tokenizer: Any, cached_folder: str, ignore_cached: bool = False
     ) -> None:
@@ -789,6 +807,7 @@ class LazyPreprocessDataset(Dataset):
 
 class PackedDataset(CachedDataset):
     """This class is used for Packing without Flash Attention"""
+
     def __init__(
         self,
         raw_data: List[Dict],
