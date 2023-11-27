@@ -1,4 +1,4 @@
-from typing import Dict, List, Any, Tuple, Optional, Union 
+from typing import Dict, List, Any, Tuple, Optional, Union
 from functionary.prompt_template.base_template import PromptTemplate
 import random
 import string
@@ -90,12 +90,12 @@ class PromptTemplateV2(PromptTemplate):
             else:
                 tool_calls.append(
                     {
-                        "function": {"name": recipient, "arguments": content}, 
-                        "id": get_random_tool_call_id(), 
-                        "type": "function"
+                        "function": {"name": recipient, "arguments": content},
+                        "id": get_random_tool_call_id(),
+                        "type": "function",
                     }
                 )
-                
+
         return {"role": "assistant", "content": text_response, "tool_calls": tool_calls}
 
     def pre_process_messages_before_inference(self, messages: List[Dict]) -> List[Dict]:
@@ -142,6 +142,18 @@ class PromptTemplateV2(PromptTemplate):
         return_role: bool,
         finish_reason: Optional[str],
     ) -> Dict:
+        """Return delta for tool_call in streaming
+
+        Args:
+            current_state (Dict): _description_
+            delta_text (str): _description_
+            first_call (bool): _description_
+            return_role (bool): _description_
+            finish_reason (Optional[str]): _description_
+
+        Returns:
+            Dict: _description_
+        """
         return {
             "delta": {
                 "content": None,
@@ -168,6 +180,16 @@ class PromptTemplateV2(PromptTemplate):
     def get_text_delta_response(
         self, delta_text: Optional[str], return_role: bool, finish_reason: Optional[str]
     ) -> Dict:
+        """Return delta for text_response in streaming
+
+        Args:
+            delta_text (Optional[str]): _description_
+            return_role (bool): _description_
+            finish_reason (Optional[str]): _description_
+
+        Returns:
+            Dict: _description_
+        """
         return {
             "delta": {
                 "content": delta_text,
@@ -180,10 +202,19 @@ class PromptTemplateV2(PromptTemplate):
         }
 
     def get_recipient(self, current_text: str) -> str:
+        """Get recipient from the llm_output
+
+        Args:
+            current_text (str): _description_
+
+        Returns:
+            str: _description_
+        """
         recipient_index = current_text.find(self.recipient_token)
         start_index = 0
         if recipient_index >= 0:
             start_index = recipient_index + len(self.recipient_token)
+            
         end_index = current_text.find(f"\n{self.content_token}")
         return current_text[start_index:end_index].strip()
 
@@ -254,6 +285,7 @@ class PromptTemplateV2(PromptTemplate):
                 recipient = self.get_recipient(current_state["current_text"])
                 first_time = current_state["first_time"]
                 current_state["first_time"] = False
+                
                 if recipient == "all":
                     current_state["response_type"] = "text"
                     return current_state, self.get_text_delta_response(
@@ -287,6 +319,7 @@ class PromptTemplateV2(PromptTemplate):
                 current_state["skip_until_reach"] = self.content_token
                 current_state["response_type"] = None
                 return current_state, None
+            
             else:
                 if current_state["response_type"] == "function":
                     return current_state, self.get_function_delta_response(

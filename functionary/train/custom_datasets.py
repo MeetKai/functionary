@@ -240,6 +240,7 @@ def get_masked_labels(
             start_masked_index = index + len(matched_prefix)
             if keep_assistant_prefix:  # unmask prefix of assistant
                 start_masked_index = index
+                
             for i in range(start_masked_index, total_input_leng):
                 tok_id = input_token_ids[i]
                 if tok_id in assistant_stop_tokens:  # check if this is end of turn
@@ -248,6 +249,7 @@ def get_masked_labels(
                     break
                 else:
                     labels[i] = input_token_ids[i]  # unmask labels at this position
+                    
             if verbose:
                 print("------------------------")
                 start = start_masked_index  # index + len(matched_prefix)
@@ -353,6 +355,7 @@ def prepare_training_inputs_batch(
             keep_assistant_prefix=keep_assistant_prefix,
             verbose=verbose,
         )
+        
         batch_labels.append(labels)
         assert len(labels) == len(input_token_ids)
 
@@ -407,12 +410,14 @@ def map_raw_data_to_input_dic(
             return_tensor=False,
             keep_assistant_prefix=keep_assistant_prefix,
         )
+        
         assert len(batch_result["batch_inputs"]) == len(raw_data[start:end])
         for item in batch_result["batch_inputs"]:
             if is_valid_labels(item["labels"]):
                 data_points.append(item)
             else:
                 invalid_count += 1
+                
         t2 = datetime.datetime.now()
         avg_time = (t2 - t1).total_seconds() / len(data_points)
         remaining_time = avg_time * (data_size - len(data_points))
@@ -452,8 +457,10 @@ def merge_data_points_by_length(lengths: List[int], max_length: int) -> List[Lis
             merges.append(current_list)
             current_list = [i]
             current_sum = cur_length
+            
     if len(current_list) > 0:
         merges.append(current_list)
+        
     result = []
     for merge in merges:
         sub_items = [items[index]["index"] for index in merge]
@@ -497,6 +504,7 @@ def create_mask_from_lengths(
         x = get_causal_mask(length, m_value)
         result[acc_leng : acc_leng + length, acc_leng : acc_leng + length] = x
         acc_leng += length
+        
     pad_length = max_length - sum(lengths)
     if pad_length > 0:
         result[-pad_length:, :] = 0
@@ -524,17 +532,21 @@ def pack_data_points(data_points: List[Dict], tokenizer: Any) -> Dict:
         labels[0] = -100
         label_ids += labels
         lengths.append(len(item["input_ids"]))
+        
     attention_mask = create_mask_from_lengths(lengths, tokenizer, float("-inf"))
     pad_leng = tokenizer.model_max_length - len(
         input_ids
     )  # padding to model_max_length
+    
     if tokenizer.padding_side == "right":
         input_ids = input_ids + [tokenizer.pad_token_id for _ in range(pad_leng)]
         label_ids = label_ids + [-100 for _ in range(pad_leng)]
     else:
         input_ids = [tokenizer.pad_token_id for _ in range(pad_leng)] + input_ids
         label_ids = [-100 for _ in range(pad_leng)] + label_ids
-    assert len(input_ids) == len(label_ids) == attention_mask.size(0)
+        
+    assert len(input_ids) == len(label_ids) == attention_mask.size(0) == tokenizer.model_max_length
+    
     return {
         "input_ids": torch.tensor(input_ids),
         "labels": torch.tensor(label_ids),
@@ -570,6 +582,7 @@ def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
     lengths = []
     label_ids = []
     attention_mask = []
+    
     for index, item in enumerate(data_points):
         input_ids += item["input_ids"]
         # assert item["labels"][0] == -100 # This is to make sure that the first token won't be included in computing loss
@@ -582,6 +595,7 @@ def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
     pad_leng = tokenizer.model_max_length - len(
         input_ids
     )  # padding to model_max_length
+    
     if tokenizer.padding_side == "right":
         input_ids = input_ids + [tokenizer.pad_token_id for _ in range(pad_leng)]
         label_ids = label_ids + [-100 for _ in range(pad_leng)]
@@ -614,6 +628,7 @@ def is_valid_labels(labels: Union[List[int], torch.Tensor]) -> bool:
         for label in labels:
             if label != -100:
                 non_mask_count += 1
+                
         if non_mask_count == 0:
             return False
         return True
