@@ -5,16 +5,13 @@ from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Tuple
 import torch
 from transformers import LlamaForCausalLM, LlamaTokenizer
 from transformers.generation.logits_process import (
-    LogitsProcessorList,
-    RepetitionPenaltyLogitsProcessor,
-    TemperatureLogitsWarper,
-    TopKLogitsWarper,
-    TopPLogitsWarper,
-)
+    LogitsProcessorList, RepetitionPenaltyLogitsProcessor,
+    TemperatureLogitsWarper, TopKLogitsWarper, TopPLogitsWarper)
 
 from functionary.inference import prepare_messages_for_inference
-from functionary.openai_types import ChatMessage, Function
-from functionary.prompt import EndToken, StartToken
+from functionary.openai_types import ChatMessage, Function, Tool
+from functionary.prompt_template import (PromptTemplate,
+                                         get_prompt_template_from_tokenizer)
 
 
 def prepare_logits_processor(
@@ -34,10 +31,12 @@ def prepare_logits_processor(
 
 
 def generate_text_stream(
+    *,
     model: LlamaForCausalLM,
     tokenizer: LlamaTokenizer,
     messages: List[ChatMessage],
     functions: Optional[List[Function]] = None,
+    tools: Optional[List[Tool]] = None,
     temperature: float = 0.7,
     max_new_tokens=256,
     stop_token_ids=[],
@@ -54,9 +53,15 @@ def generate_text_stream(
     if tokenizer.eos_token_id not in _stop_token_ids:
         _stop_token_ids.append(tokenizer.eos_token_id)
 
-    logits_processor = prepare_logits_processor(temperature, repetition_penalty, top_p, top_k)
+    logits_processor = prepare_logits_processor(
+        temperature, repetition_penalty, top_p, top_k
+    )
     input_ids = prepare_messages_for_inference(
-        tokenizer=tokenizer, messages=messages, functions=functions, device=device
+        tokenizer=tokenizer,
+        messages=messages,
+        functions=functions,
+        tools=tools,
+        device=device,
     )
     output_ids = input_ids.clone().detach()
     past_key_values = None  # KV cached
@@ -96,13 +101,13 @@ def generate_text_stream(
         token_ts = torch.as_tensor([[token_int]], device=device)
         current_output_text = tokenizer.decode(
             output_ids[0].tolist(),
-            skip_special_tokens=True,
+            skip_special_tokens=False,
             clean_up_tokenization_spaces=False,
         )
         output_ids = torch.cat((output_ids, token_ts), 1)
         next_output_text = tokenizer.decode(
             output_ids[0].tolist(),
-            skip_special_tokens=True,
+            skip_special_tokens=False,
             clean_up_tokenization_spaces=False,
         )
         output = next_output_text[len(current_output_text) :]
@@ -126,12 +131,15 @@ def generate_text_stream(
 
 
 def generate_with_check_stop(
-    generator: Generator[Tuple[int, str, Optional[str]], Any, Any], stop_list: List[List[int]]
+    generator: Generator[Tuple[int, str, Optional[str]], Any, Any],
+    stop_list: List[List[int]],
 ) -> Generator[Tuple[str, Optional[str]], Any, Any]:
     max_leng = max([len(stop) for stop in stop_list])
     temp_list: List[
         Tuple[int, str, Optional[str]]
-    ] = []  # buffer of tokens; len(temp_list) <= max_leng, will yield a token if len(temp_list) == max_leng + 1
+    ] = (
+        []
+    )  # buffer of tokens; len(temp_list) <= max_leng, will yield a token if len(temp_list) == max_leng + 1
 
     def check_stop_criteria():
         for stop in stop_list:
@@ -164,116 +172,70 @@ def generate_with_check_stop(
         yield return_item[1:]
 
 
-def update_response_state_from_delta_text(
-    cur_text: str, func_name: Optional[str], response_type: Optional[str], delta_text: str, finish_reason: Optional[str]
-) -> Tuple[Optional[str], Optional[str], Optional[Dict]]:
-    cur_text += delta_text
-    response: Optional[Dict[str, Any]] = None
-    if response_type is None:
-        if cur_text.strip().startswith(StartToken.function.value):  # if text_response
-            if cur_text.endswith(":"):
-                f_index = cur_text.find(StartToken.function.value)
-                func_name = cur_text[f_index + len(StartToken.function.value): -1].strip()
-                response = {
-                    "delta": {
-                        "role": "assistant",
-                        "content": None,
-                        "function_call": {"arguments": "", "name": func_name},
-                    },
-                    "finish_reason": None,
-                }
-                response_type = "function"
-        else:  # if function_response
-            response_type = "text"
-            response = {"delta": {"content": "", "role": "assistant"}, "finish_reason": None}
-            
-    elif response_type == "function":
-        if finish_reason is None:
-            response = {
-                "delta": {
-                    "role": "assistant",
-                    "function_call": {"arguments": delta_text},
-                },  # format of openAI at the second return, don't need to add function_name
-                "finish_reason": None,
-            }
-        else:
-            response = {
-                "delta": {},
-                "finish_reason": "function_call",
-            }  # format of openAI at the end, delta must be empty
-            
-    elif response_type == "text":
-        if finish_reason is None:
-            # need to check if call a function or not
-            if cur_text.endswith(StartToken.function.value):  # if call another function
-                print("call another function in the mean time")
-                cur_text = StartToken.function.value
-                response_type = None
-            else:
-                response = {"delta": {"content": delta_text, "role": "assistant"}, "finish_reason": None}
-        else:  # finish generating
-            response = {
-                "delta": {},
-                "finish_reason": finish_reason,
-            }  # format of openAI at the end, delta must be empty
-    return func_name, response_type, response, cur_text
-
-
 def generate_openai_format_from_stream(
-    generator: Generator[Tuple[str, Optional[str]], Any, Any]
+    generator: Generator[Tuple[str, Optional[str]], Any, Any],
+    prompt_template: PromptTemplate,
 ) -> Generator[Dict, Any, Any]:
-    cur_text = ""
-    func_name = None
-    response_type = None  # = function if it is function call; = text if it is chit-chat
+    state = {}  # # = function if it is function call; = text if it is chit-chat
     for delta_text, finish_reason in generator:
-        #print(f"delta_text: {delta_text}, finish_reason: {finish_reason}")
-        # print(f"item:{item}, finish_reason: {finish_reason}; response_type: {response_type}")
-        func_name, response_type, response, cur_text = update_response_state_from_delta_text(
-            cur_text, func_name, response_type, delta_text, finish_reason
+        state, response = prompt_template.update_response_state_from_delta_text(
+            current_state=state, delta_text=delta_text, finish_reason=finish_reason
         )
         if response is not None:
-            yield response
+            if type(response) is list:
+                for item in response:
+                    yield item
+            else:
+                yield response
 
 
 def generate_stream(
+    *,
     model: LlamaForCausalLM,
     tokenizer: LlamaTokenizer,
     messages: List[ChatMessage],
     functions: Optional[List[Function]] = None,
+    tools: Optional[List[Tool]] = None,
     temperature: float = 0.7,
     max_new_tokens=256,
     **kwargs,
 ) -> Generator[Dict, Any, Any]:
-    stop_tokens = [EndToken.assistant, EndToken.function_call]
+    promt_template = get_prompt_template_from_tokenizer(tokenizer)
+    stop_tokens = promt_template.get_stop_tokens_for_generation()
     stop_token_lists = []
     for stop in stop_tokens:
         token_ids = tokenizer.encode(stop)
         stop_token_lists.append(token_ids[-1])
+
     generator = generate_text_stream(
         model=model,
         tokenizer=tokenizer,
         messages=messages,
         functions=functions,
+        tools=tools,
         temperature=temperature,
         max_new_tokens=max_new_tokens,
         stop_token_ids=stop_token_lists,
         **kwargs,
     )
-    #checked_generator = generate_with_check_stop(generator, stop_tokens_list)
-    for item in generate_openai_format_from_stream(generator):
+    # checked_generator = generate_with_check_stop(generator, stop_tokens_list)
+    for item in generate_openai_format_from_stream(generator, promt_template):
         yield item
 
 
 async def generate_openai_format_from_stream_async(
-    generator: AsyncGenerator[Tuple[str, Optional[str]], None]
+    generator: AsyncGenerator[Tuple[str, Optional[str]], None],
+    prompt_template: PromptTemplate,
 ) -> AsyncGenerator[Dict, None]:
-    cur_text = ""
-    func_name = None
-    response_type = None  # = function if it is function call; = text if it is chit-chat
+    state = {}  # # = function if it is function call; = text if it is chit-chat
     async for delta_text, finish_reason in generator:
-        #""print(f"delta_text:{delta_text}, finish_reason: {finish_reason}; response_type:{response_type}")
-        func_name, response_type, response, cur_text = update_response_state_from_delta_text(
-            cur_text, func_name, response_type, delta_text, finish_reason
+        # ""print(f"delta_text:{delta_text}, finish_reason: {finish_reason}; response_type:{response_type}")
+        state, response = prompt_template.update_response_state_from_delta_text(
+            current_state=state, delta_text=delta_text, finish_reason=finish_reason
         )
         if response is not None:
-            yield response
+            if type(response) is list:
+                for item in response:
+                    yield item
+            else:
+                yield response
