@@ -9,10 +9,19 @@ import torch
 import transformers
 from torch.utils.data import Dataset
 
-from functionary.prompt import PromptTemplate, get_prompt_template_from_tokenizer
+from functionary.prompt_template import PromptTemplate, get_prompt_template_from_tokenizer
 
 
 def get_batch_indices(size: int, batch_size: int) -> List[Tuple[int, int]]:
+    """Split indices into batchs
+    Ex, size = 10, batch_size=3 --> split: [[0, 1, 2, ..., 9] --> [0, 1, 2], [3, 4, 5], [6,7,8], [9]]
+    Args:
+        size (int): total number of indices
+        batch_size (int): _description_
+
+    Returns:
+        List[Tuple[int, int]]: _description_
+    """
     result = []
     for i in range(size // batch_size + 1):
         start = i * batch_size
@@ -27,6 +36,16 @@ def get_batch_indices(size: int, batch_size: int) -> List[Tuple[int, int]]:
 def get_prefix_assistant_token_ids(
     prompt_template: PromptTemplate, tokenizer: Any
 ) -> List[List[int]]:
+    """Get prefix assistant token_ids for masking labels.
+    In message where role=assistant, content of assistant always start with a prefix, such as: "Assistant:" or "<|from|>assistant"
+    We convert these prefixs to token_ids, so we can detect this in the input_ids of the final prompt
+    Args:
+        prompt_template (PromptTemplate): Template to use
+        tokenizer (Any): Tokenizer
+
+    Returns:
+        List[List[int]]: List of token_ids of assistant prefixs
+    """
     result = []
     for prefix in prompt_template.get_assistant_prefixes():
         token_ids = tokenizer.encode(prefix, add_special_tokens=False)
@@ -36,7 +55,16 @@ def get_prefix_assistant_token_ids(
     return result
 
 
-def get_matching_prefix(prefix_tokens, sequence_ids):
+def get_matching_prefix(prefix_tokens: List[List[int]], sequence_ids: List[int]) -> List[int]:
+    """This function is used to check if sequence_ids starts with any prefix
+
+    Args:
+        prefix_tokens (List[List[int]]): _description_
+        sequence_ids (List[int]): _description_
+
+    Returns:
+        List[int]: _description_
+    """
     for prefix in prefix_tokens:
         if len(sequence_ids) >= len(prefix):
             if sequence_ids[: len(prefix)] == prefix:
@@ -45,6 +73,17 @@ def get_matching_prefix(prefix_tokens, sequence_ids):
 
 
 def read_dataset(data_args, training_args, tokenizer, ds_type):
+    """This function is used to read dataset for training
+
+    Args:
+        data_args (_type_): _description_
+        training_args (_type_): _description_
+        tokenizer (_type_): _description_
+        ds_type (_type_): one of: "train"
+
+    Returns:
+        _type_: _description_
+    """
     data_path = (
         data_args.train_data_path if ds_type == "train" else data_args.eval_data_path
     )
@@ -52,13 +91,19 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
     data_ratio = (
         data_args.training_ratio if ds_type == "train" else data_args.eval_ratio
     )
+    
+    # Do not unmask assistant prefix for validation ds.
+    if ds_type == "train":
+        keep_assistant_prefix = training_args.keep_assistant_prefix
+    else:
+        keep_assistant_prefix = False
 
     if not data_args.packing:
         with open(data_path, "r") as file:
             raw_data = [json.loads(line) for line in file]
             if data_ratio < 1:
                 raw_data = raw_data[: int(data_ratio * len(raw_data))]
-        ds = LazyPreprocessDataset(raw_data, tokenizer)
+        ds = LazyPreprocessDataset(raw_data, tokenizer, keep_assistant_prefix=keep_assistant_prefix)
         return ds
 
     local_rank = int(os.getenv("LOCAL_RANK", "0"))
@@ -85,19 +130,14 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
                 raw_train_data = raw_train_data[: int(data_ratio * len(raw_train_data))]
 
         print(f"{ds_type} size: : {len(raw_train_data)}")
-
-        # Do not unmask assistant prefix for validation ds.
-        if ds_type == "train":
-            keep_assistant_prefix = training_args.keep_assistant_prefix
-        else:
-            keep_assistant_prefix = False
         # ignore_cached=True to ignore the cached if exist, rank 0 will always process the data
-        ds = FAPackedDataset(
+        ds = PackedDataset(
             raw_train_data,
             tokenizer,
             cached_folder=cached_folder,
             ignore_cached=True,
             keep_assistant_prefix=keep_assistant_prefix,
+            use_flash_attention=True,
         )
         print(f"process: {local_rank} finish processing data")
         world_size = int(os.environ.get("WORLD_SIZE", 1))
@@ -105,8 +145,8 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
             torch.distributed.barrier()  # allow other ranks to execute
 
     # All ranks will read the processed data from cached_path created by rank 0
-    ds = FAPackedDataset(
-        None, tokenizer, cached_folder=cached_folder, ignore_cached=False
+    ds = PackedDataset(
+        None, tokenizer, cached_folder=cached_folder, ignore_cached=False, use_flash_attention=True,
     )
     if local_rank == 0:
         ds.stat()  #  print some statistics about the dataset
@@ -123,6 +163,21 @@ def prepare_training_inputs(
     keep_assistant_prefix: bool = False,
     verbose=False,
 ) -> Dict[str, Union[str, Dict]]:
+    """This function is used to convert a data point into input that is ready for training.
+    The inputs is of format: {"input_ids": xxx, "labels": xxx, "attention_mask": xxx}
+
+    Args:
+        messages (Dict[str, List]): List of messages in OpenAI format
+        tokenizer (Any): tokenizer
+        padding (Optional[str], optional): _description_. Defaults to "max_length".
+        max_length (Optional[int], optional): _description_. Defaults to None.
+        return_tensor (bool, optional): _description_. Defaults to True.
+        keep_assistant_prefix (bool, optional): _description_. Defaults to False.
+        verbose (bool, optional): _description_. Defaults to False.
+
+    Returns:
+        Dict[str, Union[str, Dict]]: _description_
+    """
     batch_result = prepare_training_inputs_batch(
         batch_messages=[messages],
         tokenizer=tokenizer,
@@ -147,6 +202,20 @@ def get_masked_labels(
     keep_assistant_prefix: bool = False,
     verbose: bool = False,
 ):
+    """This function is used to mask labels. 
+    This will retain only chunks: (prefix assistant tokens) CHUNK_TO_UNMASK (stop tokens) for computing loss
+
+    Args:
+        input_token_ids (List[int]): input_token_ids
+        tokenizer (Any): _description_
+        assistant_prefix_tokens (List[List[int]]): _description_
+        assistant_stop_tokens (List[int]): _description_
+        keep_assistant_prefix (bool, optional): _description_. Defaults to False.
+        verbose (bool, optional): _description_. Defaults to False.
+
+    Returns:
+        _type_: _description_
+    """
     # first we initialize labels with all positions as -100,
     # then we will fill in positions where role=assistant as we only include these in computing the loss
     labels = [-100 for _ in range(len(input_token_ids))]
@@ -218,9 +287,9 @@ def get_assistant_stop_token_ids(prompt_template, tokenizer: Any) -> Dict[str, i
     result = []
     for stop_token in prompt_template.get_stop_tokens_for_generation():
         tok_ids = tokenizer.encode(stop_token, add_special_tokens=False)
-        assert len(tok_ids) <= 2
+        assert len(tok_ids) <= 2, f"stop token: {stop_token} is not added"
         if len(tok_ids) == 2:
-            assert tok_ids[0] == 29871  # Llama tokenizer adds this token intentionally
+            assert tok_ids[0] in [29871, 28705], f"stop token: {stop_token} is not added"  # Llama tokenizer adds this token intentionally
         result.append(tok_ids[-1])
     return result
 
@@ -315,6 +384,17 @@ def map_raw_data_to_input_dic(
     batch_size: int = 5000,
     keep_assistant_prefix: bool = False,
 ) -> List[Dict]:
+    """This function is used to map list of raw_data to list of processed data points for packing
+    Args:
+        raw_data (List[Dict]): data points from train_file/evaluation_file
+        tokenizer (Any): _description_
+        padding (str): _description_
+        batch_size (int, optional): _description_. Defaults to 5000.
+        keep_assistant_prefix (bool, optional): if we unmask assistant prefix in computing loss. Defaults to False.
+
+    Returns:
+        List[Dict]: _description_
+    """
     invalid_count = 0
     data_size = len(raw_data)
     data_points = []
@@ -382,6 +462,15 @@ def merge_data_points_by_length(lengths: List[int], max_length: int) -> List[Lis
 
 
 def get_causal_mask(length: int, m_value: float) -> torch.tensor:
+    """Return causal mask filling with m_value
+
+    Args:
+        length (int): _description_
+        m_value (float): _description_
+
+    Returns:
+        torch.tensor: _description_
+    """
     mask = torch.full((length, length), m_value)
     mask_cond = torch.arange(mask.size(-1))
     mask.masked_fill_(mask_cond < (mask_cond + 1).view(mask.size(-1), 1), 0)
@@ -415,7 +504,16 @@ def create_mask_from_lengths(
     return result
 
 
-def merge_data_points(data_points: List[Dict], tokenizer: Any) -> Dict:
+def pack_data_points(data_points: List[Dict], tokenizer: Any) -> Dict:
+    """This method is used to pack multiple data points into a single data point used for Normal Attention (vs FlashAttention)
+
+    Args:
+        data_points (List[Dict]): _description_
+        tokenizer (Any): _description_
+
+    Returns:
+        Dict: _description_
+    """
     input_ids = []
     lengths = []
     label_ids = []
@@ -447,6 +545,27 @@ def merge_data_points(data_points: List[Dict], tokenizer: Any) -> Dict:
 
 
 def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
+    """This method is used to pack multiple data_points into a single data point usable for Flash Attention 
+    
+    For example, we want to pack 2 inputs with padding_size=right: 
+    input1= {"input_ids": token_ids1, "labels": label_ids1}
+    input2= {"input_ids": token_ids2, "labels": label_ids2}
+    --> output would be:
+    
+    output = {"input_ids": token_ids1 + token_ids + [pad_token, ...]} padding to tokenizer.model_max_length
+    output["labels"] =  label_ids1 + label_ids2 + [-100, -100, ...]
+    output["attention_mask"] = [1,...,1, 2,...,2, 0...0]
+        number of 1s = len(input_ids1)  
+        number of 2s = len(input_ids2)
+        number of 0s = padding_length
+    
+    Args:
+        data_points (List[Dict]): List of data points to pack: [{"input_ids": xxx, "labels": xxx}, ...]
+        tokenizer (Any): _description_
+
+    Returns:
+        Dict: final single data point 
+    """
     input_ids = []
     lengths = []
     label_ids = []
@@ -521,6 +640,11 @@ def remove_invalid_label_items(data_points: List[Dict]) -> List[Dict]:
 
 
 class CachedDataset(Dataset):
+    """This class implements a dataset that can be cached in a folder 
+
+    Args:
+        Dataset (_type_): _description_
+    """
     def __init__(
         self, tokenizer: Any, cached_folder: str, ignore_cached: bool = False
     ) -> None:
@@ -649,6 +773,7 @@ class LazyPreprocessDataset(Dataset):
 
 
 class PackedDataset(CachedDataset):
+    """This class is used for Packing without Flash Attention"""
     def __init__(
         self,
         raw_data: List[Dict],
@@ -657,8 +782,10 @@ class PackedDataset(CachedDataset):
         ignore_cached: bool = False,
         batch_size: int = 5000,
         keep_assistant_prefix: bool = False,
+        use_flash_attention: bool = True,
     ):
         super().__init__(tokenizer, cached_folder, ignore_cached)
+        self.use_flash_attention = use_flash_attention
         if not self.load_from_cache:
             self.data_points = map_raw_data_to_input_dic(
                 raw_data=raw_data,
@@ -686,7 +813,9 @@ class PackedDataset(CachedDataset):
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         group = self.groups[i]
         group_data_points = [self.data_points[index] for index in group]
-        return merge_data_points(group_data_points, self.tokenizer)
+        if not self.use_flash_attention:
+            return pack_data_points(group_data_points, self.tokenizer)
+        return pack_data_points_FA(group_data_points, self.tokenizer)
 
     def stat(self):
         print(
@@ -701,10 +830,3 @@ class PackedDataset(CachedDataset):
         print(
             f"original avg length: {original_avg_length}; avg packed length: {avg_packed_length}"
         )
-
-
-class FAPackedDataset(PackedDataset):
-    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
-        group = self.groups[i]
-        group_data_points = [self.data_points[index] for index in group]
-        return pack_data_points_FA(group_data_points, self.tokenizer)

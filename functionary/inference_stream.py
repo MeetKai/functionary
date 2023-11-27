@@ -14,7 +14,7 @@ from transformers.generation.logits_process import (
 
 from functionary.inference import prepare_messages_for_inference
 from functionary.openai_types import ChatMessage, Function, Tool
-from functionary.prompt import get_prompt_template_from_tokenizer, PromptTemplate
+from functionary.prompt_template import get_prompt_template_from_tokenizer, PromptTemplate
 
 
 def prepare_logits_processor(

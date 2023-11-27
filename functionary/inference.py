@@ -9,7 +9,7 @@ from transformers import (
 )
 
 from functionary.openai_types import ChatMessage, Function, FunctionCall, Tool
-from functionary.prompt import get_prompt_template_from_tokenizer, PromptTemplate
+from functionary.prompt_template import get_prompt_template_from_tokenizer, PromptTemplate
 
 
 class StopWordsCriteria(StoppingCriteria):

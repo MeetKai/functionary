@@ -5,8 +5,8 @@ from typing import List
 
 from transformers import LlamaTokenizer, LlamaTokenizerFast
 
-from functionary.prompt import (
-    get_default_prompt_template,
+from functionary.prompt_template import (
+    get_prompt_template_by_version,
     PromptTemplateV1,
     PromptTemplateV2,
     SYSTEM_MESSAGE,
@@ -43,14 +43,14 @@ class TestInsertingEndToken(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(TestInsertingEndToken, self).__init__(*args, **kwargs)
 
-        self.prompt_template = get_default_prompt_template()
-        version = "v1" if type(self.prompt_template) is PromptTemplateV1 else "v2"
+        self.template_version = "v2"
+        self.prompt_template = get_prompt_template_by_version(self.template_version)
 
         current_folder = os.path.dirname(os.path.abspath(__file__))
-        with open(os.path.join(current_folder, f"test_case_{version}.json")) as f:
+        with open(os.path.join(current_folder, f"test_case_{self.template_version}.json")) as f:
             self.test_case = json.loads(f.read())
 
-        with open(os.path.join(current_folder, f"prompt_test_{version}.txt")) as f:
+        with open(os.path.join(current_folder, f"prompt_test_{self.template_version}.txt")) as f:
             self.final_prompt = f.read()
             self.final_prompt = self.final_prompt.replace("\n\n<|from|>", "\n<|from|>")
 
@@ -148,11 +148,11 @@ class TestInsertingEndToken(unittest.TestCase):
             if keep_assistant_prefix:
                 prefix = ""
             else:
-                prefix = prompt_template.get_text_from_message({"role": "assistant"})
+                prefix = prompt_template.convert_message_to_prompt({"role": "assistant"})
             decoded_content = prefix + tokenizer.decode(
                 chunk
             )  # note that need to add: "\nassistant" because we mask this, see line 194 in prompt_utils.py
-            prompt = prompt_template.get_text_from_message(message)
+            prompt = prompt_template.convert_message_to_prompt(message)
             # decoded_content and prompt should be the same
             # to avoid any mistakes of tokenizer like adding white space we will compare after removing space
             self.assertEqual(
@@ -195,7 +195,7 @@ class TestInsertingEndToken(unittest.TestCase):
             prompt_gen,
             self.final_prompt
             + "\n"
-            + self.prompt_template.get_text_from_message({"role": "assistant"}),
+            + self.prompt_template.convert_message_to_prompt({"role": "assistant"}),
             "wrong prompt for generation",
         )
 

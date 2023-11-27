@@ -12,10 +12,10 @@ import torch.distributed
 import transformers
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer, LlamaTokenizerFast, Trainer
+from transformers import AutoTokenizer, Trainer
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-from functionary.prompt import get_default_prompt_template
+from functionary.prompt_template import get_prompt_template_by_version, PromptTemplate
 from functionary.train.custom_datasets import read_dataset
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
@@ -66,6 +66,13 @@ class TrainingArguments(transformers.TrainingArguments):
             "help": "Whether to mask the assistant prefix `<|from|>assistant\n<|recipient|>` during training"
         },
     )
+    
+    prompt_template_version: str = field(
+        default="v2",
+        metadata={
+            "help": "choose prompt template to use for training"
+        }
+    )
 
 
 def trainer_save_model_safe(trainer: transformers.Trainer):
@@ -77,8 +84,10 @@ def trainer_save_model_safe(trainer: transformers.Trainer):
 
 
 def initialize_tokenizer(
+    *,
     model: transformers.AutoModelForCausalLM,
     model_name_or_path: str,
+    prompt_template: PromptTemplate,
     model_max_length: int,
     cache_dir: str,
 ):
@@ -101,7 +110,6 @@ def initialize_tokenizer(
 
     # Add special tokens
     tokenizer.pad_token = tokenizer.eos_token
-    prompt_template = get_default_prompt_template()
     added_tokens = prompt_template.get_additional_tokens()
     special_tokens = {"additional_special_tokens": added_tokens}
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
@@ -126,7 +134,7 @@ def initialize_tokenizer(
         input_embeddings[-num_new_tokens:] = input_embeddings_avg
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
 
-    return tokenizer, added_tokens
+    return tokenizer
 
 
 def extract_unmasked_chunks(labels: List[int], masked_value) -> List[List[int]]:
@@ -222,15 +230,19 @@ def train():
         use_flash_attention_2=True,
     )
     model.config.use_cache = False
+    
+    print_rank0("Prompt template to use: ", training_args.prompt_template_version)
+    prompt_template = get_prompt_template_by_version(training_args.prompt_template_version)
 
-    tokenizer, added_tokens = initialize_tokenizer(
-        model,
-        model_args.model_name_or_path,
-        training_args.model_max_length,
-        training_args.cache_dir,
+    tokenizer = initialize_tokenizer(
+        model=model, 
+        model_name_or_path=model_args.model_name_or_path, 
+        prompt_template=prompt_template, 
+        model_max_length=training_args.model_max_length, 
+        cache_dir=training_args.cache_dir
     )
     # get id of added tokens to compute the accuracy of predicing the token
-    id2token = {tokenizer.encode(token)[-1]: token for token in added_tokens}
+    id2token = {tokenizer.encode(token)[-1]: token for token in prompt_template.get_additional_tokens()}
     print_rank0("id to tokens: ", id2token)
 
     assert data_args.train_data_path is not None, "Please provide a training data file."
