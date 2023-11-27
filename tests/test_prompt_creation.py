@@ -175,7 +175,7 @@ class TestInsertingEndToken(unittest.TestCase):
         )
         messages.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
 
-        chat_template = self.prompt_template.get_chat_template()
+        chat_template = self.prompt_template.get_chat_template_jinja()
         tokenizer = LlamaTokenizer.from_pretrained(
             "meetkai/functionary-7b-v1.1", legacy=True
         )
