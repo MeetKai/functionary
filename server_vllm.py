@@ -56,7 +56,10 @@ from functionary.openai_types import (
     StreamChoice,
     Tool,
 )
-from functionary.prompt_template import PromptTemplate, get_prompt_template_from_tokenizer
+from functionary.prompt_template import (
+    PromptTemplate,
+    get_prompt_template_from_tokenizer,
+)
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -310,6 +313,7 @@ async def create_chat_completion(raw_request: Request):
 
     async def completion_stream_generator(messages, tools) -> AsyncGenerator[str, None]:
         function_call = None
+        tool_calls = []
 
         while True:
             result_generator, request_id = perform_inference(
@@ -325,73 +329,116 @@ async def create_chat_completion(raw_request: Request):
                 chunk_dic = result.dict(exclude_unset=True)
                 chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
 
-                breakpoint()
-
-                # Store and yield the chunks if the model generates a function call
-                # {'delta': {'role': 'assistant', 'content': None, 'function_call': xxx}, 'finish_reason': None}]
-                if (
-                    "function_call" in chunk_dic["choices"][0]["delta"]
-                    and chunk_dic["choices"][0]["delta"]["function_call"] is not None
-                ):
-                    if function_call is not None:
-                        function_call["arguments"] += chunk_dic["choices"][0]["delta"][
-                            "function_call"
-                        ]["arguments"]
+                prompt_template_cls_name = prompt_template.__class__.__name__
+                if prompt_template_cls_name == "PromptTemplateV1":
+                    # Store and yield the chunks if the model generates a function call
+                    # {'delta': {'role': 'assistant', 'content': None, 'function_call': xxx}, 'finish_reason': None}]
+                    if (
+                        "function_call" in chunk_dic["choices"][0]["delta"]
+                        and chunk_dic["choices"][0]["delta"]["function_call"]
+                        is not None
+                    ):
+                        if function_call is not None:
+                            function_call["arguments"] += chunk_dic["choices"][0][
+                                "delta"
+                            ]["function_call"]["arguments"]
+                        else:
+                            function_call = chunk_dic["choices"][0]["delta"][
+                                "function_call"
+                            ]
+                        yield f"data: {chunk_data}\n\n"
+                    # Skip this step if the chunk indicates the end of function_call
+                    # [{'delta': {}, 'finish_reason': 'function_call'}]
+                    elif chunk_dic["choices"][0]["finish_reason"] == "function_call":
+                        pass
+                    # Normal response
+                    # [{'delta': {'role': 'assistant', 'content': xxx}, 'finish_reason': None}]
+                    # if (
+                    #     chunk_dic["choices"][0]["finish_reason"] is None
+                    #     and "function_call" not in chunk_dic["choices"][0]["delta"]
+                    # ):
                     else:
-                        function_call = chunk_dic["choices"][0]["delta"][
-                            "function_call"
+                        yield f"data: {chunk_data}\n\n"
+
+                    # Check if the model generated a function call
+                    # If so, call the function and append the assistant fn call and fn response to messages
+                    if function_call is not None:
+                        response = requests.post(
+                            "http://0.0.0.0:8002/functions/call", json=function_call
+                        ).json()
+
+                        messages += [
+                            ChatMessage(
+                                role="assistant",
+                                content=None,
+                                function_call=FunctionCall(**function_call),
+                            ),
+                            ChatMessage(
+                                role="function",
+                                content=response,
+                                name=function_call["name"],
+                            ),
                         ]
-                    yield f"data: {chunk_data}\n\n"
-                # Skip this step if the chunk indicates the end of function_call
-                # [{'delta': {}, 'finish_reason': 'function_call'}]
-                elif chunk_dic["choices"][0]["finish_reason"] == "function_call":
-                    pass
-                # Normal response
-                # [{'delta': {'role': 'assistant', 'content': xxx}, 'finish_reason': None}]
-                # if (
-                #     chunk_dic["choices"][0]["finish_reason"] is None
-                #     and "function_call" not in chunk_dic["choices"][0]["delta"]
-                # ):
+
+                        # Send data to the frontend to show that a function is called
+                        fn_call_chunk = {
+                            "delta": {
+                                "role": "function",
+                                "name": function_call["name"],
+                                "content": response,
+                            },
+                            "finish_reason": None,
+                        }
+                        result = ChatCompletionChunk(
+                            id=request_id, choices=[fn_call_chunk]
+                        )
+                        chunk_dic = result.dict(exclude_unset=True)
+                        chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
+                        yield f"data: {chunk_data}\n\n"
+
+                        # Reset function_call to None
+                        function_call = None
+                    else:
+                        yield "data: [DONE]\n\n"
+                        break
+                elif prompt_template_cls_name == "PromptTemplateV2":
+                    # Skip the first chunk since it is useless
+                    # {'delta': {'role': 'assistant', 'content': None, 'function_call': None, 'tool_calls': None}, 'finish_reason': None}
+                    if chunk_dic["choices"][0]["delta"] == {
+                        "role": "assistant",
+                        "content": None,
+                        "function_call": None,
+                        "tool_calls": None,
+                    }:
+                        pass
+                    # Store and yield the chunks if the model generates a tool call
+                    # {'delta': {'role': 'assistant', 'content': None, 'function_call': None, 'tool_calls': xxx}, 'finish_reason': None}]
+                    elif (
+                        "tool_calls" in chunk_dic["choices"][0]["delta"]
+                        and chunk_dic["choices"][0]["delta"]["tool_calls"] is not None
+                    ):
+                        called_tool = chunk_dic["choices"][0]["delta"]["tool_calls"][0]
+                        called_tool_id = chunk_dic["choices"][0]["delta"]["tool_calls"][
+                            0
+                        ]["index"]
+
+                        if len(tool_calls) <= called_tool_id:
+                            tool_calls.append(called_tool)
+                        else:
+                            tool_calls[-1]["function"]["arguments"] += called_tool[
+                                "function"
+                            ]["arguments"]
+
+                        yield f"data: {chunk_data}\n\n"
+                    # Skip this step if the chunk indicates the end of tool_call
+                    # [{'delta': {'role': 'assistant', 'content': None, 'function_call': None, 'tool_calls': None}, 'finish_reason': 'tool_calls'}]
+                    elif chunk_dic["choices"][0]["finish_reason"] == "tool_calls":
+                        breakpoint()
+                        pass
                 else:
-                    yield f"data: {chunk_data}\n\n"
-
-            # Check if the model generated a function call
-            # If so, call the function and append the assistant fn call and fn response to messages
-            if function_call is not None:
-                response = requests.post(
-                    "http://0.0.0.0:8002/functions/call", json=function_call
-                ).json()
-
-                messages += [
-                    ChatMessage(
-                        role="assistant",
-                        content=None,
-                        function_call=FunctionCall(**function_call),
-                    ),
-                    ChatMessage(
-                        role="function", content=response, name=function_call["name"]
-                    ),
-                ]
-
-                # Send data to the frontend to show that a function is called
-                fn_call_chunk = {
-                    "delta": {
-                        "role": "function",
-                        "name": function_call["name"],
-                        "content": response,
-                    },
-                    "finish_reason": None,
-                }
-                result = ChatCompletionChunk(id=request_id, choices=[fn_call_chunk])
-                chunk_dic = result.dict(exclude_unset=True)
-                chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
-                yield f"data: {chunk_data}\n\n"
-
-                # Reset function_call to None
-                function_call = None
-            else:
-                yield "data: [DONE]\n\n"
-                break
+                    raise NotImplementedError(
+                        f"Prompt Template of `{prompt_template_cls_name}` is not implemented yet."
+                    )
 
     # Streaming response
     if request.stream:
@@ -408,8 +455,10 @@ async def create_chat_completion(raw_request: Request):
     result_generator, request_id = perform_inference(
         messages=request.messages, functions=functions, tools=request.tools
     )
+
     created_time = int(time.time())
     model_name = request.model
+
     final_res: RequestOutput = None
     async for res in result_generator:
         if await raw_request.is_disconnected():
@@ -417,8 +466,10 @@ async def create_chat_completion(raw_request: Request):
             await abort_request()
             return create_error_response(HTTPStatus.BAD_REQUEST, "Client disconnected")
         final_res = res
+
     assert final_res is not None
     choices = []
+
     for output in final_res.outputs:
         text_response = output.text.strip()
         chat_mess = prompt_template.parse_assistant_response(
