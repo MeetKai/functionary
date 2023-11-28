@@ -59,6 +59,76 @@ you can start your environment like this:
 sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functionary_workspace:/workspace -p 8000:8000 nvcr.io/nvidia/pytorch:22.12-py3
 ```
 
+### Llama_cpp Inference (GGUF files)
+Make sure that [llama-cpp-python](https://github.com/abetlen/llama-cpp-python) is successully installed in your system. The following is the sample code:
+
+```python
+from llama_cpp import Llama
+from functionary.prompt_template import get_prompt_template_from_tokenizer
+from transformers import AutoTokenizer
+
+functions = [
+        {
+                "name": "get_current_weather",
+                "description": "Get the current weather in a given location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g. San Francisco, CA",
+                        },
+                        "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
+                    },
+                    "required": ["location"],
+                },
+            }
+    ]
+
+# You can download gguf files from https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF/tree/main
+llm = Llama(model_path="PATH_TO_GGUF_FILE", n_ctx=4096, n_gpu_layers=-1)
+messages = [
+    {"role": "user", "content": "what's the weather like in Hanoi?"}
+]
+
+# Create tokenizer from HF. 
+# We found that the tokenizer from llama_cpp is not compatible with tokenizer from HF that we trained
+# The reason might be we added new tokens to the original tokenizer
+# So we will use tokenizer from HuggingFace
+tokenizer = AutoTokenizer.from_pretrained("meetkai/functionary-7b-v1.4", legacy=True)
+# prompt_template will be used for creating the prompt
+prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+
+# Before inference, we need to add an empty assistant (message without content or function_call)
+messages.append({"role": "assistant"})
+
+# Create the prompt to use for inference
+prompt_str = prompt_template.get_prompt_from_messages(messages, functions)
+token_ids = tokenizer.encode(prompt_str)
+
+gen_tokens = []
+# Get list of stop_tokens 
+stop_token_ids = [tokenizer.encode(token)[-1] for token in prompt_template.get_stop_tokens_for_generation()]
+print("stop_token_ids: ", stop_token_ids)
+
+# We use function generate (instead of __call__) so we can pass in list of token_ids
+for token_id in llm.generate(token_ids, temp=0):
+    if token_id in stop_token_ids:
+        break
+    gen_tokens.append(token_id)
+
+llm_output = tokenizer.decode(gen_tokens)
+
+# parse the message from llm_output
+result = prompt_template.parse_assistant_response(llm_output)
+print(result)
+```
+The output would be:
+```python
+{'role': 'assistant', 'content': None, 'function_call': {'name': 'get_current_weather', 'arguments': '{\n  "location": "Hanoi"\n}'}}
+```
+**Note: we should use the tokenizer from Huggingface to convert prompt into token_ids instead of using the tokenizer from LLama_cpp because we found that tokenizer from LLama_cpp doesn't give the same result as that from Huggingface. The reason might be in the training, we added new tokens to the tokenizer and LLama_Cpp doesn't handle this succesfully**
+
 ### Call Real Python Function
 To call the real python function, get the result and extract the result to respond, you can use [chatlab](https://github.com/rgbkrk/chatlab). The following example uses chatlab==0.16.0:
 
