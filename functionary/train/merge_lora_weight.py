@@ -3,7 +3,7 @@ import os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 from transformers import AutoModelForCausalLM, LlamaTokenizer
-from functionary.prompt import get_additional_tokens
+from functionary.prompt_template import get_prompt_template_by_version
 from peft import PeftModel
 import torch
 import typer
@@ -11,14 +11,15 @@ import transformers
 import math 
 
 
-def merge_weight(save_folder: str, pretrained_path: str, checkpoint: str, model_max_length: int):
+def merge_weight(save_folder: str, pretrained_path: str, checkpoint: str, model_max_length: int, prompt_template_version: str):
     print("save to: ", save_folder)
     print("pretrained: ", pretrained_path)
     print("checkpoint: ", checkpoint)
     tokenizer = LlamaTokenizer.from_pretrained(pretrained_path, legacy=True, model_max_length=model_max_length)
     tokenizer.pad_token = tokenizer.eos_token
     
-    special_tokens = {"additional_special_tokens": get_additional_tokens()}
+    prompt_template = get_prompt_template_by_version(prompt_template_version)
+    special_tokens = {"additional_special_tokens": prompt_template.get_additional_tokens()}
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
     print("number of new tokens: ", num_new_tokens)
     

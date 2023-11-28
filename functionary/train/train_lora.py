@@ -26,7 +26,7 @@ from transformers import (
     deepspeed,
 )
 
-from functionary.prompt import get_additional_tokens
+from functionary.prompt_template import get_prompt_template_by_version
 from functionary.train.custom_datasets import read_dataset
 from functionary.train.monkey_patch.llama_attention_mask_monkey_patch import LlamaForCausalLM
 
@@ -346,7 +346,8 @@ def initialize_tokenizer(
 
     # Add special tokens
     tokenizer.pad_token = tokenizer.unk_token
-    special_tokens = {"additional_special_tokens": get_additional_tokens()}
+    prompt_template = get_prompt_template_by_version("v2")
+    special_tokens = {"additional_special_tokens": prompt_template.get_additional_tokens()}
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
 
     # Resize embedding

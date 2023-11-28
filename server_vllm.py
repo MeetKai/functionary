@@ -56,7 +56,7 @@ from functionary.openai_types import (
     StreamChoice,
     Tool,
 )
-from functionary.prompt import PromptTemplate, get_prompt_template_from_tokenizer
+from functionary.prompt_template import PromptTemplate, get_prompt_template_from_tokenizer
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -225,8 +225,6 @@ async def create_chat_completion(raw_request: Request):
         - logit_bias (to be supported by vLLM engine)
     """
     request_json = await raw_request.json()
-    # print("request inofo: ")
-    # print(json.dumps(request_json, ensure_ascii=False, indent=4))
     request = ChatCompletionRequest(**request_json)
 
     logger.info(f"Received chat completion request: {request}")

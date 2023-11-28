@@ -395,11 +395,9 @@ Evaluation function call prediction in our in-house dataset. We focus on two key
 
 ## Dataset
 
---- Work In Progress ---
-
 Dataset preparation process consists of several steps:
 
-1. **Function Definitions Conversion:** We begin by selecting multiple function definitions and converting them into TypeScript definitions. This approach benefits from the model's prior exposure to TypeScript tokens during the pretraining phase. [See how we do it](https://github.com/musabgultekin/functionary/blob/17a86de9b06acaedd0afab212717205c0484a218/schema.py#L54) Also see [Microsoft TypeChat](https://github.com/microsoft/TypeChat/blob/d2f2de9ca37ef9adeb108d5fc60703b72fec0a22/site/src/blog/introducing-typechat.md#just-add-types)
+1. **Function Definitions Conversion:** We begin by selecting multiple function definitions and converting them into TypeScript definitions. This approach benefits from the model's prior exposure to TypeScript tokens during the pretraining phase. [See how we do it](https://github.com/musabgultekin/functionary/blob/17a86de9b06acaedd0afab212717205c0484a218/schema.py#L54) Also see [Microsoft TypeChat](https://github.com/microsoft/TypeChat/blob/d2f2de9ca37ef9adeb108d5fc60703b72fec0a22/site/src/blog/introducing-typechat.md#just-add-types) . Typescript definition files can be seen [here](https://github.com/search?q=namespace+path%3A*.d.ts&type=code), we use the same format with a couple of changes (e.g removing `declare` and `interface`, and always using curly braces because all function parameters are expected to generate a JSON object).
 
 2. **Human Prompts Generation:** We then create human prompts that incorporate the converted TypeScript function definitions. 
 
@@ -411,9 +409,7 @@ Dataset preparation process consists of several steps:
 
 6. **Merging and Training:** We combine all the generated elements (prompts, function calls, function answers, and their interpretations) using a custom formatting. This consolidated dataset is then used for the model's training.
 
-*Note: Llama 2 70b is capable of doing all synthetic data generation.*
-
-*More information about this process will be provided soon as possible.*
+*Note: Llama 2 70b / Falcon 180B is capable of doing all synthetic data generation.*
 
 ### v0.1 
 
