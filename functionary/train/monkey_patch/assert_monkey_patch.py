@@ -18,7 +18,9 @@ random.seed(1)
 torch.manual_seed(3)
 
 
-def compute_loss_of_model(model: Any, ds: Dataset, tokenizer: Any, batch_size=8) -> Tuple[float, int]:
+def compute_loss_of_model(
+    model: Any, ds: Dataset, tokenizer: Any, batch_size=8
+) -> Tuple[float, int]:
     """Compute the avg loss per token given the model and dataset
     also return the number of tokens for computing loss
 
