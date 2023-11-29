@@ -1,5 +1,5 @@
 from typing import List, Dict, Any
-import torch 
+import torch
 from torch.utils.data import Dataset
 
 
@@ -37,7 +37,9 @@ def merge_data_points_by_length(lengths: List[int], max_length: int) -> List[Lis
     return result
 
 
-def pack_data_points_FA(data_points: List[Dict], tokenizer: Any, pack_length: int) -> Dict:
+def pack_data_points_FA(
+    data_points: List[Dict], tokenizer: Any, pack_length: int
+) -> Dict:
     """_summary_
 
     Args:
@@ -52,7 +54,7 @@ def pack_data_points_FA(data_points: List[Dict], tokenizer: Any, pack_length: in
     lengths = []
     label_ids = []
     attention_mask = []
-    
+
     for index, item in enumerate(data_points):
         input_ids += item["input_ids"]
         # assert item["labels"][0] == -100 # This is to make sure that the first token won't be included in computing loss
@@ -62,9 +64,7 @@ def pack_data_points_FA(data_points: List[Dict], tokenizer: Any, pack_length: in
         lengths.append(len(item["input_ids"]))
         attention_mask += [index + 1 for _ in range(len(item["input_ids"]))]
 
-    pad_leng = pack_length - len(
-        input_ids
-    )  # padding to model_max_length
+    pad_leng = pack_length - len(input_ids)  # padding to model_max_length
     if tokenizer.padding_side == "right":
         input_ids = input_ids + [tokenizer.pad_token_id for _ in range(pad_leng)]
         label_ids = label_ids + [-100 for _ in range(pad_leng)]
@@ -89,50 +89,60 @@ class PackedDataset(Dataset):
         super().__init__()
         self.pack_length = pack_length
         self.tokenizer = tokenizer
-        
+
         self.lengths = []
         self.data_points = []
         size = len(dataset)
-        
+
         for i in range(size):
             data_point = dataset[i]
             input_length = torch.sum(data_point["attention_mask"]).item()
             n_data_point = {}
-            n_data_point["input_ids"] = data_point["input_ids"][: input_length] if tokenizer.padding_side == "right" else data_point["input_ids"][- input_length: ]
-        
+            n_data_point["input_ids"] = (
+                data_point["input_ids"][:input_length]
+                if tokenizer.padding_side == "right"
+                else data_point["input_ids"][-input_length:]
+            )
+
             if "labels" not in data_point:  # create labels if not existed
                 labels = n_data_point["input_ids"].clone()
-                labels[labels == tokenizer.pad_token_id] = -100 # mask pad_token
+                labels[labels == tokenizer.pad_token_id] = -100  # mask pad_token
                 n_data_point["labels"] = labels.tolist()
             else:
-                n_data_point["labels"] = data_point["labels"][: input_length] if tokenizer.padding_side == "right" else data_point["labels"][- input_length: ]
-                
+                n_data_point["labels"] = (
+                    data_point["labels"][:input_length]
+                    if tokenizer.padding_side == "right"
+                    else data_point["labels"][-input_length:]
+                )
+
             self.data_points.append(n_data_point)
             self.lengths.append(input_length)
-        
-        self.groups = merge_data_points_by_length(
-            self.lengths, self.pack_length
-        )
-    
+
+        max_input_length = max(self.lengths)
+        assert self.pack_length >= max(
+            self.lengths
+        ), f"pack_length must be >= max(input lengths), found pack_length={self.pack_length}, max_input_length={max_input_length}"
+        self.groups = merge_data_points_by_length(self.lengths, self.pack_length)
+
     def __len__(self) -> int:
         return len(self.groups)
-    
+
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         group = self.groups[i]
         group_data_points = [self.data_points[index] for index in group]
         return pack_data_points_FA(group_data_points, self.tokenizer, self.pack_length)
-    
+
     def stat(self):
         print(
             f"number of original data points:{len(self.data_points)}; packed to: {len(self.groups)} data points"
         )
         original_avg_length = sum(self.lengths) / len(self.lengths)
-        
+
         packed_lengths = []
         for group in self.groups:
             lengths = [self.lengths[index] for index in group]
             packed_lengths.append(sum(lengths))
-            
+
         avg_packed_length = sum(packed_lengths) / len(packed_lengths)
         print(
             f"original avg length: {original_avg_length}; avg packed length: {avg_packed_length}"

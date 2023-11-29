@@ -17,7 +17,7 @@ The obvious benefit of packing is reducing the training time. This reduction dep
 For example, in the training of our model (functionary), we found that the training time was **reduced from 15 hours to 5 hours, almost 1/3** of that without packing. For short data like [tatsu-lab/alpaca](https://huggingface.co/datasets/tatsu-lab/alpaca) if we choose pack_length=4096, from original 100 data points, we can packed into only **4** data points. So the training time is only about 4% of original training data.
 
 Some notes:
-+ We ususally set pack_length = max_length but this is not a must
++ pack_length >= max_length (used to tokenize data)
 + When using packing, especially for short dataset, the number of data points are drastically reduced, so the number of training steps would be also dratically reduced, if you set high value for batch_size or gradient_accumulation_steps the learning rate (assumed to be be decreased in accordance with trained steps) might drop much faster and might degrade the trained model.
 
 ## How to use
@@ -59,6 +59,7 @@ where:
 Actually, we had already implemented converting Original Dataset (function ``__item__ return {"input_ids": xxx, "attention_mask": xxx, "labels": xxxx})`` to Packed Dataset, you can use with just one line of code:
 ```python
 from packed_dataset import PackedDataset
+# Note that pack_length must be >= max_leng used tokenizing the dataset
 packed_ds = PackedDataset(original_ds, tokenizer, pack_length)
 ```
 
