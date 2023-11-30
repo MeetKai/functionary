@@ -12,7 +12,7 @@ import torch.distributed
 import transformers
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer, Trainer
+from transformers import AutoTokenizer, Trainer, AutoConfig
 
 #  sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 from functionary.prompt_template import get_prompt_template_by_version, PromptTemplate
@@ -47,6 +47,12 @@ class DataArguments:
     )
     packing: bool = field(
         default=False, metadata={"help": "Whether use packing or not"}
+    )
+    pack_length: int = field(
+        default=0,
+        metadata={
+            "help": "pack_length used to pack data points, default = 0 --> = model_max_length"
+        },
     )
 
 
@@ -206,12 +212,22 @@ def train():
 
     model_class = transformers.AutoModelForCausalLM
     if data_args.packing:
-        print("Packing=True, using monkey-patched MistralForCausalLM")
-        from functionary.functionary.train.monkey_patch.mistral_monkey_patch import (
-            MistralForCausalLM,
-        )
+        print("Packing=True, using monkey-patched")
+        config = AutoConfig.from_pretrained(model_args.model_name_or_path)
+        if "mistral" in type(config).__name__.lower():
+            from functionary.train.monkey_patch.mistral_monkey_patch import (
+                MistralForCausalLM,
+            )
 
-        model_class = MistralForCausalLM
+            print("using Monkey-patched Mistral")
+            model_class = MistralForCausalLM
+        else:  # llama
+            from functionary.train.monkey_patch.llama_monkey_patch import (
+                LlamaForCausalLM,
+            )
+
+            print("using Monkey-patched Llama")
+            model_class = LlamaForCausalLM
 
     compute_dtype = (
         torch.float16
@@ -240,17 +256,17 @@ def train():
         model_max_length=training_args.model_max_length,
         cache_dir=training_args.cache_dir,
     )
-    
+
     if LOCAL_RANK == 0:
         if not os.path.exists(training_args.output_dir):
             os.mkdir(training_args.output_dir)
-        
+
         tokenizer_folder = os.path.join(training_args.output_dir, "tokenizer")
         if not os.path.exists(tokenizer_folder):
             os.mkdir(tokenizer_folder)
-        # Save tokenizer 
+        # Save tokenizer
         tokenizer.save_pretrained(tokenizer_folder)
-    
+
     # get id of added tokens to compute the accuracy of predicing the token
     id2token = {
         tokenizer.encode(token)[-1]: token
