@@ -25,30 +25,83 @@ python3 server_vllm.py --model "meetkai/functionary-7b-v1.4" --host 0.0.0.0
 ```
 
 ### Server Usage
+```python
+import requests
+
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer xxxx"
+}
+
+api_url = "http://127.0.0.1:8000/v1/chat/completions"
+
+request_payload = {
+    'model': '../artifacts/functionary_mistral',
+    'messages': [
+        {
+            "role": "user",
+            "content": "What is the weather for Istanbul?"
+        }
+    ],
+    'tools': [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_weather",
+                "description": "Get the current weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g. San Francisco, CA"
+                        }
+                    },
+                    "required": ["location"]
+                }
+            }
+        }
+    ]
+}
+
+# Make a POST request to the API and get the response
+response = requests.post(api_url, json=request_payload, headers=headers)
+
+# Print the response text
+print(response.text)
+
+```
+
+If you already have an OpenAI based python project, here is how easy it is to swap the API to point to a functionary server:
 
 ```python
-import openai
+from openai import OpenAI
 
-openai.api_base = "http://localhost:8000/v1"
-openai.api_key = "functionary" # We just need to set this something other than None, so it works with openai package. No API key is required.
+client = OpenAI(base_url="http://localhost:8000/v1")
 
-openai.ChatCompletion.create(
+client.chat.completions.create(
     model="meetkai/functionary-7b-v1.4",
     messages=[{"role": "user", "content": "What is the weather for Istanbul?"}],
-    functions=[{
-        "name": "get_current_weather",
-        "description": "Get the current weather",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "location": {
-                    "type": "string",
-                    "description": "The city and state, e.g. San Francisco, CA"
-                },
-            },
-            "required": ["location"],
-        },
-    }]
+    tools= [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_weather",
+                "description": "Get the current weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g. San Francisco, CA"
+                        }
+                    },
+                    "required": ["location"]
+                }
+            }
+        }
+    ],
+    tool_choice="auto"
 )
 ```
 
