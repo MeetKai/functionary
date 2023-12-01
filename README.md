@@ -25,6 +25,42 @@ python3 server_vllm.py --model "meetkai/functionary-7b-v1.4" --host 0.0.0.0
 ```
 
 ### Server Usage
+
+If you have an existing OpenAI-based Python project, quickly redirect the API to a functional server with the following steps:
+1. Set the base URL to the functionary server:
+```
+client = OpenAI(base_url="http://localhost:8000/v1")
+```
+2. Set the model to the functionary model:
+```
+model = "meetkai/functionary-7b-v1.4"
+```
+Full code example:
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1")
+
+client.chat.completions.create(
+    model="meetkai/functionary-7b-v1.4",
+    messages=[{"role": "user", "content": "What is the weather for Istanbul?"}],
+    functions=[{
+        "name": "get_current_weather",
+        "description": "Get the current weather",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "The city and state, e.g. San Francisco, CA"
+                },
+            },
+            "required": ["location"],
+        },
+    }]
+)
+```
+Using requests:
 ```python
 import requests
 
@@ -63,41 +99,6 @@ response = requests.post(api_url, json=request_payload, headers=headers)
 
 # Print the response text
 print(response.text)
-```
-
-If you have an existing OpenAI-based Python project, quickly redirect the API to a functional server with the following steps:
-1. Set the base URL to the functionary server:
-```
-client = OpenAI(base_url="http://localhost:8000/v1")
-```
-2. Set the model to the functionary model:
-```
-model = "meetkai/functionary-7b-v1.4"
-```
-Full code example:
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="http://localhost:8000/v1")
-
-client.chat.completions.create(
-    model="meetkai/functionary-7b-v1.4",
-    messages=[{"role": "user", "content": "What is the weather for Istanbul?"}],
-    functions=[{
-        "name": "get_current_weather",
-        "description": "Get the current weather",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "location": {
-                    "type": "string",
-                    "description": "The city and state, e.g. San Francisco, CA"
-                },
-            },
-            "required": ["location"],
-        },
-    }]
-)
 ```
 
 If you're having trouble with dependencies, and you have [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#setting-up-nvidia-container-toolkit), 
