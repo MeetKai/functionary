@@ -65,8 +65,16 @@ response = requests.post(api_url, json=request_payload, headers=headers)
 print(response.text)
 ```
 
-If you already have an OpenAI based python project, here is how easy it is to swap the API to point to a functionary server:
-
+If you have an existing OpenAI-based Python project, quickly redirect the API to a functional server with the following steps:
+1. Set the base URL to the functionary server:
+```
+client = OpenAI(base_url="http://localhost:8000/v1")
+```
+2. Set the model to the functionary model:
+```
+model = "meetkai/functionary-7b-v1.4"
+```
+Full code example:
 ```python
 from openai import OpenAI
 
