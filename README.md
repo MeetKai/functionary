@@ -33,8 +33,9 @@ If you have an existing OpenAI-based Python project, quickly redirect the API to
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 ```
 2. Set the model to the functionary model:
+   - Model name is the value of argument "--model" in deploying: server_vllm.py or server.py
 ```
-model = "meetkai/functionary-7b-v1.4"
+model = "meetkai/functionary-7b-v1.4" 
 ```
 Full code example:
 ```python
@@ -73,7 +74,7 @@ headers = {
 api_url = "http://127.0.0.1:8000/v1/chat/completions"
 
 request_payload = {
-    'model': 'meetkai/functionary-7b-v1.4',
+    'model': 'meetkai/functionary-7b-v1.4', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
     'messages': [
         {
             "role": "user",
