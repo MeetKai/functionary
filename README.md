@@ -27,9 +27,10 @@ python3 server_vllm.py --model "meetkai/functionary-7b-v1.4" --host 0.0.0.0
 ### Server Usage
 
 If you have an existing OpenAI-based Python project, quickly redirect the API to a functional server with the following steps:
-1. Set the base URL to the functionary server:
+1. Set the base URL to the functionary server and API key:
+    - We just need to set the api_key to something other than None, so it works with the Openai package. No API key is required.
 ```
-client = OpenAI(base_url="http://localhost:8000/v1")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 ```
 2. Set the model to the functionary model:
 ```
