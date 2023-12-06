@@ -45,6 +45,7 @@ from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
+from functionary.grammar_sampler import GrammarSampler
 from functionary.inference import prepare_messages_for_inference
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
@@ -55,7 +56,10 @@ from functionary.openai_types import (
     StreamChoice,
     Tool,
 )
-from functionary.prompt_template import PromptTemplate, get_prompt_template_from_tokenizer
+from functionary.prompt_template import (
+    PromptTemplate,
+    get_prompt_template_from_tokenizer,
+)
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -235,8 +239,11 @@ async def create_chat_completion(raw_request: Request):
     if error_check_ret is not None:
         return error_check_ret
 
+    def create_request_id():
+        return f"cmpl-{random_uuid()}"
+
     model_name = request.model
-    request_id = f"cmpl-{random_uuid()}"
+    request_id = create_request_id()
     created_time = int(time.time())
 
     # compute stop_token_ids
@@ -261,41 +268,115 @@ async def create_chat_completion(raw_request: Request):
             ignore_eos=request.ignore_eos,
             use_beam_search=request.use_beam_search,
             skip_special_tokens=False,
+            logprobs=len(tokenizer.vocab.keys()),
         )
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
 
-    result_generator = engine.generate(
-        None, sampling_params, request_id, prompt_token_ids=prompt_token_ids
-    )
-
     async def abort_request() -> None:
         await engine.abort(request_id)
 
-    async def wrap_vllm_generator() -> AsyncGenerator[Tuple[str, Optional[str]], None]:
+    async def wrap_vllm_generator(
+        prompt_token_ids, result_generator, functions, tools
+    ) -> AsyncGenerator[Tuple[str, Optional[str]], None]:
         previous_texts = ""
+
+        if prompt_template.version == "v1":
+            fn_call_token_to_check = prompt_template.start_function
+        elif prompt_template.version == "v2":
+            fn_call_token_to_check = prompt_template.recipient_token
+        else:
+            raise NotImplementedError(
+                "Grammar sampling not implemented for this prompt template version. Please check..."
+            )
+
+        grammar_sampling_to_break = False
+
         async for res in result_generator:
             for output in res.outputs:
                 delta_text = output.text[len(previous_texts) :]
+                text_to_check_grammar = tokenizer.decode(prompt_token_ids)
                 previous_texts = output.text
+
+                if grammar_sampler.check_to_sample(
+                    text=text_to_check_grammar,
+                    start_token=fn_call_token_to_check,
+                    functions=functions,
+                ):
+                    delta_logprobs_token_ids = list(output.logprobs[-1].keys())
+                    delta_logprobs = list(output.logprobs[-1].values())
+
+                    grammar_sampled_token = grammar_sampler.sample(
+                        functions=functions,
+                        tools=tools,
+                        delta_logprobs=delta_logprobs,
+                        delta_token_ids=delta_logprobs_token_ids,
+                        prompt_template_version=prompt_template.version,
+                    )
+
+                    if (
+                        grammar_sampled_token is not None
+                        and grammar_sampled_token != delta_text
+                    ):
+                        grammar_sampling_to_break = True
+                        break
+
                 finish_reason = output.finish_reason
+
                 if (
                     delta_text.strip()
                     not in prompt_template.get_stop_tokens_for_generation()
                 ):
                     yield delta_text, finish_reason
-        yield "", "stop"
 
-    async def completion_stream_generator() -> AsyncGenerator[str, None]:
-        generator = wrap_vllm_generator()
-        async for response in generate_openai_format_from_stream_async(
-            generator, prompt_template
-        ):
-            chunk = StreamChoice(**response)
-            result = ChatCompletionChunk(id=request_id, choices=[chunk])
-            chunk_dic = result.dict(exclude_unset=True)
-            chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
-            yield f"data: {chunk_data}\n\n"
+            if grammar_sampling_to_break:
+                break
+
+        if grammar_sampling_to_break:
+            yield grammar_sampled_token, "grammar_sampling_stop"
+        else:
+            yield "", "stop"
+
+    async def completion_stream_generator(
+        prompt_token_ids,
+    ) -> AsyncGenerator[str, None]:
+        while True:
+            result_generator = engine.generate(
+                None,
+                sampling_params,
+                create_request_id(),
+                prompt_token_ids=prompt_token_ids,
+            )
+
+            generator = wrap_vllm_generator(
+                prompt_token_ids=prompt_token_ids,
+                result_generator=result_generator,
+                functions=request.functions,
+                tools=request.tools,
+            )
+
+            async for response in generate_openai_format_from_stream_async(
+                generator, prompt_template
+            ):
+                chunk = StreamChoice(**response)
+                result = ChatCompletionChunk(id=request_id, choices=[chunk])
+                chunk_dic = result.dict(exclude_unset=True)
+                chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
+                if response["finish_reason"] == "grammar_sampling_stop":
+                    break
+                yield f"data: {chunk_data}\n\n"
+            else:
+                break
+
+            prompt_token_ids = [
+                i
+                for i in tokenizer.encode(
+                    tokenizer.decode(prompt_token_ids) + response["delta"]["content"],
+                    add_special_tokens=False,
+                )
+                if i != 28705
+            ]
+
         yield "data: [DONE]\n\n"
 
     # Streaming response
@@ -304,7 +385,7 @@ async def create_chat_completion(raw_request: Request):
         # Abort the request if the client disconnects.
         background_tasks.add_task(abort_request)
         return StreamingResponse(
-            completion_stream_generator(),
+            completion_stream_generator(prompt_token_ids=prompt_token_ids),
             media_type="text/event-stream",
             background=background_tasks,
         )
@@ -415,6 +496,10 @@ if __name__ == "__main__":
     tokenizer = get_tokenizer(
         engine_args.tokenizer, tokenizer_mode=engine_args.tokenizer_mode
     )
+
+    # A grammar-sampling module based on Guidance (https://github.com/guidance-ai/guidance)
+    # that makes sure function name is always correct
+    grammar_sampler = GrammarSampler(tokenizer=tokenizer)
 
     uvicorn.run(
         app,

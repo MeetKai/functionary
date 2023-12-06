@@ -4,6 +4,7 @@ from functionary.prompt_template.base_template import PromptTemplate
 
 
 class PromptTemplateV1(PromptTemplate):
+    version = "v1"
     start_function = "<|START_OF_FUNCTION_CALL|>"
     end_system = "<|END_OF_SYSTEM|>"
     end_user = "<|END_OF_USER|>"

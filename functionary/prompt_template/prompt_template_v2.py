@@ -6,6 +6,7 @@ from functionary.prompt_template.base_template import PromptTemplate
 
 
 class PromptTemplateV2(PromptTemplate):
+    version = "v2"
     from_token = "<|from|>"
     recipient_token = "<|recipient|>"
     content_token = "<|content|>"
@@ -264,7 +265,7 @@ class PromptTemplateV2(PromptTemplate):
                 "func_name": None,  # function_name of the current tool, if the response requires to use tool
                 "response_type": None,  # response_type=text(text response)/function (using tool)
                 "func_index": -1,  # index of the tool in tool_calls
-                "call_id": None,  # call_id of the current tool 
+                "call_id": None,  # call_id of the current tool
                 # skip_until_reach we skip new tokens until we reach certain token. This is used when we hit special tokens
                 "skip_until_reach": self.content_token,  # at first we will skip until reach <|content|>
                 "first_time": True,  # if first_time we return an tempty delta with role=assistant
@@ -274,8 +275,14 @@ class PromptTemplateV2(PromptTemplate):
         if finish_reason is not None:
             if current_state["response_type"] == "function":
                 finish_reason = "tool_calls"
+
+            if finish_reason == "grammar_sampling_stop":
+                curr_text = delta_text
+            else:
+                curr_text = None
+
             return current_state, self.get_text_delta_response(
-                None, False, finish_reason
+                curr_text, False, finish_reason
             )
 
         skip_until_reach = current_state.get("skip_until_reach", "")
