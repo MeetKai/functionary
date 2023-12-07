@@ -10,6 +10,7 @@ class PromptTemplateV2(PromptTemplate):
     recipient_token = "<|recipient|>"
     content_token = "<|content|>"
     stop_token = "<|stop|>"
+    version = "v2"
 
     def get_additional_tokens(self) -> List[str]:
         return [
@@ -264,7 +265,7 @@ class PromptTemplateV2(PromptTemplate):
                 "func_name": None,  # function_name of the current tool, if the response requires to use tool
                 "response_type": None,  # response_type=text(text response)/function (using tool)
                 "func_index": -1,  # index of the tool in tool_calls
-                "call_id": None,  # call_id of the current tool 
+                "call_id": None,  # call_id of the current tool
                 # skip_until_reach we skip new tokens until we reach certain token. This is used when we hit special tokens
                 "skip_until_reach": self.content_token,  # at first we will skip until reach <|content|>
                 "first_time": True,  # if first_time we return an tempty delta with role=assistant

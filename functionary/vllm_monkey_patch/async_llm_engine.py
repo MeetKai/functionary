@@ -176,6 +176,8 @@ class _AsyncLLMEngine(LLMEngine):
 
     # This is a dict mapping request_id to the list of tools/functions names
     tools_or_functions_names: dict = {}
+    # This is a dict mapping request_id to the prompt_template_version
+    prompt_template_versions: dict = {}
 
     def check_to_sample(self, text, start_token, request_id):
         """This function checks the state of the prompt on whether
@@ -184,6 +186,9 @@ class _AsyncLLMEngine(LLMEngine):
 
         Future additions: When the model is generating a parameter name
         """
+        if start_token not in text:
+            return False
+
         # Gets the suffix after the start_token
         suffix = text[text.rfind(start_token) + len(start_token) :].lstrip()
 
@@ -289,6 +294,7 @@ class _AsyncLLMEngine(LLMEngine):
             # Get all the required variables for grammar sampling
             model_sampled_token_id = output[i].samples[-1].output_token
             delta_token_id_by_logprobs = list(output[i].samples[-1].logprobs.keys())
+
             request_id = seq_group_metadata_list[i].request_id
             seq_data_id = list(seq_group_metadata_list[i].seq_data.keys())[0]
             prompt_token_ids = (
@@ -297,16 +303,22 @@ class _AsyncLLMEngine(LLMEngine):
             )
             prompt_str = self.tokenizer.decode(prompt_token_ids)
 
+            prompt_template_version = self.prompt_template_versions[request_id]
+            if prompt_template_version == "v1":
+                start_token = "<|START_OF_FUNCTION_CALL|>"
+            elif prompt_template_version == "v2":
+                start_token = "<|recipient|>"
+
             # Check whether to apply grammar sampling (currently for function names)
             if self.check_to_sample(
-                text=prompt_str, start_token="<|recipient|>", request_id=request_id
+                text=prompt_str, start_token=start_token, request_id=request_id
             ):
                 grammar_sampled_token_id = self.sample(
                     delta_token_ids=delta_token_id_by_logprobs,
                     output_token_ids=seq_group_metadata_list[i]
                     .seq_data[seq_data_id]
                     .output_token_ids,
-                    prompt_template_version="v2",
+                    prompt_template_version=prompt_template_version,
                     request_id=request_id,
                 )
 
@@ -316,15 +328,20 @@ class _AsyncLLMEngine(LLMEngine):
                     grammar_sampled_token_id is not None
                     and grammar_sampled_token_id != model_sampled_token_id
                 ):
-                    output[0].samples[-1].output_token = grammar_sampled_token_id
+                    output[i].samples[-1].output_token = grammar_sampled_token_id
             # This is to check if the complete function name is generated and replace
             # the intended model token to "\n", stopping the model from hallucinating a
             # function name that has the intended function name as prefix
             elif self.check_end_of_sampling(
-                text=prompt_str, start_token="<|recipient|>", request_id=request_id
+                text=prompt_str, start_token=start_token, request_id=request_id
             ):
-                output[0].samples[-1].output_token = self.tokenizer.encode(
-                    "\n", add_special_tokens=False
+                if prompt_template_version == "v1":
+                    stopping_token = ":"
+                else:
+                    stopping_token = "\n"
+
+                output[i].samples[-1].output_token = self.tokenizer.encode(
+                    stopping_token, add_special_tokens=False
                 )[-1]
 
         return self._process_model_outputs(output, scheduler_outputs) + ignored
@@ -537,6 +554,7 @@ class AsyncLLMEngine:
         request_id: str,
         prompt_token_ids: Optional[List[int]] = None,
         tools_or_functions: Optional[List[dict]] = None,
+        prompt_template_version: str = "v2",
     ) -> RequestOutput:
         """Generate outputs for a request.
 
@@ -561,10 +579,11 @@ class AsyncLLMEngine:
         arrival_time = time.monotonic()
 
         # Initialize the request_id entry of self.engine.tools_or_functions_names
-        # at the start of generate method
+        # and prompt_template_version at the start of generate method
         self.engine.tools_or_functions_names[request_id] = [
             tool_or_function["name"] for tool_or_function in tools_or_functions
         ]
+        self.engine.prompt_template_versions[request_id] = prompt_template_version
 
         try:
             stream = await self.add_request(
@@ -584,11 +603,15 @@ class AsyncLLMEngine:
 
             # Delete request_id from self.engine.tools_or_functions_names before raising error
             del self.engine.tools_or_functions_names[request_id]
+            # Delete request_id from self.engine.prompt_template_versions before raising error
+            del self.engine.prompt_template_versions[request_id]
 
             raise e
 
         # Delete the request_id from self.engine.tools_or_functions_names before finishing the request
         del self.engine.tools_or_functions_names[request_id]
+        # Delete the request_id from self.engine.prompt_template_versions before finishing the request
+        del self.engine.prompt_template_versions[request_id]
 
     async def abort(self, request_id: str) -> None:
         """Abort a request.

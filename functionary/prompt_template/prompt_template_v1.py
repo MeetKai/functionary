@@ -10,6 +10,7 @@ class PromptTemplateV1(PromptTemplate):
     end_assistant = "<|END_OF_ASSISTANT|>"
     end_function = "<|END_OF_FUNCTION_RESULT|>"
     end_function_call = "<|END_OF_FUNCTION_CALL|>"
+    version = "v1"
 
     def get_end_token_from_message(self, message: Dict) -> str:
         """this function is used for getting the end token for each message.
@@ -234,4 +235,3 @@ class PromptTemplateV1(PromptTemplate):
         chat_template = chat_template.replace("<br>\n", "")
         chat_template = chat_template.strip()
         return chat_template
-    
