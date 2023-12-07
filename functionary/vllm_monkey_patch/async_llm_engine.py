@@ -178,6 +178,13 @@ class _AsyncLLMEngine(LLMEngine):
     tools_or_functions_names: dict = {}
 
     def check_to_sample(self, text, start_token, request_id):
+        """This function checks the state of the prompt on whether
+        it is at a state where grammar-sampling is required:
+        - When the model is generating a function/tool name
+
+        Future additions: When the model is generating a parameter name
+        """
+        # Gets the suffix after the start_token
         suffix = text[text.rfind(start_token) + len(start_token) :].lstrip()
 
         # Check the following:
@@ -193,6 +200,11 @@ class _AsyncLLMEngine(LLMEngine):
         )
 
     def check_end_of_sampling(self, text, start_token, request_id):
+        """This function checks the state of the prompt on whether
+        it is at a state where the complete function name is just
+        generated in order to stop the model from hallucinating a
+        longer function name (by selecting '\n' token)
+        """
         suffix = text[text.rfind(start_token) + len(start_token) :].lstrip()
 
         return any(
@@ -209,24 +221,41 @@ class _AsyncLLMEngine(LLMEngine):
         prompt_template_version,
         request_id,
     ):
+        """Applies grammar-sampling to the token generation and returns a
+        newly sampled token.
+
+        This function checks whether the model-sampled token helps towards
+        forming one of the function names. It loops through a list of token
+        ids sorted in descending order by the log probabilities. It replaces
+        the output token if the grammar-sampled token is different from the
+        model-sampled token
+        """
+        # Retrieve the list of function names by request_id
         select_options = self.tools_or_functions_names[request_id]
 
         if prompt_template_version == "v2":
             select_options.append("all")
 
+        # Loop through the list of token ids sorted in descending order
         for i, sampled_token_ind in enumerate(delta_token_ids):
             sampled_token = self.tokenizer.decode(
                 [sampled_token_ind], add_special_tokens=False
             )
 
+            # Form the function name with the current sampled token id
             new_curr_tokens_id = output_token_ids + [sampled_token_ind]
             new_curr_tokens = self.tokenizer.decode(new_curr_tokens_id)
 
+            # Form a mask made up of booleans where the index of the mask ==
+            # index of function name in select_options.
             options_mask = [
                 True if option.startswith(new_curr_tokens.lstrip(" ")) else False
                 for option in select_options
             ]
 
+            # The grammar-sampled token is valid if any element in options_mask
+            # is True (The token helps in forming that function name).
+            # Reject the whitespace (" ") and empty ("") tokens too
             if any(options_mask) and sampled_token.strip(" ") != "":
                 return sampled_token_ind
 
@@ -257,7 +286,7 @@ class _AsyncLLMEngine(LLMEngine):
 
         # Loop through all the output in the batch
         for i in range(len(output)):
-            # Get all the required variables
+            # Get all the required variables for grammar sampling
             model_sampled_token_id = output[i].samples[-1].output_token
             delta_token_id_by_logprobs = list(output[i].samples[-1].logprobs.keys())
             request_id = seq_group_metadata_list[i].request_id
@@ -268,6 +297,7 @@ class _AsyncLLMEngine(LLMEngine):
             )
             prompt_str = self.tokenizer.decode(prompt_token_ids)
 
+            # Check whether to apply grammar sampling (currently for function names)
             if self.check_to_sample(
                 text=prompt_str, start_token="<|recipient|>", request_id=request_id
             ):
@@ -280,11 +310,16 @@ class _AsyncLLMEngine(LLMEngine):
                     request_id=request_id,
                 )
 
+                # Replace the model-sampled token id only if the grammar-sampled
+                # token id is different
                 if (
                     grammar_sampled_token_id is not None
                     and grammar_sampled_token_id != model_sampled_token_id
                 ):
                     output[0].samples[-1].output_token = grammar_sampled_token_id
+            # This is to check if the complete function name is generated and replace
+            # the intended model token to "\n", stopping the model from hallucinating a
+            # function name that has the intended function name as prefix
             elif self.check_end_of_sampling(
                 text=prompt_str, start_token="<|recipient|>", request_id=request_id
             ):
