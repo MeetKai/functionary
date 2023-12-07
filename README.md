@@ -9,11 +9,11 @@ The model determines when to execute a function and can understand its output. I
 Based on [Llama 2](https://arxiv.org/abs/2307.09288).
 
 ## Models Available
-|Model                  | Functionality |
-|:----------------------|--------------:|
-| functionary-7b-v1.1   |              |
-| functionary-7b-v1.4   |      |
-| functionary-7b-v2     |Support parallel functions |  
+|Model                                                     | Functionality |
+|:---------------------------------------------------------|:--------------|
+| [functionary-7b-v1.1](meetkai/functionary-7b-v1.1)       |Support single function calls              |
+| [functionary-7b-v1.4](meetkai/functionary-7b-v1.4)       |Supports single function calls with improved accuracy in both function call capabilities and instruction-following abilities.      |
+| [functionary-7b-v2](meetkai/functionary-7b-v2)           |Supports parallel function calls with improved accuracy in function call capabilities.|  
 
 ## OpenAI compatible server
 
@@ -483,31 +483,42 @@ Then we start the conversation messages.
 
 Here is an example prompt that will be provided to the model:
 ```text
-system:
-// Supported function definitions that should be called when necessary.
-namespace weather {
+<from>system
+<recipient>all
+<content>{TOOL_SCHEMAS_GOES_HERE}
 
-// Get the current weather
-type get_current_weather  = (_: {
-// The city and state, e.g. San Francisco, CA
-location: string,
-// The temperature unit to use. Infer this from the users location.
-format: "celsius" | "fahrenheit",
-}) => any;
+<from>user
+<recipient>all
+<content>Get me the weather of Hanoi and Istanbul
 
-} // namespace weather
-system:
-A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary
-user:
-</s>What is the weather in Istanbul?</s>
-assistant
 ```
 
 The model will output:
 
 ```text
- to=weather.get_current_weather:
-{"location": "Istanbul", "format": "celsius"}</s>
+<from>assistant
+<recipient>all
+<content>Sure! I'll get you the weather for both cities.
+
+<from>assistant
+<recipient>weather.get
+<content>{"city":"Istanbul"}
+
+<from>assistant
+<recipient>weather.get
+<content>{"city":"Hanoi"}</stop>
+
+<from>weather
+<recipient>all
+<content>{"temperature":30,"humidity":80}
+
+<from>weather
+<recipient>all
+<content>{"temperature":27,"humidity":80}
+
+<from>assistant
+<recipient>all
+<content>Istanbul is 30 degrees, hanoi is 27.</stop>
 ```
 
 Then it will stop.
@@ -519,7 +530,9 @@ We don't change the logit probabilities to conform a certain schema, but the mod
 ### [MT-Bench](https://github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge) leaderboard
 |                       | MT-Bench |
 |:----------------------|---------:|
+| GPT-4 turbo           |     9.32 |
 | GPT-4                 |     8.99 |
+| Starling-7b           |     8.09 |
 | Claude-2              |     8.06 |
 | GPT-3.5-turbo         |     7.94 | 
 | Claude-1              |     7.90 |
