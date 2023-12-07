@@ -8,6 +8,13 @@ The model determines when to execute a function and can understand its output. I
 
 Based on [Llama 2](https://arxiv.org/abs/2307.09288).
 
+## Models Available
+|Model                  | Functionality |
+|:----------------------|--------------:|
+| functionary-7b-v1.1   |              |
+| functionary-7b-v1.4   |      |
+| functionary-7b-v2     |Support parallel functions |  
+
 ## OpenAI compatible server
 
 ### Setup
@@ -21,7 +28,7 @@ pip install -r requirements.txt
 Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server:
 
 ```shell
-python3 server_vllm.py --model "meetkai/functionary-7b-v1.4" --host 0.0.0.0
+python3 server_vllm.py --model "meetkai/functionary-7b-v2" --host 0.0.0.0
 ```
 
 ### Server Usage
@@ -35,7 +42,7 @@ client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 2. Set the model to the functionary model.
    Model name is the value of argument "--model" in deploying: server_vllm.py or server.py
 ```
-model = "meetkai/functionary-7b-v1.4" 
+model = "meetkai/functionary-7b-v2" 
 ```
 Full code example:
 ```python
@@ -44,7 +51,7 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 
 client.chat.completions.create(
-    model="meetkai/functionary-7b-v1.4",
+    model="meetkai/functionary-7b-v2",
     messages=[
         {
             "role": "user",
@@ -85,7 +92,7 @@ headers = {
 api_url = "http://127.0.0.1:8000/v1/chat/completions"
 
 request_payload = {
-    'model': 'meetkai/functionary-7b-v1.4', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
+    'model': 'meetkai/functionary-7b-v2', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
     'messages': [
         {
             "role": "user",
@@ -156,7 +163,7 @@ tools = [
 ]
 
 
-# You can download gguf files from https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF/tree/main
+# You can download gguf files from https://huggingface.co/meetkai/functionary-7b-v2-GGUF/tree/main
 llm = Llama(model_path="PATH_TO_GGUF_FILE", n_ctx=4096, n_gpu_layers=-1)
 messages = [
     {"role": "user", "content": "what's the weather like in Hanoi?"}
@@ -166,7 +173,7 @@ messages = [
 # We found that the tokenizer from llama_cpp is not compatible with tokenizer from HF that we trained
 # The reason might be we added new tokens to the original tokenizer
 # So we will use tokenizer from HuggingFace
-tokenizer = AutoTokenizer.from_pretrained("meetkai/functionary-7b-v1.4", legacy=True)
+tokenizer = AutoTokenizer.from_pretrained("meetkai/functionary-7b-v2", legacy=True)
 # prompt_template will be used for creating the prompt
 prompt_template = get_prompt_template_from_tokenizer(tokenizer)
 
@@ -174,7 +181,7 @@ prompt_template = get_prompt_template_from_tokenizer(tokenizer)
 messages.append({"role": "assistant"})
 
 # Create the prompt to use for inference
-prompt_str = prompt_template.get_prompt_from_messages(messages, functions)
+prompt_str = prompt_template.get_prompt_from_messages(messages, tools)
 token_ids = tokenizer.encode(prompt_str)
 
 gen_tokens = []
@@ -225,7 +232,7 @@ def get_car_price(car_name: str):
             return {"price": car_price[key]}
     return {"price": "unknown"}
 
-chat = Conversation(model="meetkai/functionary-7b-v1.4")
+chat = Conversation(model="meetkai/functionary-7b-v2")
 chat.register(get_car_price)  # register this function
 chat.submit("what is the price of the car named Tang?") # submit user prompt
 
@@ -263,7 +270,7 @@ The function `plan_trip(destination: string, duration: int, interests: list)` ca
 
 ```python
 client.chat.completions.create((
-    model="meetkai/functionary-7b-v1.4",
+    model="meetkai/functionary-7b-v2",
     messages=[
         {"role": "user", "content": 'I want to plan a 7-day trip to Paris with a focus on art and culture'},
     ], 
@@ -318,7 +325,7 @@ A function like estimate_property_value(property_details: dict) could allow user
 
 ```python
 client.chat.completions.create(
-    model="meetkai/functionary-7b-v1.4",
+    model="meetkai/functionary-7b-v2",
     messages=[
         {
             "role": "user", 
@@ -396,7 +403,7 @@ A function `parse_customer_complaint(complaint: {issue: string, frequency: strin
 
 ```python
 client.chat.completions.create(
-    model="meetkai/functionary-7b-v1.4",
+    model="meetkai/functionary-7b-v2",
     messages=[
         {"role": "user", "content": 'My internet has been disconnecting frequently for the past week'},
     ], 
