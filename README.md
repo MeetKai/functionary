@@ -26,31 +26,99 @@ python3 server_vllm.py --model "meetkai/functionary-7b-v1.4" --host 0.0.0.0
 
 ### Server Usage
 
+If you have an existing OpenAI-based Python project, quickly redirect the API to a functional server with the following steps:
+1. Set the base URL to the functionary server and API key.
+   We just need to set the api_key to something other than None, so it works with the Openai package. No API key is required.
+```
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
+```
+2. Set the model to the functionary model.
+   Model name is the value of argument "--model" in deploying: server_vllm.py or server.py
+```
+model = "meetkai/functionary-7b-v1.4" 
+```
+Full code example:
 ```python
-import openai
+from openai import OpenAI
 
-openai.api_base = "http://localhost:8000/v1"
-openai.api_key = "functionary" # We just need to set this something other than None, so it works with openai package. No API key is required.
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 
-openai.ChatCompletion.create(
+client.chat.completions.create(
     model="meetkai/functionary-7b-v1.4",
-    messages=[{"role": "user", "content": "What is the weather for Istanbul?"}],
-    functions=[{
-        "name": "get_current_weather",
-        "description": "Get the current weather",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "location": {
-                    "type": "string",
-                    "description": "The city and state, e.g. San Francisco, CA"
-                },
-            },
-            "required": ["location"],
-        },
-    }]
+    messages=[
+        {
+            "role": "user",
+            "content": "What is the weather for Istanbul?"
+        }
+    ],
+    tools=[
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_weather",
+                "description": "Get the current weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g. San Francisco, CA"
+                        }
+                    },
+                    "required": ["location"]
+                }
+            }
+        }
+    ],
+    tool_choice="auto"
 )
 ```
+Using requests:
+```python
+import requests
+
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer xxxx"
+}
+
+api_url = "http://127.0.0.1:8000/v1/chat/completions"
+
+request_payload = {
+    'model': 'meetkai/functionary-7b-v1.4', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
+    'messages': [
+        {
+            "role": "user",
+            "content": "What is the weather for Istanbul?"
+        }
+    ],
+    'tools':[
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_weather",
+                "description": "Get the current weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g. San Francisco, CA"
+                        }
+                    },
+                    "required": ["location"]
+                }
+            }
+        }
+    ]
+}
+# Make a POST request to the API and get the response
+response = requests.post(api_url, json=request_payload, headers=headers)
+
+# Print the response text
+print(response.text)
+```
+
 
 If you're having trouble with dependencies, and you have [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#setting-up-nvidia-container-toolkit), 
 you can start your environment like this: 
@@ -67,23 +135,26 @@ from llama_cpp import Llama
 from functionary.prompt_template import get_prompt_template_from_tokenizer
 from transformers import AutoTokenizer
 
-functions = [
-        {
-                "name": "get_current_weather",
-                "description": "Get the current weather in a given location",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "location": {
-                            "type": "string",
-                            "description": "The city and state, e.g. San Francisco, CA",
-                        },
-                        "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
-                    },
-                    "required": ["location"],
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_weather",
+            "description": "Get the current weather",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The city and state, e.g., San Francisco, CA"
+                    }
                 },
+                "required": ["location"]
             }
-    ]
+        }
+    }
+]
+
 
 # You can download gguf files from https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF/tree/main
 llm = Llama(model_path="PATH_TO_GGUF_FILE", n_ctx=4096, n_gpu_layers=-1)
@@ -125,7 +196,7 @@ print(result)
 ```
 The output would be:
 ```python
-{'role': 'assistant', 'content': None, 'function_call': {'name': 'get_current_weather', 'arguments': '{\n  "location": "Hanoi"\n}'}}
+{'role': 'assistant', 'content': None, 'tool_calls': [{'type': 'function', 'function': {'name': 'get_current_weather', 'arguments': '{\n  "location": "Hanoi"\n}'}}]}
 ```
 **Note: we should use the tokenizer from Huggingface to convert prompt into token_ids instead of using the tokenizer from LLama_cpp because we found that tokenizer from LLama_cpp doesn't give the same result as that from Huggingface. The reason might be in the training, we added new tokens to the tokenizer and LLama_Cpp doesn't handle this succesfully**
 
@@ -191,35 +262,38 @@ The function `plan_trip(destination: string, duration: int, interests: list)` ca
   <summary>Details (click to expand)</summary>
 
 ```python
-openai.ChatCompletion.create(
+client.chat.completions.create((
     model="meetkai/functionary-7b-v1.4",
     messages=[
         {"role": "user", "content": 'I want to plan a 7-day trip to Paris with a focus on art and culture'},
     ], 
-    functions=[
+    tools=[
         {
-            "name": "plan_trip",
-            "description": "Plan a trip based on user's interests",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "destination": {
-                        "type": "string",
-                        "description": "The destination of the trip",
+            "type": "function",
+            "function": {
+                "name": "plan_trip",
+                "description": "Plan a trip based on user's interests",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "destination": {
+                            "type": "string",
+                            "description": "The destination of the trip",
+                        },
+                        "duration": {
+                            "type": "integer",
+                            "description": "The duration of the trip in days",
+                        },
+                        "interests": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "The interests based on which the trip will be planned",
+                        },
                     },
-                    "duration": {
-                        "type": "integer",
-                        "description": "The duration of the trip in days",
-                    },
-                    "interests": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "The interests based on which the trip will be planned",
-                    },
-                },
-                "required": ["destination", "duration", "interests"],
-            },
-        },
+                    "required": ["destination", "duration", "interests"],
+                }
+            }
+        }    
     ]
 )
 ```
@@ -227,7 +301,7 @@ openai.ChatCompletion.create(
 Response will have: 
 
 ```json
-{"role": "assistant", "function_call": {"name": "plan_trip", "arguments": '{\n  "destination": "Paris",\n  "duration": 7,\n  "interests": ["art", "culture"]\n}'}}
+{"role": "assistant", "content": null, "tool_calls": [{"type": "function", "function": {"name": "plan_trip", "arguments": '{\n  "destination": "Paris",\n  "duration": 7,\n  "interests": ["art", "culture"]\n}'}}]}
 ```
 
 Then you need to call ```plan_trip``` function with provided arguments. 
@@ -243,49 +317,69 @@ A function like estimate_property_value(property_details: dict) could allow user
   <summary>Details (click to expand)</summary>
 
 ```python
-openai.ChatCompletion.create(
+client.chat.completions.create(
     model="meetkai/functionary-7b-v1.4",
     messages=[
-        {"role": "user", "content": 'What is the estimated value of a 3-bedroom house in San Francisco with 2000 sq ft area?'},
-        {"role": "assistant", "function_call": {"name": "estimate_property_value", "arguments": '{\n  "property_details": {"location": "San Francisco", "size": 2000, "rooms": 3}\n}'}},
-    ], 
-    functions=[
         {
-            "name": "estimate_property_value",
-            "description": "Estimate the market value of a property",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "property_details": {
-                        "type": "object",
-                        "properties": {
-                            "location": {
-                                "type": "string",
-                                "description": "The location of the property",
-                            },
-                            "size": {
-                                "type": "integer",
-                                "description": "The size of the property in square feet",
-                            },
-                            "rooms": {
-                                "type": "integer",
-                                "description": "The number of rooms in the property",
-                            },
-                        },
-                        "required": ["location", "size", "rooms"],
-                    },
-                },
-                "required": ["property_details"],
-            },
+            "role": "user", 
+            "content": 'What is the estimated value of a 3-bedroom house in San Francisco with 2000 sq ft area?'
         },
-    ]
+        {
+            "role": "assistant", 
+            "content": None, 
+            "tool_calls": [
+                {
+                    "type": "function", 
+                    "function": {
+                        "name": "estimate_property_value", 
+                        "arguments": '{\n  "property_details": {"location": "San Francisco", "size": 2000, "rooms": 3}\n}'
+                    }
+                }
+            ]
+        }
+    ], 
+    tools=[
+        {
+            "type": "function",
+            "function": {
+                "name": "estimate_property_value",
+                "description": "Estimate the market value of a property",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "property_details": {
+                            "type": "object",
+                            "properties": {
+                                "location": {
+                                    "type": "string",
+                                    "description": "The location of the property"
+                                },
+                                "size": {
+                                    "type": "integer",
+                                    "description": "The size of the property in square feet"
+                                },
+                                "rooms": {
+                                    "type": "integer",
+                                    "description": "The number of rooms in the property"
+                                }
+                            },
+                            "required": ["location", "size", "rooms"]
+                        }
+                    },
+                    "required": ["property_details"]
+                }
+            }
+        }
+    ],
+    tool_choice="auto"
 )
+
 ```
 
 Response will have: 
 
 ```json
-{"role": "assistant", "function_call": {"name": "plan_trip", "arguments": '{\n  "destination": "Paris",\n  "duration": 7,\n  "interests": ["art", "culture"]\n}'}}
+{"role": "assistant", "content": null, "tool_calls": [{"type": "function", "function": {"name": "plan_trip", "arguments": '{\n  "destination": "Paris",\n  "duration": 7,\n  "interests": ["art", "culture"]\n}'}}]}
 ```
 
 Then you need to call ```plan_trip``` function with provided arguments. 
@@ -301,13 +395,15 @@ A function `parse_customer_complaint(complaint: {issue: string, frequency: strin
   <summary>Details (click to expand)</summary>
 
 ```python
-openai.ChatCompletion.create(
+client.chat.completions.create(
     model="meetkai/functionary-7b-v1.4",
     messages=[
         {"role": "user", "content": 'My internet has been disconnecting frequently for the past week'},
     ], 
-    functions=[
+    tools=[
         {
+            "type": "function",
+            "function": {
             "name": "parse_customer_complaint",
             "description": "Parse a customer complaint and identify the core issue",
             "parameters": {
@@ -333,16 +429,18 @@ openai.ChatCompletion.create(
                     },
                 },
                 "required": ["complaint"],
-            },
-        },
-    ]
+            }
+        }
+     }
+    ],
+    tool_choice="auto"
 )
 ```
 
 Response will have:
 
 ```json
-{"role": "assistant", "function_call": {"name": "parse_customer_complaint", "arguments": '{\n  "complaint": {"issue": "internet disconnecting", "frequency": "frequently", "duration": "past week"}\n}'}}
+{"role": "assistant", "content": null, "tool_calls": [{"type": "function", "function": {"name": "parse_customer_complaint", "arguments": '{\n  "complaint": {"issue": "internet disconnecting", "frequency": "frequently", "duration": "past week"}\n}'}}]}
 ```
 
 Then you need to call parse_customer_complaint function with provided arguments.
