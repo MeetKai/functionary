@@ -171,7 +171,7 @@ from llama_cpp import Llama
 from functionary.prompt_template import get_prompt_template_from_tokenizer
 from transformers import AutoTokenizer
 
-tools = [
+tools = [ # For functionary-7b-v2 we use "tools"; for functionary-7b-v1.4 we use "functions" = [{"name": "get_current_weather", "description":..., "parameters": ....}]
     {
         "type": "function",
         "function": {
