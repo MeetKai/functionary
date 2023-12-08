@@ -43,17 +43,13 @@ python3 server_vllm.py --model "meetkai/functionary-7b-v2" --host 0.0.0.0
 ### Server Usage
 
 If you have an existing OpenAI-based Python project, quickly redirect the API to a functional server with the following steps:
-1.  Make sure that you have OpenAI version > 1.0 installed. You can install the latest version using the following command:
-```bash
-pip install openai --upgrade
-```
 
-2. **Set the Base URL and API Key**:
+1. **Set the Base URL and API Key**:
    Initialize the OpenAI client with the local server's URL and an API key. We just need to set the api_key to something other than None, so it works with the Openai package. No API key is required.
 ```
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 ```
-3. **Specify the Model**:
+2. **Specify the Model**:
    Set the model to correspond with the one used by your server. The model name matches the value of the --model argument in the server deployment script: server_vllm.py or server.py
 ```
 model = "meetkai/functionary-7b-v2" 
