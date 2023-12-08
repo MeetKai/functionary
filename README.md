@@ -19,6 +19,9 @@ The model determines when to execute a function and can understand its output. I
 - [Training](#training)
 - [How it Works?](#how-it-works)
 - [Evaluation](#evaluation)
+  - [MT-Bench leaderboard](#mt-bench-leaderboard)
+  - [Alpaca Eval Leaderboard](#alpaca-eval-leaderboard)
+  - [Function Prediction Evaluation](#function-prediction-evaluation)
 - [Dataset](#dataset)
 
 ## OpenAI compatible server
@@ -155,44 +158,12 @@ sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functi
 | [functionary-7b-v1.1](meetkai/functionary-7b-v1.1)       |Support single function calls                                                                                                      | [Llama 2](https://arxiv.org/abs/2307.09288).                 |
 
 
-For compatibility information:
+Compatibility information:
 
 - v1 models are compatible with both OpenAI-python v0 and v1.
 - v2 models are designed for compatibility with OpenAI-python v1.
-
-For detailed API references, you can refer to OpenAi documentation [link](https://github.com/openai/openai-python)
-<details>
-  <summary>Key Difference in Code for funtionary-7b-V1 and funtionary-7b-V2 (click to expand)</summary>
-
-- **V1: Using "functions"**
-   - The schema for **"functions"** is a list of dictionaries, each containing the keys **"name"**, **"description"**, and **"parameters"**.
-     ```
-     functions = [{"name": "function_name", "description": "function_description", "parameters": {...}}, ...]
-     ```
-- **V2: Using "tools"**
-   - In V2, **"tools"** is used instead of **"functions"**. The schema is slightly different, with each function wrapped in an additional dictionary with a key type set to **"function"**.
-      ```
-     tools = [{"type": "function", "function": {"name": "function_name", "description": "function_description", "parameters": {...}}}, ...]
-     ```
-  ```python
-  # V1: Using "functions"
-  client.chat.completions.create(
-       model="your_model_name",
-       messages=[...],
-       functions=[...],
-       function_call="auto"
-   )
-   
-  # V2: Using "tools"
-  client.chat.completions.create(
-       model="your_model_name",
-       messages=[...],
-       tools=[...],
-       tool_calls="auto"
-   )
-
-  ```
-</details>
+  
+The difference between OpenAI-python v0 and v1 you may refer to the official documentation [here](https://platform.openai.com/docs/api-reference/chat/create#chat-create-tools)
 
 ### Important Note:
 All the examples provided below are for the V2 implementation. If you are using V1, please make the necessary adjustments as explained in the previous section outlining the differences between V1 and V2.
