@@ -6,16 +6,20 @@ Functionary is a language model that can interpret and execute functions/plugins
 
 The model determines when to execute a function and can understand its output. It only triggers functions as needed. Function definitions are given as JSON Schema Objects, similar to OpenAI GPT function calls.
 
-
-
-## Models Available
-| Model                                                    | Functionality                                                                                                                     | Base Model                                                   |
-|:---------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------|
-| [functionary-7b-v1.1](meetkai/functionary-7b-v1.1)       |Support single function calls                                                                                                      | [Llama 2](https://arxiv.org/abs/2307.09288).                 |
-| [functionary-7b-v1.4](meetkai/functionary-7b-v1.4)       |Supports single function calls with improved accuracy <br>in both function call capabilities and instruction-following <br>abilities.      | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
-| [functionary-7b-v2](meetkai/functionary-7b-v2)           |Supports **parallel function calls** with improved accuracy <br>in function call capabilities and instruction-following abilities.     | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
-
-
+## Table of Contents
+- [OpenAI compatible server](#openai-compatible-server)
+  - [Setup](#setup)
+  - [Server Usage](#server-usage)
+  - [Full Code Implementation](#full-code-implementation)
+  - [Usage Using python Requests](#usage-using-python-requests)
+- [Models Available](#models-available)
+- [Llama_cpp Inference](#llama_cpp-inference)
+- [Call Real Python Function](#call-real-python-function)
+- [Use Cases](#use-cases)
+- [Training](#training)
+- [How it Works?](#how-it-works)
+- [Evaluation](#evaluation)
+- [Dataset](#dataset)
 
 ## OpenAI compatible server
 
@@ -89,41 +93,7 @@ client.chat.completions.create(
 )
 ```
 
-### Key Difference in Code for funtionary-7b-V1 and funtionary-7b-V2:
-
-- **V1: Using "functions"**
-   - The schema for **"functions"** is a list of dictionaries, each containing the keys **"name"**, **"description"**, and **"parameters"**.
-     ```
-     functions = [{"name": "function_name", "description": "function_description", "parameters": {...}}, ...]
-     ```
-- **V2: Using "tools"**
-   - In V2, **"tools"** is used instead of **"functions"**. The schema is slightly different, with each function wrapped in an additional dictionary with a key type set to **"function"**.
-      ```
-     tools = [{"type": "function", "function": {"name": "function_name", "description": "function_description", "parameters": {...}}}, ...]
-     ```
-  ```python
-  # V1: Using "functions"
-  client.chat.completions.create(
-       model="your_model_name",
-       messages=[...],
-       functions=[...],
-       function_call="auto"
-   )
-   
-  # V2: Using "tools"
-  client.chat.completions.create(
-       model="your_model_name",
-       messages=[...],
-       tools=[...],
-       tool_calls="auto"
-   )
-
-  ```
-
-### Important Note:
-All the examples provided below are for the V2 implementation. If you are using V1, please make the necessary adjustments as explained in the previous section outlining the differences between V1 and V2.
-
-### Using python requests:
+### Usage Using python Requests:
 ```python
 import requests
 
@@ -177,7 +147,57 @@ you can start your environment like this:
 sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functionary_workspace:/workspace -p 8000:8000 nvcr.io/nvidia/pytorch:22.12-py3
 ```
 
-### Llama_cpp Inference (GGUF files)
+## Models Available
+| Model                                                    | Functionality                                                                                                                     | Base Model                                                   |
+|:---------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------|
+| [functionary-7b-v2](meetkai/functionary-7b-v2)           |Supports **parallel function calls** with improved accuracy <br>in function call capabilities and instruction-following abilities.     | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
+| [functionary-7b-v1.4](meetkai/functionary-7b-v1.4)       |Supports single function calls with improved accuracy <br>in both function call capabilities and instruction-following <br>abilities.      | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
+| [functionary-7b-v1.1](meetkai/functionary-7b-v1.1)       |Support single function calls                                                                                                      | [Llama 2](https://arxiv.org/abs/2307.09288).                 |
+
+
+For compatibility information:
+
+- v1 models are compatible with both OpenAI-python v0 and v1.
+- v2 models are designed for compatibility with OpenAI-python v1.
+
+For detailed API references, you can refer to OpenAi documentation [link](https://github.com/openai/openai-python)
+<details>
+  <summary>Key Difference in Code for funtionary-7b-V1 and funtionary-7b-V2 (click to expand)</summary>
+
+- **V1: Using "functions"**
+   - The schema for **"functions"** is a list of dictionaries, each containing the keys **"name"**, **"description"**, and **"parameters"**.
+     ```
+     functions = [{"name": "function_name", "description": "function_description", "parameters": {...}}, ...]
+     ```
+- **V2: Using "tools"**
+   - In V2, **"tools"** is used instead of **"functions"**. The schema is slightly different, with each function wrapped in an additional dictionary with a key type set to **"function"**.
+      ```
+     tools = [{"type": "function", "function": {"name": "function_name", "description": "function_description", "parameters": {...}}}, ...]
+     ```
+  ```python
+  # V1: Using "functions"
+  client.chat.completions.create(
+       model="your_model_name",
+       messages=[...],
+       functions=[...],
+       function_call="auto"
+   )
+   
+  # V2: Using "tools"
+  client.chat.completions.create(
+       model="your_model_name",
+       messages=[...],
+       tools=[...],
+       tool_calls="auto"
+   )
+
+  ```
+</details>
+
+### Important Note:
+All the examples provided below are for the V2 implementation. If you are using V1, please make the necessary adjustments as explained in the previous section outlining the differences between V1 and V2.
+
+## Llama_cpp Inference
 Make sure that [llama-cpp-python](https://github.com/abetlen/llama-cpp-python) is successully installed in your system. The following is the sample code:
 
 ```python
@@ -250,7 +270,7 @@ The output would be:
 ```
 **Note: we should use the tokenizer from Huggingface to convert prompt into token_ids instead of using the tokenizer from LLama_cpp because we found that tokenizer from LLama_cpp doesn't give the same result as that from Huggingface. The reason might be in the training, we added new tokens to the tokenizer and LLama_Cpp doesn't handle this succesfully**
 
-### Call Real Python Function
+## Call Real Python Function
 
 To call the real python function, get the result and extract the result to respond, you can use [chatlab](https://github.com/rgbkrk/chatlab). The following example uses chatlab==0.16.0:
 
