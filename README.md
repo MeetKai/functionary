@@ -42,7 +42,7 @@ python3 server_vllm.py --model "meetkai/functionary-7b-v2" --host 0.0.0.0
 
 ### Server Usage
 
-If you have an existing OpenAI-based Python project, quickly redirect the API to a functional server with the following steps:
+If you have an existing OpenAI-based Python project, here is how easy it is to redirect the API to point our functionary server:
 
 1. **Set the Base URL and API Key**:
    Initialize the OpenAI client with the local server's URL and an API key. We just need to set the api_key to something other than None, so it works with the Openai package. No API key is required.
@@ -147,11 +147,13 @@ sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functi
 ```
 
 ## Models Available
-| Model                                                    | Functionality                                                                                                                     | Base Model                                                   |
-|:---------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------|
+| Model                                                    | Functionality                                                                                                                         | Base Model                                                   |
+|:---------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------|
 | [functionary-7b-v2](meetkai/functionary-7b-v2)           |Supports **parallel function calls** with improved accuracy <br>in function call capabilities and instruction-following abilities.     | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
-| [functionary-7b-v1.4](meetkai/functionary-7b-v1.4)       |Supports single function calls with improved accuracy <br>in both function call capabilities and instruction-following <br>abilities.      | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
-| [functionary-7b-v1.1](meetkai/functionary-7b-v1.1)       |Support single function calls                                                                                                      | [Llama 2](https://arxiv.org/abs/2307.09288).                 |
+| [functionary-7b-v2-GGUF](meetkai/functionary-7b-v2-GGUF) |GGUF file version from functionary-7b-v2 version model                                                                                 | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
+| [functionary-7b-v1.4](meetkai/functionary-7b-v1.4)       |Supports single function calls with improved accuracy <br>in both function call capabilities and instruction-following <br>abilities.  | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
+| [functionary-7b-v1.4](meetkai/functionary-7b-v1.4-GGUF)  |GGUF file version from functionary-7b-v1.4 version model                                                                               | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
+| [functionary-7b-v1.1](meetkai/functionary-7b-v1.1)       |Support single function calls                                                                                                          | [Llama 2](https://arxiv.org/abs/2307.09288).                 |
 
 
 Compatibility information:
