@@ -113,13 +113,13 @@ sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functi
 ```
 
 ## Models Available
-| Model                                                    | Functionality                                                                                                                         | Base Model                                                   |
-|:---------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------|
-| [functionary-7b-v2](meetkai/functionary-7b-v2)           |Supports **parallel function calls** with improved accuracy <br>in function call capabilities and instruction-following abilities.     | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
-| [functionary-7b-v2-GGUF](meetkai/functionary-7b-v2-GGUF) |GGUF file version from functionary-7b-v2 version model                                                                                 | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
-| [functionary-7b-v1.4](meetkai/functionary-7b-v1.4)       |Supports single function calls with improved accuracy <br>in both function call capabilities and instruction-following <br>abilities.  | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
-| [functionary-7b-v1.4-GGUF](meetkai/functionary-7b-v1.4-GGUF)  |GGUF file version from functionary-7b-v1.4 version model                                                                               | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
-| [functionary-7b-v1.1](meetkai/functionary-7b-v1.1)       |Support single function calls                                                                                                          | [Llama 2](https://arxiv.org/abs/2307.09288).                 |
+| Model                                                                                | Functionality                                                                                                                         | Base Model                                                   |
+|:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------|
+| [functionary-7b-v2](https://huggingface.co/meetkai/functionary-7b-v2)                |Supports **parallel function calls** with improved accuracy <br>in function call capabilities and instruction-following abilities.     | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
+| [functionary-7b-v2-GGUF](https://huggingface.co/meetkai/functionary-7b-v2-GGUF)      |GGUF file version from functionary-7b-v2 version model                                                                                 | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
+| [functionary-7b-v1.4](https://huggingface.co/meetkai/functionary-7b-v1.4)            |Supports single function calls with improved accuracy <br>in both function call capabilities and instruction-following <br>abilities.  | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
+| [functionary-7b-v1.4-GGUF](https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF)  |GGUF file version from functionary-7b-v1.4 version model                                                                               | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
+| [functionary-7b-v1.1](https://huggingface.co/meetkai/functionary-7b-v1.1)            |Support single function calls                                                                                                          | [Llama 2](https://arxiv.org/abs/2307.09288).                 |
 
 
 Compatibility information:
