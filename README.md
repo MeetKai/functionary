@@ -165,9 +165,6 @@ Compatibility information:
   
 The difference between OpenAI-python v0 and v1 you may refer to the official documentation [here](https://platform.openai.com/docs/api-reference/chat/create#chat-create-tools)
 
-### Important Note:
-All the examples provided below are for the V2 implementation. If you are using V1, please make the necessary adjustments as explained in the previous section outlining the differences between V1 and V2.
-
 ## Llama_cpp Inference
 Make sure that [llama-cpp-python](https://github.com/abetlen/llama-cpp-python) is successully installed in your system. The following is the sample code:
 
