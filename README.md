@@ -6,14 +6,14 @@ Functionary is a language model that can interpret and execute functions/plugins
 
 The model determines when to execute a function and can understand its output. It only triggers functions as needed. Function definitions are given as JSON Schema Objects, similar to OpenAI GPT function calls.
 
-Based on [Llama 2](https://arxiv.org/abs/2307.09288).
+
 
 ## Models Available
-|Model                                                     | Functionality |
-|:---------------------------------------------------------|:--------------|
-| [functionary-7b-v1.1](meetkai/functionary-7b-v1.1)       |Support single function calls              |
-| [functionary-7b-v1.4](meetkai/functionary-7b-v1.4)       |Supports single function calls with improved accuracy in both function call capabilities and instruction-following abilities.      |
-| [functionary-7b-v2](meetkai/functionary-7b-v2)           |Supports parallel function calls with improved accuracy in function call capabilities.|  
+|Model                                                     | Functionality                                                                                                                     | Base Model                                                   |
+|:---------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------|
+| [functionary-7b-v1.1](meetkai/functionary-7b-v1.1)       |Support single function calls                                                                                                      | [Llama 2](https://arxiv.org/abs/2307.09288).                 |
+| [functionary-7b-v1.4](meetkai/functionary-7b-v1.4)       |Supports single function calls with improved accuracy in both function call capabilities and instruction-following abilities.      | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
+| [functionary-7b-v2](meetkai/functionary-7b-v2)           |Supports **parallel function calls** with improved accuracy in function call capabilities and instruction-following abilities.     | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
 
 ## OpenAI compatible server
 
@@ -34,17 +34,53 @@ python3 server_vllm.py --model "meetkai/functionary-7b-v2" --host 0.0.0.0
 ### Server Usage
 
 If you have an existing OpenAI-based Python project, quickly redirect the API to a functional server with the following steps:
-1. Set the base URL to the functionary server and API key.
-   We just need to set the api_key to something other than None, so it works with the Openai package. No API key is required.
+1. **Set the Base URL and API Key**:
+   Initialize the OpenAI client with the local server's URL and an API key. We just need to set the api_key to something other than None, so it works with the Openai package. No API key is required.
 ```
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 ```
-2. Set the model to the functionary model.
-   Model name is the value of argument "--model" in deploying: server_vllm.py or server.py
+2. **Specify the Model**:
+   Set the model to correspond with the one used by your server. The model name matches the value of the --model argument in the server deployment script: server_vllm.py or server.py
 ```
 model = "meetkai/functionary-7b-v2" 
 ```
-Full code example:
+
+### Key Difference in Code for V1 and V2:
+
+- **V1: Using "functions"**
+   - The schema for **"functions"** is a list of dictionaries, each containing the keys **"name"**, **"description"**, and **"parameters"**.
+     ```
+     functions = [{"name": "function_name", "description": "function_description", "parameters": {...}}, ...]
+     ```
+- **V2: Using "tools"**
+   - In V2, **"tools"** is used instead of **"functions"**. The schema is slightly different, with each function wrapped in an additional dictionary with a key type set to **"function"**.
+      ```
+     tools = [{"type": "function", "function": {"name": "function_name", "description": "function_description", "parameters": {...}}}, ...]
+     ```
+  ```python
+  # V1: Using "functions"
+  client.chat.completions.create(
+       model="your_model_name",
+       messages=[...],
+       functions=[...],
+       function_call="auto"
+   )
+   
+  # V2: Using "tools"
+  client.chat.completions.create(
+       model="your_model_name",
+       messages=[...],
+       tools=[...],
+       tool_calls="auto"
+   )
+
+  ```
+
+### Important Note:
+All the examples provided below are for the V2 implementation. If you are using V1, please make the necessary adjustments as explained in the previous section outlining the differences between V1 and V2.
+
+
+### Full Code Implementation:
 ```python
 from openai import OpenAI
 
@@ -80,7 +116,8 @@ client.chat.completions.create(
     tool_choice="auto"
 )
 ```
-Using requests:
+
+### Using python requests:
 ```python
 import requests
 
@@ -481,47 +518,8 @@ We convert function definitions to a similar text like TypeScript definitions.
 Then we inject these definitions as system prompts. After that, we inject the default system prompt. 
 Then we start the conversation messages. 
 
-Here is an example prompt that will be provided to the model:
-```text
-<from>system
-<recipient>all
-<content>{TOOL_SCHEMAS_GOES_HERE}
+The prompt example can be found here: [V1](https://github.com/MeetKai/functionary/blob/readme_v2/tests/prompt_test_v1.txt) and [V2](https://github.com/MeetKai/functionary/blob/readme_v2/tests/prompt_test_v2.txt)
 
-<from>user
-<recipient>all
-<content>Get me the weather of Hanoi and Istanbul
-
-```
-
-The model will output:
-
-```text
-<from>assistant
-<recipient>all
-<content>Sure! I'll get you the weather for both cities.
-
-<from>assistant
-<recipient>weather.get
-<content>{"city":"Istanbul"}
-
-<from>assistant
-<recipient>weather.get
-<content>{"city":"Hanoi"}</stop>
-
-<from>weather
-<recipient>all
-<content>{"temperature":30,"humidity":80}
-
-<from>weather
-<recipient>all
-<content>{"temperature":27,"humidity":80}
-
-<from>assistant
-<recipient>all
-<content>Istanbul is 30 degrees, hanoi is 27.</stop>
-```
-
-Then it will stop.
 
 We don't change the logit probabilities to conform a certain schema, but the model itself knows how to conform. This allows us to use existing tools and caching systems with ease.
 
