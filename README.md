@@ -9,41 +9,11 @@ The model determines when to execute a function and can understand its output. I
 
 
 ## Models Available
-|Model                                                     | Functionality                                                                                                                     | Base Model                                                   |
+| Model                                                    | Functionality                                                                                                                     | Base Model                                                   |
 |:---------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------|
 | [functionary-7b-v1.1](meetkai/functionary-7b-v1.1)       |Support single function calls                                                                                                      | [Llama 2](https://arxiv.org/abs/2307.09288).                 |
-| [functionary-7b-v1.4](meetkai/functionary-7b-v1.4)       |Supports single function calls with improved accuracy in both function call capabilities and instruction-following abilities.      | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
-| [functionary-7b-v2](meetkai/functionary-7b-v2)           |Supports **parallel function calls** with improved accuracy in function call capabilities and instruction-following abilities.     | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
-
-## OpenAI compatible server
-
-### Setup
-
-Make sure you have [PyTorch](https://pytorch.org/get-started/locally/) installed. Then to install the required dependencies, run:
-
-```shell
-pip install -r requirements.txt
-```
-
-Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server:
-
-```shell
-python3 server_vllm.py --model "meetkai/functionary-7b-v2" --host 0.0.0.0
-```
-
-### Server Usage
-
-If you have an existing OpenAI-based Python project, quickly redirect the API to a functional server with the following steps:
-1. **Set the Base URL and API Key**:
-   Initialize the OpenAI client with the local server's URL and an API key. We just need to set the api_key to something other than None, so it works with the Openai package. No API key is required.
-```
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
-```
-2. **Specify the Model**:
-   Set the model to correspond with the one used by your server. The model name matches the value of the --model argument in the server deployment script: server_vllm.py or server.py
-```
-model = "meetkai/functionary-7b-v2" 
-```
+| [functionary-7b-v1.4](meetkai/functionary-7b-v1.4)       |Supports single function calls with improved accuracy <br>in both function call capabilities and instruction-following <br>abilities.      | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
+| [functionary-7b-v2](meetkai/functionary-7b-v2)           |Supports **parallel function calls** with improved accuracy <br>in function call capabilities and instruction-following abilities.     | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
 
 ### Key Difference in Code for V1 and V2:
 
@@ -75,6 +45,37 @@ model = "meetkai/functionary-7b-v2"
    )
 
   ```
+
+
+## OpenAI compatible server
+
+### Setup
+
+Make sure you have [PyTorch](https://pytorch.org/get-started/locally/) installed. Then to install the required dependencies, run:
+
+```shell
+pip install -r requirements.txt
+```
+
+Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server:
+
+```shell
+python3 server_vllm.py --model "meetkai/functionary-7b-v2" --host 0.0.0.0
+```
+
+### Server Usage
+
+If you have an existing OpenAI-based Python project, quickly redirect the API to a functional server with the following steps:
+1. **Set the Base URL and API Key**:
+   Initialize the OpenAI client with the local server's URL and an API key. We just need to set the api_key to something other than None, so it works with the Openai package. No API key is required.
+```
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
+```
+2. **Specify the Model**:
+   Set the model to correspond with the one used by your server. The model name matches the value of the --model argument in the server deployment script: server_vllm.py or server.py
+```
+model = "meetkai/functionary-7b-v2" 
+```
 
 ### Important Note:
 All the examples provided below are for the V2 implementation. If you are using V1, please make the necessary adjustments as explained in the previous section outlining the differences between V1 and V2.
