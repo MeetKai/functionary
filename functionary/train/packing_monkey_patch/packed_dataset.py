@@ -4,7 +4,8 @@ from torch.utils.data import Dataset
 
 
 def merge_data_points_by_length(lengths: List[int], max_length: int) -> List[List[int]]:
-    """given lengths of data points, we merge them into groups such that the sum of lengths
+    """Merge data points into groups (each group is a new data point), will be used by PackedDataset, to reduce number of data points in training.
+    Given lengths of data points, we merge them into groups such that the sum of lengths
     in each group is less than max_length. This is known as: https://en.wikipedia.org/wiki/Bin_packing_problem
     Here is the greedy algorithm
     Args:
