@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 from functools import partial
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Type, Union
@@ -174,48 +175,71 @@ class RequestTracker:
 class _AsyncLLMEngine(LLMEngine):
     """Extension of LLMEngine to add async methods."""
 
-    # This is a dict mapping request_id to the list of tools/functions names
-    tools_or_functions_names: dict = {}
+    # This is a dict mapping request_id to the list of tools/functions details
+    tools_or_functions: dict = {}
     # This is a dict mapping request_id to the prompt_template_version
     prompt_template_versions: dict = {}
 
-    def check_to_sample(self, text, start_token, request_id):
+    def check_to_sample(self, suffix, prompt_template_version, request_id):
         """This function checks the state of the prompt on whether
         it is at a state where grammar-sampling is required:
         - When the model is generating a function/tool name
-
-        Future additions: When the model is generating a parameter name
+        - If reached the parameter generation stage, check whether the model
+          is in the midst of generating a parameter name and not the value
         """
-        if start_token not in text:
-            return False
-
-        # Gets the suffix after the start_token
-        suffix = text[text.rfind(start_token) + len(start_token) :].lstrip()
-
-        # Check the following:
-        # the suffix after start_token is empty => True
-        # the suffix after start_token is in the midst of generating a function name => True
-        # the suffix after start_token has just completed generating a function name => False
-        # the suffix after start_token is generating a normal response => False
-        return any(
+        # Check if the model is in the midst of generating a function name
+        # This will always return True for incomplete function name
+        if any(
             [
-                func_name.startswith(suffix) and func_name != suffix
-                for func_name in self.tools_or_functions_names[request_id]
+                tool_or_func["name"].startswith(suffix)
+                and tool_or_func["name"] != suffix
+                for tool_or_func in self.tools_or_functions[request_id]
             ]
-        )
+        ):
+            return True
 
-    def check_end_of_sampling(self, text, start_token, request_id):
+        # Check if the model has reached the parameter generation stage
+        if (prompt_template_version == "v1" and ":\n{" in suffix) or (
+            prompt_template_version == "v2" and "\n<|content|>{" in suffix
+        ):
+            # Extract whatever parameters the model generated up to now
+            if prompt_template_version == "v1":
+                _, curr_params_str = suffix.split(":\n{")
+            elif prompt_template_version == "v2":
+                _, curr_params_str = suffix.split("n<|content|>{")
+
+            # Use two stacks/counts to check if the model is currently generating
+            # a parameter name and not a parameter value.
+            # - `apostrophe_count` keeps track of the number of `"` in params_str
+            # - `nested_obj_stack` keeps track of the number of `{` and `[` in params_str
+            # If the model is in the midst of generating a parameter name,
+            # `nested_obj_stack` must be 0 and `apostrophe_count` must be an odd number
+            nested_obj_stack, apostrophe_count = 0, 0
+            for char in curr_params_str:
+                if char == '"':
+                    apostrophe_count += 1
+                elif char in ["{", "["]:
+                    nested_obj_stack += 1
+                elif char in ["}", "]"]:
+                    nested_obj_stack -= 1
+            if nested_obj_stack == 0 and apostrophe_count % 2 == 1:
+                breakpoint()
+                return True
+
+        # Return False if the model is not in the midst of generating a function name
+        # or in the parameter generation stage
+        return False
+
+    def check_end_of_sampling(self, suffix, request_id):
         """This function checks the state of the prompt on whether
         it is at a state where the complete function name is just
         generated in order to stop the model from hallucinating a
         longer function name (by selecting '\n' token)
         """
-        suffix = text[text.rfind(start_token) + len(start_token) :].lstrip()
-
         return any(
             [
-                func_name == suffix
-                for func_name in self.tools_or_functions_names[request_id]
+                tool_or_func["name"] == suffix
+                for tool_or_func in self.tools_or_functions[request_id]
             ]
         )
 
@@ -223,6 +247,7 @@ class _AsyncLLMEngine(LLMEngine):
         self,
         delta_token_ids,
         output_token_ids,
+        suffix,
         prompt_template_version,
         request_id,
     ):
@@ -230,16 +255,40 @@ class _AsyncLLMEngine(LLMEngine):
         newly sampled token.
 
         This function checks whether the model-sampled token helps towards
-        forming one of the function names. It loops through a list of token
-        ids sorted in descending order by the log probabilities. It replaces
-        the output token if the grammar-sampled token is different from the
-        model-sampled token
+        forming one of the function names or parameter names. It loops through
+        a list of token ids sorted in descending order by the log probabilities.
+        It replaces the output token if the grammar-sampled token is different
+        from the model-sampled token
         """
-        # Retrieve the list of function names by request_id
-        select_options = self.tools_or_functions_names[request_id]
+        # Check whether the model is in function name or parameter generation stage
+        # If the model is in parameter generation stage
+        if (prompt_template_version == "v1" and ":\n{" in suffix) or (
+            prompt_template_version == "v2" and "\n<|content|>{" in suffix
+        ):
+            stage = "parameter"
 
-        if prompt_template_version == "v2":
-            select_options.append("all")
+            # Get the list of parameters for the curr_fn_name
+            if prompt_template_version == "v1":
+                curr_fn_name, curr_params_str = suffix.split(":\n{")
+            elif prompt_template_version == "v2":
+                curr_fn_name, curr_params_str = suffix.split("\n<|content|>{")
+            for tool_or_func in self.tools_or_functions[request_id]:
+                if tool_or_func["name"] == curr_fn_name:
+                    parameter_options = list(
+                        tool_or_func["parameters"]["properties"].keys()
+                    )
+                    break
+        # If the model is in function name generation stage
+        else:
+            stage = "function"
+
+            # Retrieve the list of function names by request_id
+            func_options = [
+                tool_or_func["name"]
+                for tool_or_func in self.tools_or_functions[request_id]
+            ]
+            if prompt_template_version == "v2":
+                func_options.append("all")
 
         # Loop through the list of token ids sorted in descending order
         for i, sampled_token_ind in enumerate(delta_token_ids):
@@ -252,11 +301,29 @@ class _AsyncLLMEngine(LLMEngine):
             new_curr_tokens = self.tokenizer.decode(new_curr_tokens_id)
 
             # Form a mask made up of booleans where the index of the mask ==
-            # index of function name in select_options.
-            options_mask = [
-                True if option.startswith(new_curr_tokens.lstrip(" ")) else False
-                for option in select_options
-            ]
+            # index of function/parameter name in func_options/parameter_options.
+            if stage == "function":
+                options_mask = [
+                    True if option.startswith(new_curr_tokens.lstrip(" ")) else False
+                    for option in func_options
+                ]
+            else:
+                # Check which parameters are already generated and mask away those
+                # while creating options_mask
+                breakpoint()
+                #
+                # Loop from the back and try json.dumps
+                full_params = {}
+                for j in range(len(curr_params_str) - 1, 0, -1):
+                    try:
+                        full_params = json.dumps("{" + curr_params_str[:j] + "}")
+                        breakpoint()
+                        break
+                    except:
+                        breakpoint()
+                        continue
+                return sampled_token_ind
+                # options_mask =
 
             # The grammar-sampled token is valid if any element in options_mask
             # is True (The token helps in forming that function name).
@@ -309,15 +376,33 @@ class _AsyncLLMEngine(LLMEngine):
             elif prompt_template_version == "v2":
                 start_token = "<|recipient|>"
 
-            # Check whether to apply grammar sampling (currently for function names)
-            if self.check_to_sample(
-                text=prompt_str, start_token=start_token, request_id=request_id
+            # Get the suffix (whatever text after the start_token)
+            suffix = prompt_str[
+                prompt_str.rfind(start_token) + len(start_token) :
+            ].lstrip()
+
+            # Get the tokens generated in previous steps
+            # Remove initial <|START_OF_FUNCTION_CALL|> for v1
+            output_token_ids = (
+                seq_group_metadata_list[i].seq_data[seq_data_id].output_token_ids
+            )
+            if prompt_template_version == "v1" and len(output_token_ids) > 0:
+                output_token_ids = (
+                    output_token_ids[1:]
+                    if output_token_ids[0] == 32005
+                    else output_token_ids
+                )
+
+            # Check whether to apply grammar sampling
+            if start_token in prompt_str and self.check_to_sample(
+                suffix=suffix,
+                prompt_template_version=prompt_template_version,
+                request_id=request_id,
             ):
                 grammar_sampled_token_id = self.sample(
                     delta_token_ids=delta_token_id_by_logprobs,
-                    output_token_ids=seq_group_metadata_list[i]
-                    .seq_data[seq_data_id]
-                    .output_token_ids,
+                    output_token_ids=output_token_ids,
+                    suffix=suffix,
                     prompt_template_version=prompt_template_version,
                     request_id=request_id,
                 )
@@ -332,17 +417,16 @@ class _AsyncLLMEngine(LLMEngine):
             # This is to check if the complete function name is generated and replace
             # the intended model token to "\n", stopping the model from hallucinating a
             # function name that has the intended function name as prefix
-            elif self.check_end_of_sampling(
-                text=prompt_str, start_token=start_token, request_id=request_id
-            ):
+            elif self.check_end_of_sampling(suffix=suffix, request_id=request_id):
                 if prompt_template_version == "v1":
-                    stopping_token = ":"
+                    # encoding ":" will get 714 instead which has a preceding whitespace " "
+                    # Thus, directly using ":" without any whitespace here
+                    output[i].samples[-1].output_token = 28747
                 else:
                     stopping_token = "\n"
-
-                output[i].samples[-1].output_token = self.tokenizer.encode(
-                    stopping_token, add_special_tokens=False
-                )[-1]
+                    output[i].samples[-1].output_token = self.tokenizer.encode(
+                        stopping_token, add_special_tokens=False
+                    )[-1]
 
         return self._process_model_outputs(output, scheduler_outputs) + ignored
 
@@ -578,10 +662,10 @@ class AsyncLLMEngine:
         # This should not be used for logging, as it is monotonic time.
         arrival_time = time.monotonic()
 
-        # Initialize the request_id entry of self.engine.tools_or_functions_names
+        # Initialize the request_id entry of self.engine.tools_or_functions
         # and prompt_template_version at the start of generate method
-        self.engine.tools_or_functions_names[request_id] = [
-            tool_or_function["name"] for tool_or_function in tools_or_functions
+        self.engine.tools_or_functions[request_id] = [
+            tool_or_function for tool_or_function in tools_or_functions
         ]
         self.engine.prompt_template_versions[request_id] = prompt_template_version
 
@@ -601,15 +685,15 @@ class AsyncLLMEngine:
             # request.
             self._abort(request_id)
 
-            # Delete request_id from self.engine.tools_or_functions_names before raising error
-            del self.engine.tools_or_functions_names[request_id]
+            # Delete request_id from self.engine.tools_or_functions before raising error
+            del self.engine.tools_or_functions[request_id]
             # Delete request_id from self.engine.prompt_template_versions before raising error
             del self.engine.prompt_template_versions[request_id]
 
             raise e
 
-        # Delete the request_id from self.engine.tools_or_functions_names before finishing the request
-        del self.engine.tools_or_functions_names[request_id]
+        # Delete the request_id from self.engine.tools_or_functions before finishing the request
+        del self.engine.tools_or_functions[request_id]
         # Delete the request_id from self.engine.prompt_template_versions before finishing the request
         del self.engine.prompt_template_versions[request_id]
 
