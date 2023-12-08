@@ -15,7 +15,81 @@ The model determines when to execute a function and can understand its output. I
 | [functionary-7b-v1.4](meetkai/functionary-7b-v1.4)       |Supports single function calls with improved accuracy <br>in both function call capabilities and instruction-following <br>abilities.      | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
 | [functionary-7b-v2](meetkai/functionary-7b-v2)           |Supports **parallel function calls** with improved accuracy <br>in function call capabilities and instruction-following abilities.     | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
 
-### Key Difference in Code for V1 and V2:
+
+
+## OpenAI compatible server
+
+### Setup
+
+Make sure you have [PyTorch](https://pytorch.org/get-started/locally/) installed. Then to install the required dependencies, run:
+
+```shell
+pip install -r requirements.txt
+```
+
+Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server:
+
+```shell
+python3 server_vllm.py --model "meetkai/functionary-7b-v2" --host 0.0.0.0
+```
+
+### Server Usage
+
+If you have an existing OpenAI-based Python project, quickly redirect the API to a functional server with the following steps:
+1.  Make sure that you have OpenAI version > 1.0 installed. You can install the latest version using the following command:
+```bash
+pip install openai --upgrade
+```
+
+2. **Set the Base URL and API Key**:
+   Initialize the OpenAI client with the local server's URL and an API key. We just need to set the api_key to something other than None, so it works with the Openai package. No API key is required.
+```
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
+```
+3. **Specify the Model**:
+   Set the model to correspond with the one used by your server. The model name matches the value of the --model argument in the server deployment script: server_vllm.py or server.py
+```
+model = "meetkai/functionary-7b-v2" 
+```
+
+### Full Code Implementation:
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
+
+client.chat.completions.create(
+    model="meetkai/functionary-7b-v2",
+    messages=[
+        {
+            "role": "user",
+            "content": "What is the weather for Istanbul?"
+        }
+    ],
+    tools=[ # For functionary-7b-v2 we use "tools"; for functionary-7b-v1.4 we use "functions" = [{"name": "get_current_weather", "description":..., "parameters": ....}]
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_weather",
+                "description": "Get the current weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g. San Francisco, CA"
+                        }
+                    },
+                    "required": ["location"]
+                }
+            }
+        }
+    ],
+    tool_choice="auto"
+)
+```
+
+### Key Difference in Code for funtionary-7b-V1 and funtionary-7b-V2:
 
 - **V1: Using "functions"**
    - The schema for **"functions"** is a list of dictionaries, each containing the keys **"name"**, **"description"**, and **"parameters"**.
@@ -46,77 +120,8 @@ The model determines when to execute a function and can understand its output. I
 
   ```
 
-
-## OpenAI compatible server
-
-### Setup
-
-Make sure you have [PyTorch](https://pytorch.org/get-started/locally/) installed. Then to install the required dependencies, run:
-
-```shell
-pip install -r requirements.txt
-```
-
-Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server:
-
-```shell
-python3 server_vllm.py --model "meetkai/functionary-7b-v2" --host 0.0.0.0
-```
-
-### Server Usage
-
-If you have an existing OpenAI-based Python project, quickly redirect the API to a functional server with the following steps:
-1. **Set the Base URL and API Key**:
-   Initialize the OpenAI client with the local server's URL and an API key. We just need to set the api_key to something other than None, so it works with the Openai package. No API key is required.
-```
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
-```
-2. **Specify the Model**:
-   Set the model to correspond with the one used by your server. The model name matches the value of the --model argument in the server deployment script: server_vllm.py or server.py
-```
-model = "meetkai/functionary-7b-v2" 
-```
-
 ### Important Note:
 All the examples provided below are for the V2 implementation. If you are using V1, please make the necessary adjustments as explained in the previous section outlining the differences between V1 and V2.
-
-
-### Full Code Implementation:
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
-
-client.chat.completions.create(
-    model="meetkai/functionary-7b-v2",
-    messages=[
-        {
-            "role": "user",
-            "content": "What is the weather for Istanbul?"
-        }
-    ],
-    tools=[
-        {
-            "type": "function",
-            "function": {
-                "name": "get_current_weather",
-                "description": "Get the current weather",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "location": {
-                            "type": "string",
-                            "description": "The city and state, e.g. San Francisco, CA"
-                        }
-                    },
-                    "required": ["location"]
-                }
-            }
-        }
-    ],
-    tool_choice="auto"
-)
-```
 
 ### Using python requests:
 ```python
@@ -137,7 +142,7 @@ request_payload = {
             "content": "What is the weather for Istanbul?"
         }
     ],
-    'tools':[
+    'tools':[ # For functionary-7b-v2 we use "tools"; for functionary-7b-v1.4 we use "functions" = [{"name": "get_current_weather", "description":..., "parameters": ....}]
         {
             "type": "function",
             "function": {
@@ -246,8 +251,10 @@ The output would be:
 **Note: we should use the tokenizer from Huggingface to convert prompt into token_ids instead of using the tokenizer from LLama_cpp because we found that tokenizer from LLama_cpp doesn't give the same result as that from Huggingface. The reason might be in the training, we added new tokens to the tokenizer and LLama_Cpp doesn't handle this succesfully**
 
 ### Call Real Python Function
+
 To call the real python function, get the result and extract the result to respond, you can use [chatlab](https://github.com/rgbkrk/chatlab). The following example uses chatlab==0.16.0:
 
+Please note that Chatlab currently doesn't support Parallel Function calls. This sample code is compatible only with Functionary Version 1.4 and may not work correctly with Functionary Version 2.0.
 ```python
 from chatlab import Conversation
 import openai
