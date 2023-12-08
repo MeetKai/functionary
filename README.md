@@ -6,26 +6,6 @@ Functionary is a language model that can interpret and execute functions/plugins
 
 The model determines when to execute a function and can understand its output. It only triggers functions as needed. Function definitions are given as JSON Schema Objects, similar to OpenAI GPT function calls.
 
-## Table of Contents
-- [OpenAI compatible server](#openai-compatible-server)
-  - [Setup](#setup)
-  - [Server Usage](#server-usage)
-  - [Full Code Implementation](#full-code-implementation)
-  - [Usage Using python Requests](#usage-using-python-requests)
-- [Models Available](#models-available)
-- [Llama_cpp Inference](#llama_cpp-inference)
-- [Call Real Python Function](#call-real-python-function)
-- [Use Cases](#use-cases)
-- [Training](#training)
-- [How it Works?](#how-it-works)
-- [Evaluation](#evaluation)
-  - [MT-Bench leaderboard](#mt-bench-leaderboard)
-  - [Alpaca Eval Leaderboard](#alpaca-eval-leaderboard)
-  - [Function Prediction Evaluation](#function-prediction-evaluation)
-- [Dataset](#dataset)
-
-## OpenAI compatible server
-
 ### Setup
 
 Make sure you have [PyTorch](https://pytorch.org/get-started/locally/) installed. Then to install the required dependencies, run:
@@ -40,22 +20,8 @@ Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/ge
 python3 server_vllm.py --model "meetkai/functionary-7b-v2" --host 0.0.0.0
 ```
 
-### Server Usage
+### OpenAI Compatible Usage
 
-If you have an existing OpenAI-based Python project, here is how easy it is to redirect the API to point our functionary server:
-
-1. **Set the Base URL and API Key**:
-   Initialize the OpenAI client with the local server's URL and an API key. We just need to set the api_key to something other than None, so it works with the Openai package. No API key is required.
-```
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
-```
-2. **Specify the Model**:
-   Set the model to correspond with the one used by your server. The model name matches the value of the --model argument in the server deployment script: server_vllm.py or server.py
-```
-model = "meetkai/functionary-7b-v2" 
-```
-
-### Full Code Implementation:
 ```python
 from openai import OpenAI
 
@@ -63,14 +29,10 @@ client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 
 client.chat.completions.create(
     model="meetkai/functionary-7b-v2",
-    messages=[
-        {
-            "role": "user",
-            "content": "What is the weather for Istanbul?"
-        }
+    messages=[{"role": "user",
+            "content": "What is the weather for Istanbul?"}
     ],
-    tools=[ # For functionary-7b-v2 we use "tools"; for functionary-7b-v1.4 we use "functions" = [{"name": "get_current_weather", "description":..., "parameters": ....}]
-        {
+    tools=[{
             "type": "function",
             "function": {
                 "name": "get_current_weather",
@@ -86,24 +48,22 @@ client.chat.completions.create(
                     "required": ["location"]
                 }
             }
-        }
-    ],
+        }],
     tool_choice="auto"
 )
 ```
 
-### Usage Using python Requests:
+
+
+### Raw Usage:
+
+<details>
+  <summary>Details (click to expand)</summary>
+
 ```python
 import requests
 
-headers = {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer xxxx"
-}
-
-api_url = "http://127.0.0.1:8000/v1/chat/completions"
-
-request_payload = {
+data = {
     'model': 'meetkai/functionary-7b-v2', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
     'messages': [
         {
@@ -131,12 +91,18 @@ request_payload = {
         }
     ]
 }
-# Make a POST request to the API and get the response
-response = requests.post(api_url, json=request_payload, headers=headers)
+
+response = requests.post("http://127.0.0.1:8000/v1/chat/completions", json=data, headers={
+    "Content-Type": "application/json",
+    "Authorization": "Bearer xxxx"
+})
 
 # Print the response text
 print(response.text)
 ```
+
+</details>
+
 
 
 If you're having trouble with dependencies, and you have [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#setting-up-nvidia-container-toolkit), 
@@ -164,6 +130,10 @@ Compatibility information:
 The difference between OpenAI-python v0 and v1 you may refer to the official documentation [here](https://platform.openai.com/docs/api-reference/chat/create#chat-create-tools)
 
 ## Llama_cpp Inference
+
+<details>
+  <summary>Details (click to expand)</summary>
+
 Make sure that [llama-cpp-python](https://github.com/abetlen/llama-cpp-python) is successully installed in your system. The following is the sample code:
 
 ```python
@@ -235,6 +205,8 @@ The output would be:
 {'role': 'assistant', 'content': None, 'tool_calls': [{'type': 'function', 'function': {'name': 'get_current_weather', 'arguments': '{\n  "location": "Hanoi"\n}'}}]}
 ```
 **Note: we should use the tokenizer from Huggingface to convert prompt into token_ids instead of using the tokenizer from LLama_cpp because we found that tokenizer from LLama_cpp doesn't give the same result as that from Huggingface. The reason might be in the training, we added new tokens to the tokenizer and LLama_Cpp doesn't handle this succesfully**
+
+</details>
 
 ## Call Real Python Function
 
@@ -494,8 +466,6 @@ We use standard HuggingFace Trainer. When calculating the loss, we only calculat
 We use the similar hyperparameters as its used in LLama 2 [paper](https://arxiv.org/abs/2307.09288). 
 Except we use bigger weight decay (0.3 instead of 0.1) and warmup of 0.03, to reduce overfitting as we sample 2x of the function calling example conversations. But ablation study is required.
 
-We use transformers after this [commit](https://github.com/huggingface/transformers/commit/f4eb459ef25c62c4cc9edde38052da1980977872). As it fixes OOM for FSDP training on Llama 2.
-
 **Hyperparameters**:
 
 - Batch size: 64
@@ -573,7 +543,7 @@ Evaluation function call prediction in our in-house dataset. We focus on two key
 
 </details>
 
-## Dataset
+## Dataset Preparation
 
 Dataset preparation process consists of several steps:
 
@@ -591,29 +561,6 @@ Dataset preparation process consists of several steps:
 
 *Note: Llama 2 70b / Falcon 180B is capable of doing all synthetic data generation.*
 
-### v0.1 
-
-**Data Sources:** 
-- [ShareGPT 34K](https://huggingface.co/datasets/ehartford/wizard_vicuna_70k_unfiltered/blob/cfe3f5810110d4d763665c070b4a966fda43e5c5/wizard_vicuna_dataset_unfiltered.json)
-- Synthetic function calling dataset (2.7k examples)
-
-**Observations:**
-This version showed limitations in handling multi-prompt conversations, likely due to the absence of multiple instructions in the function calling dataset. Also hallucinations are common, we likely need more conversation data.
-
-### v0.2
-
-**Data Sources:**
-- [ShareGPT 53K](https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/blob/bcd32a724d8460ebe14e1d05b0195e30e9a46cb1/ShareGPT_V3_unfiltered_cleaned_split_no_imsorry.json)
-- Synthetic function calling dataset (3.5k examples). Sampled 2 times.
-
-### v1
-
-**Data Sources:**
-- Same as v0.2
-
-**Observations:**
-Compared to v0.2, because the model supports 4k context sizes, its much more resilient to the longer conversations and longer function definitions. Also we switched to Llama 2.
-
 
 ## Roadmap
 
@@ -622,8 +569,8 @@ Compared to v0.2, because the model supports 4k context sizes, its much more res
 - [X] Fast inference server 
   - [X] [vLLM](https://github.com/vllm-project/vllm) 
   - [ ] [text-generation-inference](https://github.com/huggingface/text-generation-inference) ? See: [License Issue](https://github.com/huggingface/text-generation-inference/issues/726)
-  - [ ] Streaming Support
+  - [X] Streaming Support
   - [ ] function_call parameter to server
-- [ ] Python function calling support (Automatic detection of type annotations and calling them automatically)
-- [ ] Real world usage examples, such as creating agents.
+- [X] Python function calling support (Automatic detection of type annotations and calling them automatically)
+- [X] Real world usage examples, such as creating agents.
 - **Please consider opening a PR for future requests**
