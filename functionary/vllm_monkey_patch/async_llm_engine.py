@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import time
 from functools import partial
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Type, Union
@@ -214,17 +215,54 @@ class _AsyncLLMEngine(LLMEngine):
             # - `nested_obj_stack` keeps track of the number of `{` and `[` in params_str
             # If the model is in the midst of generating a parameter name,
             # `nested_obj_stack` must be 0 and `apostrophe_count` must be an odd number
-            nested_obj_stack, apostrophe_count = 0, 0
-            for char in curr_params_str:
-                if char == '"':
-                    apostrophe_count += 1
-                elif char in ["{", "["]:
-                    nested_obj_stack += 1
-                elif char in ["}", "]"]:
-                    nested_obj_stack -= 1
-            if nested_obj_stack == 0 and apostrophe_count % 2 == 1:
-                breakpoint()
-                return True
+            # nested_obj_stack, apostrophe_count = 0, 0
+            # for char in curr_params_str:
+            #     if char == '"':
+            #         apostrophe_count += 1
+            #     elif char in ["{", "["]:
+            #         nested_obj_stack += 1
+            #     elif char in ["}", "]"]:
+            #         nested_obj_stack -= 1
+            # if nested_obj_stack == 0 and apostrophe_count % 2 == 1:
+            #     breakpoint()
+            #     return True
+
+            # Loop through curr_params_str from the back
+            for i in range(len(curr_params_str) - 1, -1, -1):
+                try:
+                    full_params_json = json.loads("{" + curr_params_str[:i] + "}")
+                    latest_param_str = curr_params_str[i:].lstrip(", ")
+
+                    # Get the list of parameters for the curr_fn_name
+                    if prompt_template_version == "v1":
+                        curr_fn_name, curr_params_str = suffix.split(":\n{")
+                    elif prompt_template_version == "v2":
+                        curr_fn_name, curr_params_str = suffix.split("\n<|content|>{")
+                    for tool_or_func in self.tools_or_functions[request_id]:
+                        if tool_or_func["name"] == curr_fn_name:
+                            parameter_options = list(
+                                tool_or_func["parameters"]["properties"].keys()
+                            )
+                            break
+
+                    # Check if the latest_param_str starts with `"{parameter_name}`
+                    # If so, return False as the model has finished generating the
+                    # parameter name.
+                    if (
+                        len(latest_param_str) == 0
+                        or latest_param_str == "}"
+                        or any(
+                            [
+                                latest_param_str.startswith(f'"{parameter_name}')
+                                for parameter_name in parameter_options
+                            ]
+                        )
+                    ):
+                        return False
+                    else:
+                        return True
+                except:
+                    pass
 
         # Return False if the model is not in the midst of generating a function name
         # or in the parameter generation stage
@@ -236,6 +274,7 @@ class _AsyncLLMEngine(LLMEngine):
         generated in order to stop the model from hallucinating a
         longer function name (by selecting '\n' token)
         """
+
         return any(
             [
                 tool_or_func["name"] == suffix
@@ -296,13 +335,13 @@ class _AsyncLLMEngine(LLMEngine):
                 [sampled_token_ind], add_special_tokens=False
             )
 
-            # Form the function name with the current sampled token id
-            new_curr_tokens_id = output_token_ids + [sampled_token_ind]
-            new_curr_tokens = self.tokenizer.decode(new_curr_tokens_id)
-
             # Form a mask made up of booleans where the index of the mask ==
             # index of function/parameter name in func_options/parameter_options.
             if stage == "function":
+                # Form the function name with the current sampled token id
+                new_curr_tokens_id = output_token_ids + [sampled_token_ind]
+                new_curr_tokens = self.tokenizer.decode(new_curr_tokens_id)
+
                 options_mask = [
                     True if option.startswith(new_curr_tokens.lstrip(" ")) else False
                     for option in func_options
@@ -310,20 +349,23 @@ class _AsyncLLMEngine(LLMEngine):
             else:
                 # Check which parameters are already generated and mask away those
                 # while creating options_mask
-                breakpoint()
-                #
-                # Loop from the back and try json.dumps
-                full_params = {}
-                for j in range(len(curr_params_str) - 1, 0, -1):
-                    try:
-                        full_params = json.dumps("{" + curr_params_str[:j] + "}")
-                        breakpoint()
-                        break
-                    except:
-                        breakpoint()
-                        continue
-                return sampled_token_ind
-                # options_mask =
+                # Use regex to extract the keys
+                key_pattern = r'"([^"]+)":'
+                wellformed_params = re.findall(key_pattern, curr_params_str)
+
+                # Form the parameter name with the current sampled token id
+                new_curr_tokens = curr_params_str + self.tokenizer.decode(
+                    [sampled_token_ind]
+                )
+
+                options_mask = []
+                for option in parameter_options:
+                    if option in wellformed_params or not option.startswith(
+                        new_curr_tokens[new_curr_tokens.rfind('"') + 1 :]
+                    ):
+                        options_mask.append(False)
+                    else:
+                        options_mask.append(True)
 
             # The grammar-sampled token is valid if any element in options_mask
             # is True (The token helps in forming that function name).
