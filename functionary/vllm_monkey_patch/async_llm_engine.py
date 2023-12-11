@@ -178,10 +178,10 @@ class _AsyncLLMEngine(LLMEngine):
 
     # This is a dict mapping request_id to the list of tools/functions details
     tools_or_functions: dict = {}
-    # This is a dict mapping request_id to the prompt_template_version
-    prompt_template_versions: dict = {}
+    # This is a dict mapping request_id to the prompt_template_cls
+    prompt_template_classes: dict = {}
 
-    def check_to_sample(self, suffix, prompt_template_version, request_id):
+    def check_to_sample(self, suffix, request_id):
         """This function checks the state of the prompt on whether
         it is at a state where grammar-sampling is required:
         - When the model is generating a function/tool name
@@ -200,14 +200,11 @@ class _AsyncLLMEngine(LLMEngine):
             return True
 
         # Check if the model has reached the parameter generation stage
-        if (prompt_template_version == "v1" and ":\n{" in suffix) or (
-            prompt_template_version == "v2" and "\n<|content|> {" in suffix
-        ):
+        if self.prompt_template_classes[request_id].fn_param_sep_token in suffix:
             # Extract whatever parameters the model generated up to now
-            if prompt_template_version == "v1":
-                _, curr_params_str = suffix.split(":\n{")
-            elif prompt_template_version == "v2":
-                _, curr_params_str = suffix.split("\n<|content|> {")
+            curr_fn_name, curr_params_str = suffix.split(
+                self.prompt_template_classes[request_id].fn_param_sep_token
+            )
 
             # Loop through curr_params_str from the back char-by-char
             # and try to see if the substring can be converted to json.
@@ -222,16 +219,12 @@ class _AsyncLLMEngine(LLMEngine):
 
                     # Check whether the v2 model has finished generating
                     # all the parameters
-                    if prompt_template_version == "v2" and latest_param_str.startswith(
-                        "}"
-                    ):
+                    if self.prompt_template_classes[
+                        request_id
+                    ].version == "v2" and latest_param_str.startswith("}"):
                         return False
 
                     # Get the list of parameters for the curr_fn_name
-                    if prompt_template_version == "v1":
-                        curr_fn_name, curr_params_str = suffix.split(":\n{")
-                    elif prompt_template_version == "v2":
-                        curr_fn_name, curr_params_str = suffix.split("\n<|content|> {")
                     for tool_or_func in self.tools_or_functions[request_id]:
                         if tool_or_func["name"] == curr_fn_name:
                             parameter_options = list(
@@ -262,7 +255,7 @@ class _AsyncLLMEngine(LLMEngine):
         # or in the parameter generation stage
         return False
 
-    def check_end_of_sampling(self, suffix, prompt_template_version, request_id):
+    def check_end_of_sampling(self, suffix, request_id):
         """This function checks the state of the prompt on whether it is
         at a state where the complete function/parameter name is just
         generated in order to stop the model from hallucinating a longer
@@ -277,26 +270,17 @@ class _AsyncLLMEngine(LLMEngine):
         ):
             return True
         # Return True if the latest_param_str is one of the parameter names
-        elif (prompt_template_version == "v1" and ":\n{" in suffix) or (
-            prompt_template_version == "v2" and "\n<|content|> {" in suffix
-        ):
+        elif self.prompt_template_classes[request_id].fn_param_sep_token in suffix:
             # Get the list of parameters for the curr_fn_name
-            if prompt_template_version == "v1":
-                curr_fn_name, curr_params_str = suffix.split(":\n{")
-            elif prompt_template_version == "v2":
-                curr_fn_name, curr_params_str = suffix.split("\n<|content|> {")
+            curr_fn_name, curr_params_str = suffix.split(
+                self.prompt_template_classes[request_id].fn_param_sep_token
+            )
             for tool_or_func in self.tools_or_functions[request_id]:
                 if tool_or_func["name"] == curr_fn_name:
                     parameter_options = list(
                         tool_or_func["parameters"]["properties"].keys()
                     )
                     break
-
-            # Extract whatever parameters the model generated up to now
-            if prompt_template_version == "v1":
-                _, curr_params_str = suffix.split(":\n{")
-            elif prompt_template_version == "v2":
-                _, curr_params_str = suffix.split("\n<|content|> {")
 
             # Use the same json.loads() trick as self.check_to_sample() to
             # find the latest_param_str
@@ -309,9 +293,9 @@ class _AsyncLLMEngine(LLMEngine):
 
                     # Check whether the v2 model has finished generating
                     # all the parameters
-                    if prompt_template_version == "v2" and latest_param_str.startswith(
-                        "}"
-                    ):
+                    if self.prompt_template_classes[
+                        request_id
+                    ].version == "v2" and latest_param_str.startswith("}"):
                         return False
 
                     # Check if the latest_param_str is one of the wellformed
@@ -335,7 +319,6 @@ class _AsyncLLMEngine(LLMEngine):
         delta_token_ids,
         output_token_ids,
         suffix,
-        prompt_template_version,
         request_id,
     ):
         """Applies grammar-sampling to the token generation and returns a
@@ -349,16 +332,13 @@ class _AsyncLLMEngine(LLMEngine):
         """
         # Check whether the model is in function name or parameter generation stage
         # If the model is in parameter generation stage
-        if (prompt_template_version == "v1" and ":\n{" in suffix) or (
-            prompt_template_version == "v2" and "\n<|content|> {" in suffix
-        ):
+        if self.prompt_template_classes[request_id].fn_param_sep_token in suffix:
             stage = "parameter"
 
             # Get the list of parameters for the curr_fn_name
-            if prompt_template_version == "v1":
-                curr_fn_name, curr_params_str = suffix.split(":\n{")
-            elif prompt_template_version == "v2":
-                curr_fn_name, curr_params_str = suffix.split("\n<|content|> {")
+            curr_fn_name, curr_params_str = suffix.split(
+                self.prompt_template_classes[request_id].fn_param_sep_token
+            )
             for tool_or_func in self.tools_or_functions[request_id]:
                 if tool_or_func["name"] == curr_fn_name:
                     parameter_options = list(
@@ -374,7 +354,7 @@ class _AsyncLLMEngine(LLMEngine):
                 tool_or_func["name"]
                 for tool_or_func in self.tools_or_functions[request_id]
             ]
-            if prompt_template_version == "v2":
+            if self.prompt_template_classes[request_id].version == "v2":
                 func_options.append("all")
 
         # Loop through the list of token ids sorted in descending order
@@ -395,7 +375,7 @@ class _AsyncLLMEngine(LLMEngine):
                 # In case of more than 1 function call, get the latest function call generation
                 # Only apply to v2 models
                 if (
-                    prompt_template_version == "v2"
+                    self.prompt_template_classes[request_id].version == "v2"
                     and "\n<|from|> assistant\n<|recipient|>" in new_curr_tokens
                 ):
                     new_curr_tokens = new_curr_tokens.split(
@@ -472,11 +452,9 @@ class _AsyncLLMEngine(LLMEngine):
             )
             prompt_str = self.tokenizer.decode(prompt_token_ids)
 
-            prompt_template_version = self.prompt_template_versions[request_id]
-            if prompt_template_version == "v1":
-                start_token = "<|START_OF_FUNCTION_CALL|>"
-            elif prompt_template_version == "v2":
-                start_token = "<|recipient|>"
+            start_token = self.prompt_template_classes[
+                request_id
+            ].get_start_of_function_call_token()
 
             # Get the suffix (whatever text after the start_token)
             suffix = prompt_str[
@@ -488,7 +466,10 @@ class _AsyncLLMEngine(LLMEngine):
             output_token_ids = (
                 seq_group_metadata_list[i].seq_data[seq_data_id].output_token_ids
             )
-            if prompt_template_version == "v1" and len(output_token_ids) > 0:
+            if (
+                self.prompt_template_classes[request_id].version == "v1"
+                and len(output_token_ids) > 0
+            ):
                 output_token_ids = (
                     output_token_ids[1:]
                     if output_token_ids[0] == 32005
@@ -498,14 +479,12 @@ class _AsyncLLMEngine(LLMEngine):
             # Check whether to apply grammar sampling
             if start_token in prompt_str and self.check_to_sample(
                 suffix=suffix,
-                prompt_template_version=prompt_template_version,
                 request_id=request_id,
             ):
                 grammar_sampled_token_id = self.sample(
                     delta_token_ids=delta_token_id_by_logprobs,
                     output_token_ids=output_token_ids,
                     suffix=suffix,
-                    prompt_template_version=prompt_template_version,
                     request_id=request_id,
                 )
 
@@ -523,25 +502,22 @@ class _AsyncLLMEngine(LLMEngine):
             # /parameter name as prefix
             elif self.check_end_of_sampling(
                 suffix=suffix,
-                prompt_template_version=prompt_template_version,
                 request_id=request_id,
             ):
                 # Check if the model is at parameter generation stage or function generation stage
-                if (prompt_template_version == "v1" and ":\n{" in suffix) or (
-                    prompt_template_version == "v2" and "\n<|content|> {" in suffix
+                if (
+                    self.prompt_template_classes[request_id].fn_param_sep_token
+                    in suffix
                 ):
-                    if output[-1].samples[-1].output_token != 1264:  # '":'
-                        output[-1].samples[-1].output_token = 1264
+                    param_stop_token_id = self.prompt_template_classes[
+                        request_id
+                    ].get_stopping_token(stage="parameter")
+                    if output[-1].samples[-1].output_token != param_stop_token_id:
+                        output[-1].samples[-1].output_token = param_stop_token_id
                 else:
-                    if prompt_template_version == "v1":
-                        # encoding ":" will get 714 instead which has a preceding whitespace " "
-                        # Thus, directly using ":" without any whitespace here
-                        output[i].samples[-1].output_token = 28747
-                    else:
-                        stopping_token = "\n"
-                        output[i].samples[-1].output_token = self.tokenizer.encode(
-                            stopping_token, add_special_tokens=False
-                        )[-1]
+                    output[i].samples[-1].output_token = self.prompt_template_classes[
+                        request_id
+                    ].get_stopping_token(stage="function")
 
         return self._process_model_outputs(output, scheduler_outputs) + ignored
 
@@ -753,7 +729,7 @@ class AsyncLLMEngine:
         request_id: str,
         prompt_token_ids: Optional[List[int]] = None,
         tools_or_functions: Optional[List[dict]] = None,
-        prompt_template_version: str = "v2",
+        prompt_template_cls: Optional[Any] = None,
     ) -> RequestOutput:
         """Generate outputs for a request.
 
@@ -778,11 +754,11 @@ class AsyncLLMEngine:
         arrival_time = time.monotonic()
 
         # Initialize the request_id entry of self.engine.tools_or_functions
-        # and prompt_template_version at the start of generate method
+        # and prompt_template_classes at the start of generate method
         self.engine.tools_or_functions[request_id] = [
             tool_or_function for tool_or_function in tools_or_functions
         ]
-        self.engine.prompt_template_versions[request_id] = prompt_template_version
+        self.engine.prompt_template_classes[request_id] = prompt_template_cls
 
         try:
             stream = await self.add_request(
@@ -802,15 +778,15 @@ class AsyncLLMEngine:
 
             # Delete request_id from self.engine.tools_or_functions before raising error
             del self.engine.tools_or_functions[request_id]
-            # Delete request_id from self.engine.prompt_template_versions before raising error
-            del self.engine.prompt_template_versions[request_id]
+            # Delete request_id from self.engine.prompt_template_classes before raising error
+            del self.engine.prompt_template_classes[request_id]
 
             raise e
 
         # Delete the request_id from self.engine.tools_or_functions before finishing the request
         del self.engine.tools_or_functions[request_id]
-        # Delete the request_id from self.engine.prompt_template_versions before finishing the request
-        del self.engine.prompt_template_versions[request_id]
+        # Delete the request_id from self.engine.prompt_template_classes before finishing the request
+        del self.engine.prompt_template_classes[request_id]
 
     async def abort(self, request_id: str) -> None:
         """Abort a request.

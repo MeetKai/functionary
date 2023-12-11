@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.prompt_template.base_template import PromptTemplate
 
@@ -11,6 +11,8 @@ class PromptTemplateV1(PromptTemplate):
     end_function = "<|END_OF_FUNCTION_RESULT|>"
     end_function_call = "<|END_OF_FUNCTION_CALL|>"
     version = "v1"
+    # This token splits between function name and parameters
+    fn_param_sep_token = ":\n{"
 
     def get_end_token_from_message(self, message: Dict) -> str:
         """this function is used for getting the end token for each message.
@@ -36,6 +38,15 @@ class PromptTemplateV1(PromptTemplate):
                 return self.end_function_call
             else:
                 return self.end_assistant
+
+    def get_start_of_function_call_token(self) -> str:
+        return self.start_function
+
+    def get_stopping_token(self, stage: Literal["function", "parameter"]) -> int:
+        if stage == "function":
+            return 1264  # '":' token
+        else:
+            return 28747  # ':' token
 
     def get_additional_tokens(self) -> List[str]:
         return [

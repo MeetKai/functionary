@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.schema import generate_schema_from_functions
 
@@ -10,6 +10,25 @@ SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence
 
 class PromptTemplate:
     _instance = None
+
+    @abstractmethod
+    def get_start_of_function_call_token(self) -> str:
+        """returns a token that indicates the start of a function call in the prompt template
+        Returns:
+            str: a string token
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_stopping_token(self, stage: Literal["function", "parameter"]) -> int:
+        """returns a token id which stops function/parameter name generation
+        e.g.: `"get_current_weather` with v1 prompt template -> returns id = 28747 (':' token)
+        so the generation gets forced towards `"get_current_weather:\n{...`
+        Args:
+            stage (str): Whether to get function name or parameter name stopping token
+        Returns:
+            int: integer token id
+        """
 
     @abstractmethod
     def get_additional_tokens(self) -> List[str]:

@@ -1,6 +1,6 @@
 import random
 import string
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.prompt_template.base_template import PromptTemplate
 
@@ -11,6 +11,17 @@ class PromptTemplateV2(PromptTemplate):
     content_token = "<|content|>"
     stop_token = "<|stop|>"
     version = "v2"
+    # This token splits between function name and parameters
+    fn_param_sep_token = "\n<|content|> {"
+
+    def get_start_of_function_call_token(self) -> str:
+        return self.recipient_token
+
+    def get_stopping_token(self, stage: Literal["function", "parameter"]) -> int:
+        if stage == "function":
+            return 1264  # '":' token
+        else:
+            return 13  # '\n' token
 
     def get_additional_tokens(self) -> List[str]:
         return [

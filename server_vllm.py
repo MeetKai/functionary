@@ -280,7 +280,7 @@ async def create_chat_completion(raw_request: Request):
             request_id=request_id,
             prompt_token_ids=prompt_token_ids,
             tools_or_functions=tools_or_functions,
-            prompt_template_version=prompt_template.version,
+            prompt_template_cls=prompt_template,
         )
     else:
         result_generator = engine.generate(
