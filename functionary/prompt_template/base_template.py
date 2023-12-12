@@ -29,6 +29,27 @@ class PromptTemplate:
         Returns:
             int: integer token id
         """
+        raise NotImplementedError
+
+    @abstractmethod
+    def update_grammar_sampling_gen_state(
+        self,
+        gen_state: Dict,
+        new_token_id: int,
+        options: Optional[List],
+        tokenizer: Any,
+    ) -> Dict:
+        """Receives a generation state, updates and returns it. This is only used when
+        grammar sampling is enabled in inference. This functions parses the generated
+        tokens and identifies the stage of generation (pre-function, function, parameter,
+        etc.)
+        Args:
+            gen_state (Dict): The current generation state
+            new_token_id (int): The token id of the newly sampled token
+            options (List): All available function/param names depending on the stage of gen_state
+        Returns:
+            dict: The updated gen_state
+        """
 
     @abstractmethod
     def get_additional_tokens(self) -> List[str]:
