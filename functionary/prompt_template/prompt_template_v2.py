@@ -46,6 +46,7 @@ class PromptTemplateV2(PromptTemplate):
                     "func_name": "",
                     "param_names": [],
                 }
+                gen_state["stage"] = "function"
         elif gen_state["stage"] == "function":
             gen_state["func_name"] = gen_state["curr_text"].rstrip()
 

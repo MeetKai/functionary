@@ -371,12 +371,6 @@ class _AsyncLLMEngine(LLMEngine):
         for i in range(len(output)):
             # Get all the required variables for grammar sampling
             request_id = seq_group_metadata_list[i].request_id
-            seq_data_id = list(seq_group_metadata_list[i].seq_data.keys())[0]
-            prompt_token_ids = (
-                seq_group_metadata_list[i].seq_data[seq_data_id].prompt_token_ids
-                + seq_group_metadata_list[i].seq_data[seq_data_id].output_token_ids
-            )
-            prompt_str = self.tokenizer.decode(prompt_token_ids)
 
             model_sampled_token_id = output[i].samples[-1].output_token
             delta_token_id_by_logprobs = list(output[i].samples[-1].logprobs.keys())
