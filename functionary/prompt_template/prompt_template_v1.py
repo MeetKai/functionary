@@ -60,10 +60,10 @@ class PromptTemplateV1(PromptTemplate):
         gen_state["curr_tokens"].append(new_token_id)
         gen_state["curr_text"] = tokenizer.decode(gen_state["curr_tokens"])
 
-        # {func_name}\n<content|>{param_names}\n<|from|> assistant\n<|recipient|>
+        # "assistant:\n{content}\n{self.start_function}{function}:\n{arguments}\n"
         if gen_state["stage"] == "pre-function":
             # Check if the new state is in "function" stage
-            if gen_state["curr_text"].endswith("\n<|from|> assistant\n<|recipient|>"):
+            if gen_state["curr_text"].endswith(self.start_function):
                 gen_state = {
                     "stage": "function",
                     "curr_tokens": [],
@@ -76,7 +76,7 @@ class PromptTemplateV1(PromptTemplate):
             gen_state["func_name"] = gen_state["curr_text"].rstrip()
 
             # Check if the new state is in "pre-parameter" stage
-            if gen_state["curr_text"].endswith("\n") or (
+            if gen_state["curr_text"].endswith(":") or (
                 sum([gen_state["curr_text"] == option for option in options]) == 1
                 and sum(
                     [option.startswith(gen_state["curr_text"]) for option in options]

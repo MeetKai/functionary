@@ -274,9 +274,8 @@ class _AsyncLLMEngine(LLMEngine):
         # No grammar sampling needed if gen_state not in "function" or "parameter-name"
         # stages. Just return the model_sampled_token_id
         else:
-            return model_sampled_token_id, self.tokenizer.decode(
-                [model_sampled_token_id], skip_special_tokens=True
-            )
+            model_sampled_token = self.tokenizer.decode([model_sampled_token_id])
+            return model_sampled_token_id, model_sampled_token
 
         # Loop through the list of token ids sorted in descending order
         # Form a mask made up of booleans where the index of the mask ==
@@ -293,8 +292,6 @@ class _AsyncLLMEngine(LLMEngine):
                 new_curr_tokens_id = gen_state["curr_tokens"] + [sampled_token_ind]
                 new_curr_tokens = self.tokenizer.decode(new_curr_tokens_id)
 
-                # get_current_weather
-                # get_current_weather_and_time
                 options_mask = [
                     True if option.startswith(new_curr_tokens.lstrip(" ")) else False
                     for option in options
@@ -381,6 +378,8 @@ class _AsyncLLMEngine(LLMEngine):
                 delta_token_ids=delta_token_id_by_logprobs,
                 model_sampled_token_id=model_sampled_token_id,
             )
+
+            breakpoint()
 
             # Update the output token to vllm with the newly sampled one
             output[i].samples[-1].output_token = grammar_sampled_token_id
