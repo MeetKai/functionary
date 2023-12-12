@@ -47,6 +47,7 @@ class PromptTemplate:
             gen_state (Dict): The current generation state
             new_token_id (int): The token id of the newly sampled token
             options (List): All available function/param names depending on the stage of gen_state
+            tokenizer (Any): The tokenizer class passed in from Transformers or vLLM
         Returns:
             dict: The updated gen_state
         """

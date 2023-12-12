@@ -196,6 +196,7 @@ class _AsyncLLMEngine(LLMEngine):
         """
         # Prompt template v2 directly begins with "function" stage while
         # Prompt template v1 needs to generate <|START_OF_FUNCTION_CALL|> first
+        # Future versions are assumed to begin directly with "function" stage
         self.gen_states[request_id] = {
             "stage": "function"
             if self.prompt_templates[request_id].version not in ["v1"]
@@ -207,7 +208,11 @@ class _AsyncLLMEngine(LLMEngine):
         }
 
     def update_gen_state(self, request_id, new_token_id):
-        """This function updates the generation state"""
+        """This function updates the generation state by calling the respective
+        prompt_template.update_grammar_sampling_gen_state class. Each prompt
+        template has its own way of parsing the generation to figure out the
+        current state of generation.
+        """
         gen_state = self.gen_states[request_id]
         prompt_template = self.prompt_templates[request_id]
 
@@ -217,11 +222,7 @@ class _AsyncLLMEngine(LLMEngine):
                 tool_or_func["name"]
                 for tool_or_func in self.tools_or_functions[request_id]
             ]
-        elif gen_state["stage"] in [
-            "pre-parameter",
-            "parameter-name",
-            "parameter-value",
-        ]:
+        else:
             func_name = gen_state["func_name"]
             for tool_or_func in self.tools_or_functions[request_id]:
                 if tool_or_func["name"] == func_name:
@@ -251,13 +252,12 @@ class _AsyncLLMEngine(LLMEngine):
         It replaces the output token if the grammar-sampled token is different
         from the model-sampled token
         """
-        # Get the generation state and prompt_template
         gen_state = self.gen_states[request_id]
         prompt_template = self.prompt_templates[request_id]
 
-        # Only perform grammar sampling if the gen_state is one of
-        # ["function", "parameter-name"]
+        # Only perform grammar sampling if the gen_state is one of ["function", "parameter-name"]
         if gen_state["stage"] == "function":
+            # Get the list of functions
             options = [
                 tool_or_func["name"]
                 for tool_or_func in self.tools_or_functions[request_id]
@@ -297,11 +297,10 @@ class _AsyncLLMEngine(LLMEngine):
                     for option in options
                 ]
 
-                # The grammar-sampled token is valid if any element in options_mask
-                # is True (The token helps in forming that function name).
-                # - In case of two fns having common prefixes (e.g.: get_weather and get_weather_and_time),
-                # check whether the sampled token is in fn_param_sep_token to know if the shorter or longer
-                # function name is preferred by the model.
+                # - In case of two fns having common prefixes (e.g.: get_weather and
+                # get_weather_and_time), we need to iterate one more time to see if
+                # the next sampled token is in fn_param_sep_token to know if the shorter
+                # or longer function name is preferred by the model.
                 # - Reject the whitespace (" ") and empty ("") tokens
                 if (
                     prompt_template.fn_param_sep_token.startswith(sampled_token)
@@ -334,6 +333,8 @@ class _AsyncLLMEngine(LLMEngine):
                     else:
                         options_mask.append(False)
 
+                # Same logic as function name, except that we check whether the token
+                # is a stopping token for parameter name generation.
                 if (
                     sampled_token_ind
                     == prompt_template.get_stopping_token(stage="parameter")
@@ -378,8 +379,6 @@ class _AsyncLLMEngine(LLMEngine):
                 delta_token_ids=delta_token_id_by_logprobs,
                 model_sampled_token_id=model_sampled_token_id,
             )
-
-            breakpoint()
 
             # Update the output token to vllm with the newly sampled one
             output[i].samples[-1].output_token = grammar_sampled_token_id
