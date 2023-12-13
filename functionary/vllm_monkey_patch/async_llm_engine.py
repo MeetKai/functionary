@@ -207,141 +207,6 @@ class _AsyncLLMEngine(LLMEngine):
             "param_names": [],
         }
 
-    def update_gen_state(self, request_id, new_token_id):
-        """This function updates the generation state by calling the respective
-        prompt_template.update_grammar_sampling_gen_state class. Each prompt
-        template has its own way of parsing the generation to figure out the
-        current state of generation.
-        """
-        gen_state = self.gen_states[request_id]
-        prompt_template = self.prompt_templates[request_id]
-
-        # Form the functions/parameters options
-        if gen_state["stage"] in ["pre-function", "function"]:
-            options = [
-                tool_or_func["name"]
-                for tool_or_func in self.tools_or_functions[request_id]
-            ]
-        else:
-            func_name = gen_state["func_name"]
-            for tool_or_func in self.tools_or_functions[request_id]:
-                if tool_or_func["name"] == func_name:
-                    options = list(tool_or_func["parameters"]["properties"].keys())
-                    break
-
-        # Update the gen_state
-        self.gen_states[request_id] = prompt_template.update_grammar_sampling_gen_state(
-            gen_state=gen_state,
-            new_token_id=new_token_id,
-            options=options,
-            tokenizer=self.tokenizer,
-        )
-
-    def sample(
-        self,
-        request_id,
-        delta_token_ids,
-        model_sampled_token_id,
-    ):
-        """Applies grammar-sampling to the token generation and returns a
-        newly sampled token.
-
-        This function checks whether the model-sampled token helps towards
-        forming one of the function names or parameter names. It loops through
-        a list of token ids sorted in descending order by the log probabilities.
-        It replaces the output token if the grammar-sampled token is different
-        from the model-sampled token
-        """
-        gen_state = self.gen_states[request_id]
-        prompt_template = self.prompt_templates[request_id]
-
-        # Only perform grammar sampling if the gen_state is one of ["function", "parameter-name"]
-        if gen_state["stage"] == "function":
-            # Get the list of functions
-            options = [
-                tool_or_func["name"]
-                for tool_or_func in self.tools_or_functions[request_id]
-            ]
-            if self.prompt_templates[request_id].version not in ["v1"]:
-                options.append("all")
-        elif gen_state["stage"] == "parameter-name":
-            # Get the list of parameters for the curr_fn_name
-            curr_fn_name = gen_state["func_name"]
-            for tool_or_func in self.tools_or_functions[request_id]:
-                if tool_or_func["name"] == curr_fn_name:
-                    options = list(tool_or_func["parameters"]["properties"].keys())
-                    break
-        # No grammar sampling needed if gen_state not in "function" or "parameter-name"
-        # stages. Just return the model_sampled_token_id
-        else:
-            model_sampled_token = self.tokenizer.decode([model_sampled_token_id])
-            return model_sampled_token_id, model_sampled_token
-
-        # Loop through the list of token ids sorted in descending order
-        # Form a mask made up of booleans where the index of the mask ==
-        # index of function/parameter name in func_options/parameter_options.
-        # The element is True if the sampled_token helps in forming the
-        # function/parameter name. Else, False.
-        for i, sampled_token_ind in enumerate(delta_token_ids):
-            sampled_token = self.tokenizer.decode(
-                [sampled_token_ind], add_special_tokens=False
-            )
-
-            if gen_state["stage"] == "function":
-                # Form the function name with the current sampled token id
-                new_curr_tokens_id = gen_state["curr_tokens"] + [sampled_token_ind]
-                new_curr_tokens = self.tokenizer.decode(new_curr_tokens_id)
-
-                options_mask = [
-                    True if option.startswith(new_curr_tokens.lstrip(" ")) else False
-                    for option in options
-                ]
-
-                # - In case of two fns having common prefixes (e.g.: get_weather and
-                # get_weather_and_time), we need to iterate one more time to see if
-                # the next sampled token is in fn_param_sep_token to know if the shorter
-                # or longer function name is preferred by the model.
-                # - Reject the whitespace (" ") and empty ("") tokens
-                if (
-                    prompt_template.fn_param_sep_token.startswith(sampled_token)
-                    or any(options_mask)
-                ) and sampled_token.strip(" ") != "":
-                    return sampled_token_ind, sampled_token
-            else:
-                # Mask away those wellformed parameter names while creating options_mask
-                wellformed_params = gen_state["param_names"]
-
-                # Form the parameter name with the current sampled token id
-                if len(wellformed_params) == 0:
-                    curr_text = gen_state["curr_text"][
-                        gen_state["curr_text"].index(prompt_template.fn_param_sep_token)
-                        + len(prompt_template.fn_param_sep_token + '"') :
-                    ]
-                else:
-                    curr_text = gen_state["curr_text"][
-                        gen_state["curr_text"].rfind('"') + 1 :
-                    ]
-
-                new_curr_tokens = curr_text + self.tokenizer.decode([sampled_token_ind])
-
-                options_mask = []
-                for option in options:
-                    if option not in wellformed_params and option.startswith(
-                        new_curr_tokens
-                    ):
-                        options_mask.append(True)
-                    else:
-                        options_mask.append(False)
-
-                # Same logic as function name, except that we check whether the token
-                # is a stopping token for parameter name generation.
-                if (
-                    sampled_token_ind
-                    == prompt_template.get_stopping_token(stage="parameter")
-                    or any(options_mask)
-                ) and sampled_token.strip(" ") != "":
-                    return sampled_token_ind, sampled_token
-
     async def step_async(self) -> List[RequestOutput]:
         """Performs one decoding iteration and returns newly generated results.
         The workers are ran asynchronously if possible.
@@ -369,24 +234,39 @@ class _AsyncLLMEngine(LLMEngine):
         for i in range(len(output)):
             # Get all the required variables for grammar sampling
             request_id = seq_group_metadata_list[i].request_id
-
             model_sampled_token_id = output[i].samples[-1].output_token
             delta_token_id_by_logprobs = list(output[i].samples[-1].logprobs.keys())
+            prompt_template = self.prompt_templates[request_id]
+            gen_state = self.gen_states[request_id]
 
-            # Perform grammar sampling if needed
-            grammar_sampled_token_id, grammar_sampled_token = self.sample(
-                request_id=request_id,
+            # Form the functions/parameters options
+            if gen_state["stage"] in ["pre-function", "function"]:
+                options = [
+                    tool_or_func["name"]
+                    for tool_or_func in self.tools_or_functions[request_id]
+                ]
+            else:
+                func_name = gen_state["func_name"]
+                for tool_or_func in self.tools_or_functions[request_id]:
+                    if tool_or_func["name"] == func_name:
+                        options = list(tool_or_func["parameters"]["properties"].keys())
+                        break
+
+            # Perform grammar sampling if needed and update the gen_state before returning
+            (
+                grammar_sampled_token_id,
+                grammar_sampled_token,
+                self.gen_states[request_id],
+            ) = prompt_template.grammar_sample(
+                gen_state=gen_state,
+                options=options,
                 delta_token_ids=delta_token_id_by_logprobs,
                 model_sampled_token_id=model_sampled_token_id,
+                tokenizer=self.tokenizer,
             )
 
             # Update the output token to vllm with the newly sampled one
             output[i].samples[-1].output_token = grammar_sampled_token_id
-
-            # Update gen_state
-            self.update_gen_state(
-                request_id=request_id, new_token_id=grammar_sampled_token_id
-            )
 
         return self._process_model_outputs(output, scheduler_outputs) + ignored
 
@@ -625,7 +505,8 @@ class AsyncLLMEngine:
         # Initialize the request_id entry of self.engine.tools_or_functions
         # and prompt_templates at the start of generate method
         self.engine.tools_or_functions[request_id] = [
-            tool_or_function for tool_or_function in tools_or_functions
+            tool_or_func if "function" not in tool_or_func else tool_or_func["function"]
+            for tool_or_func in tools_or_functions
         ]
         self.engine.prompt_templates[request_id] = prompt_template_cls
 

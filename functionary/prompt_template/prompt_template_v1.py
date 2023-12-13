@@ -43,11 +43,13 @@ class PromptTemplateV1(PromptTemplate):
     def get_start_of_function_call_token(self) -> str:
         return self.start_function
 
-    def get_stopping_token(self, stage: Literal["function", "parameter"]) -> int:
+    def get_stop_token_for_function_parameter(
+        self, stage: Literal["function", "parameter"]
+    ) -> int:
         if stage == "function":
-            return 28747  # ':' token
+            return ":"  # 28747
         else:
-            return 1264  # '":' token
+            return '":'  # 1264
 
     def get_additional_tokens(self) -> List[str]:
         return [
