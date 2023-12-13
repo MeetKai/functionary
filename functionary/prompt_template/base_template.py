@@ -44,6 +44,25 @@ class PromptTemplate:
         """
         return []
 
+    @abstractmethod
+    def initialize_grammar_sampling_gen_state(self) -> Dict:
+        """initializes and returns a new generation state. Each template version may be initialized
+        at different starting stage
+        Returns:
+            dict: the gen_state. It contains the following:
+            - stage: one of the following:
+              - pre-function: the generation prior to function name generation
+              - function: when the model is generating a function name
+              - pre-parameter: when the model is generating the part between function name and parameter
+              - parameter-name: when the model is generating a parameter name
+              - parameter-value: when the model is generating a parameter value
+            - curr_tokens: all the tokens for the current stage being generated
+            - curr_text: curr_tokens but in string text form
+            - func_name: the function name, if any
+            - param_names: the parameters names, if any
+        """
+        raise NotImplementedError
+
     def update_grammar_sampling_gen_state(
         self,
         gen_state: Dict,
@@ -53,10 +72,20 @@ class PromptTemplate:
     ) -> Dict:
         """Receives a generation state, updates and returns it. This is only used when
         grammar sampling is enabled in inference. This functions parses the generated
-        tokens and identifies the stage of generation (pre-function, function, parameter,
+        tokens and identifies the stage of generation (pre-function, function, parameter-name,
         etc.)
         Args:
-            gen_state (Dict): The current generation state
+            gen_state (Dict): The current generation state. It contains the following:
+            - stage: one of the following:
+              - pre-function: the generation prior to function name generation
+              - function: when the model is generating a function name
+              - pre-parameter: when the model is generating the part between function name and parameter
+              - parameter-name: when the model is generating a parameter name
+              - parameter-value: when the model is generating a parameter value
+            - curr_tokens: all the tokens for the current stage being generated
+            - curr_text: curr_tokens but in string text form
+            - func_name: the function name, if any
+            - param_names: the parameters names, if any
             new_token_id (int): The token id of the newly sampled token
             options (List): All available function/param names depending on the stage of gen_state
             tokenizer (Any): The tokenizer class passed in from Transformers or vLLM
@@ -135,24 +164,25 @@ class PromptTemplate:
 
             # Check if the current state can be converted to json, it means the
             # new state is back to "parameter-name" stage
-            try:
-                _ = json.loads(
-                    '{"'
-                    + gen_state["param_names"][-1]
-                    + gen_state["curr_text"].removesuffix(', "')
-                    + "}"
-                )
-                gen_state["stage"] = "parameter-name"
-                gen_state["curr_text"], gen_state["curr_tokens"] = "", []
-            except:
-                pass
+            if gen_state["curr_text"].endswith(', "'):
+                try:
+                    _ = json.loads(
+                        '{"'
+                        + gen_state["param_names"][-1]
+                        + gen_state["curr_text"].removesuffix(', "')
+                        + "}"
+                    )
+                    gen_state["stage"] = "parameter-name"
+                    gen_state["curr_text"], gen_state["curr_tokens"] = "", []
+                except:
+                    pass
 
         return gen_state
 
     def grammar_sample(
         self,
         gen_state: Dict,
-        options: List,
+        tools_or_functions: List,
         delta_token_ids: List,
         model_sampled_token_id: int,
         tokenizer: Any,
@@ -175,6 +205,16 @@ class PromptTemplate:
             Tuple[int, str]: Tuple of grammar-sampled token id and grammar-sampled token in str format
         """
         grammar_sampled_token_id, grammar_sampled_token = None, None
+
+        # Form the functions/parameters options
+        if gen_state["stage"] in ["pre-function", "function"]:
+            options = [tool_or_func["name"] for tool_or_func in tools_or_functions]
+        else:
+            func_name = gen_state["func_name"]
+            for tool_or_func in tools_or_functions:
+                if tool_or_func["name"] == func_name:
+                    options = list(tool_or_func["parameters"]["properties"].keys())
+                    break
         # Assume prompt template versions > 1 have "all" in function options
         # Subjected to changes in future versions
         # Concatenate the list of predefined function names in the respective prompt
@@ -227,9 +267,8 @@ class PromptTemplate:
                     wellformed_params = gen_state["param_names"]
 
                     # Form the parameter name with the current sampled token id
-                    new_curr_tokens = gen_state["curr_text"] + tokenizer.decode(
-                        [sampled_token_ind]
-                    )
+                    new_curr_tokens_id = gen_state["curr_tokens"] + [sampled_token_ind]
+                    new_curr_tokens = tokenizer.decode(new_curr_tokens_id)
 
                     options_mask = []
                     for option in options:

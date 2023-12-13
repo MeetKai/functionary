@@ -184,28 +184,11 @@ class _AsyncLLMEngine(LLMEngine):
     # the following information:
     # - stage: one of the following:
     # ["pre-function", "function", "pre-parameter", "parameter-name", "parameter-value"]
-    # - curr_tokens: all the tokens for the current function call being generated
+    # - curr_tokens: all the tokens for the current stage being generated
     # - curr_text: curr_tokens but in string text form
     # - func_name: the function name, if any
     # - param_names: the parameters names, if any
     gen_states: dict = {}
-
-    def initialize_gen_state(self, request_id):
-        """This function initializes a new generation state if the request_id
-        is not found in self.gen_states
-        """
-        # Prompt template v2 directly begins with "function" stage while
-        # Prompt template v1 needs to generate <|START_OF_FUNCTION_CALL|> first
-        # Future versions are assumed to begin directly with "function" stage
-        self.gen_states[request_id] = {
-            "stage": "function"
-            if self.prompt_templates[request_id].version not in ["v1"]
-            else "pre-function",
-            "curr_tokens": [],
-            "curr_text": "",
-            "func_name": "",
-            "param_names": [],
-        }
 
     async def step_async(self) -> List[RequestOutput]:
         """Performs one decoding iteration and returns newly generated results.
@@ -238,19 +221,7 @@ class _AsyncLLMEngine(LLMEngine):
             delta_token_id_by_logprobs = list(output[i].samples[-1].logprobs.keys())
             prompt_template = self.prompt_templates[request_id]
             gen_state = self.gen_states[request_id]
-
-            # Form the functions/parameters options
-            if gen_state["stage"] in ["pre-function", "function"]:
-                options = [
-                    tool_or_func["name"]
-                    for tool_or_func in self.tools_or_functions[request_id]
-                ]
-            else:
-                func_name = gen_state["func_name"]
-                for tool_or_func in self.tools_or_functions[request_id]:
-                    if tool_or_func["name"] == func_name:
-                        options = list(tool_or_func["parameters"]["properties"].keys())
-                        break
+            tools_or_functions = self.tools_or_functions[request_id]
 
             # Perform grammar sampling if needed and update the gen_state before returning
             (
@@ -259,7 +230,7 @@ class _AsyncLLMEngine(LLMEngine):
                 self.gen_states[request_id],
             ) = prompt_template.grammar_sample(
                 gen_state=gen_state,
-                options=options,
+                tools_or_functions=tools_or_functions,
                 delta_token_ids=delta_token_id_by_logprobs,
                 model_sampled_token_id=model_sampled_token_id,
                 tokenizer=self.tokenizer,
@@ -511,7 +482,9 @@ class AsyncLLMEngine:
         self.engine.prompt_templates[request_id] = prompt_template_cls
 
         # Initialize the request_id entry of self.gen_states
-        self.engine.initialize_gen_state(request_id=request_id)
+        self.engine.gen_states[request_id] = self.engine.prompt_templates[
+            request_id
+        ].initialize_grammar_sampling_gen_state()
 
         try:
             stream = await self.add_request(

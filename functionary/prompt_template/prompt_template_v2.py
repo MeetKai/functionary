@@ -29,6 +29,15 @@ class PromptTemplateV2(PromptTemplate):
     def get_predefined_function_names(self) -> List[str]:
         return ["all"]
 
+    def initialize_grammar_sampling_gen_state(self) -> Dict:
+        return {
+            "stage": "function",
+            "curr_tokens": [],
+            "curr_text": "",
+            "func_name": "",
+            "param_names": [],
+        }
+
     def get_additional_tokens(self) -> List[str]:
         return [
             self.from_token,

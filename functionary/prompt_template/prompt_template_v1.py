@@ -51,6 +51,15 @@ class PromptTemplateV1(PromptTemplate):
         else:
             return '":'  # 1264
 
+    def initialize_grammar_sampling_gen_state(self) -> Dict:
+        return {
+            "stage": "pre-function",
+            "curr_tokens": [],
+            "curr_text": "",
+            "func_name": "",
+            "param_names": [],
+        }
+
     def get_additional_tokens(self) -> List[str]:
         return [
             self.start_function,
