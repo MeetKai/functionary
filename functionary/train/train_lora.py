@@ -74,6 +74,17 @@ class TrainingArguments(transformers.TrainingArguments):
     report_to: str = field(
         default="wandb", metadata={"help": "Report logging to wandb"}
     )
+    
+    keep_assistant_prefix: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to mask the assistant prefix `<|from|>assistant\n<|recipient|>` during training"
+        },
+    )
+
+    prompt_template_version: str = field(
+        default="v2", metadata={"help": "choose prompt template to use for training"}
+    )
 
 
 @dataclass
@@ -343,6 +354,7 @@ def initialize_tokenizer(
     model_name_or_path: str,
     model_max_length: int,
     cache_dir: str,
+    prompt_template_version: str
 ):
     """Initialize tokenizer and add special tokens, resizing vocab and embedding"""
     # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
@@ -355,7 +367,9 @@ def initialize_tokenizer(
 
     # Add special tokens
     tokenizer.pad_token = tokenizer.unk_token
-    prompt_template = get_prompt_template_by_version("v2")
+    prompt_template = prompt_template = get_prompt_template_by_version(
+        prompt_template_version
+    )
     special_tokens = {
         "additional_special_tokens": prompt_template.get_additional_tokens()
     }
@@ -407,17 +421,21 @@ def train():
         model_args.model_name_or_path,
         training_args.model_max_length,
         training_args.cache_dir,
+        training_args.prompt_template_version
     )
 
     assert data_args.train_data_path is not None, "Please provide a training data file."
 
     train_dataset = read_dataset(data_args, training_args, tokenizer, "train")
-    # print_some_examples(train_dataset, tokenizer)
+    print_rank0("****** Examples from train_dataset *****")
+    print_some_examples(train_dataset, tokenizer)
     print_rank0("final train size: ", len(train_dataset))
 
     if training_args.do_eval:
         eval_dataset = read_dataset(data_args, training_args, tokenizer, "eval")
         print_rank0("final eval size: ", len(eval_dataset))
+        print_rank0("****** Examples from eval_dataset *****")
+        print_some_examples(eval_dataset, tokenizer)
 
     print_rank0("tokenizer.model_max_length: ", tokenizer.model_max_length)
 
