@@ -208,6 +208,7 @@ def load_model_with_rope_scaling(
         cache_dir=training_args.cache_dir,
         device_map=get_device_map(training_args, lora_args),
         use_flash_attention_2=True,
+        torch_dtype=compute_dtype,
         quantization_config=BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_use_double_quant=True,
