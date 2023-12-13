@@ -24,11 +24,11 @@ from transformers import (
     LlamaTokenizerFast,
     Trainer,
     deepspeed,
+    AutoConfig,
 )
 
 from functionary.prompt_template import get_prompt_template_by_version
 from functionary.train.custom_datasets import read_dataset
-from functionary.train.monkey_patch.llama_attention_mask_monkey_patch import LlamaForCausalLM
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
@@ -171,28 +171,37 @@ def load_model_with_rope_scaling(
         else (torch.bfloat16 if training_args.bf16 else torch.float32)
     )
 
-    use_flash_attention_2 = True
+    model_class = transformers.AutoModelForCausalLM
     if data_args.packing:
-        print_rank0("do not use flash attention because of using packing")
-        use_flash_attention_2 = (
-            False  # currently packing is only possible when use_flash_attention_2=False
-        )
-    if data_args.packing:  # have to monkey-patch
-        model_class = LlamaForCausalLM
-    else:
-        model_class = transformers.AutoModelForCausalLM
+        print("Packing=True, using monkey-patched")
+        config = AutoConfig.from_pretrained(model_args.model_name_or_path)
+        config_type = type(config).__name__.lower()
+        if "mistral" in config_type:
+            from functionary.train.monkey_patch.mistral_monkey_patch import (
+                MistralForCausalLM,
+            )
+
+            print("using Monkey-patched Mistral")
+            model_class = MistralForCausalLM
+        if "llama" in config_type:  # llama
+            from functionary.train.monkey_patch.llama_monkey_patch import (
+                LlamaForCausalLM,
+            )
+
+            print("using Monkey-patched Llama")
+            model_class = LlamaForCausalLM
 
     model = model_class.from_pretrained(
         model_args.model_name_or_path,
         config=config,
         cache_dir=training_args.cache_dir,
         device_map=get_device_map(training_args, lora_args),
-        use_flash_attention_2=use_flash_attention_2,
+        use_flash_attention_2=True,
         quantization_config=BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
-            use_flash_attention_2=use_flash_attention_2,
+            use_flash_attention_2=True,
             bnb_4bit_compute_dtype=compute_dtype,
         )
         if lora_args.q_lora
@@ -347,7 +356,9 @@ def initialize_tokenizer(
     # Add special tokens
     tokenizer.pad_token = tokenizer.unk_token
     prompt_template = get_prompt_template_by_version("v2")
-    special_tokens = {"additional_special_tokens": prompt_template.get_additional_tokens()}
+    special_tokens = {
+        "additional_special_tokens": prompt_template.get_additional_tokens()
+    }
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
 
     # Resize embedding

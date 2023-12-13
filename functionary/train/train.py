@@ -214,14 +214,15 @@ def train():
     if data_args.packing:
         print("Packing=True, using monkey-patched")
         config = AutoConfig.from_pretrained(model_args.model_name_or_path)
-        if "mistral" in type(config).__name__.lower():
+        config_type = type(config).__name__.lower()
+        if "mistral" in config_type:
             from functionary.train.monkey_patch.mistral_monkey_patch import (
                 MistralForCausalLM,
             )
 
             print("using Monkey-patched Mistral")
             model_class = MistralForCausalLM
-        else:  # llama
+        elif "llama" in config_type:  # llama
             from functionary.train.monkey_patch.llama_monkey_patch import (
                 LlamaForCausalLM,
             )
