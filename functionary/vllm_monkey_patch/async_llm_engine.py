@@ -218,10 +218,22 @@ class _AsyncLLMEngine(LLMEngine):
             # Get all the required variables for grammar sampling
             request_id = seq_group_metadata_list[i].request_id
             model_sampled_token_id = output[i].samples[-1].output_token
-            delta_token_id_by_logprobs = list(output[i].samples[-1].logprobs.keys())
             prompt_template = self.prompt_templates[request_id]
             gen_state = self.gen_states[request_id]
             tools_or_functions = self.tools_or_functions[request_id]
+
+            # Slot the first entry of logprobs into its original position
+            # before getting delta_token_ids_by_logprobs
+            delta_token_id_by_logprobs = list(output[i].samples[-1].logprobs.keys())
+            delta_logprobs = list(output[i].samples[-1].logprobs.values())
+            chosen_token_id = delta_token_id_by_logprobs[0]
+            chosen_logprob = delta_logprobs[0]
+            delta_token_id_by_logprobs.pop(0)
+            delta_logprobs.pop(0)
+            for j, logprob in enumerate(delta_logprobs):
+                if chosen_logprob >= logprob:
+                    delta_token_id_by_logprobs.insert(j, chosen_token_id)
+                    break
 
             # Perform grammar sampling if needed and update the gen_state before returning
             (
