@@ -207,7 +207,7 @@ def train():
     model_class = transformers.AutoModelForCausalLM
     if data_args.packing:
         print("Packing=True, using monkey-patched MistralForCausalLM")
-        from functionary.functionary.train.monkey_patch.mistral_monkey_patch import (
+        from functionary.functionary.train.packing_monkey_patch.mistral_monkey_patch import (
             MistralForCausalLM,
         )
 
