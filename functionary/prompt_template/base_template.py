@@ -282,10 +282,14 @@ class PromptTemplate:
                     # Same logic as function name, except that we check whether the token
                     # is a stopping token for parameter name generation.
                     if (
-                        sampled_token
-                        == self.get_stop_token_for_function_parameter(stage="parameter")
+                        new_curr_tokens.endswith(
+                            self.get_stop_token_for_function_parameter(
+                                stage="parameter"
+                            )
+                        )
                         or any(options_mask)
-                    ) and sampled_token.strip(" ") != "":
+                        and sampled_token.strip(" ") != ""
+                    ):
                         grammar_sampled_token_id = sampled_token_ind
                         grammar_sampled_token = sampled_token
                         break
