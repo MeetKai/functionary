@@ -1,6 +1,6 @@
 # Packing Inputs Without Cross-Contamination Attention
 
-To speed up training, we have implemented packing without **cross-contamination attention** by monkey-patching ``MistralForCausalLM`` and ``LlamaForCausalLM``. The idea of packing is to merge/pack short inputs into a single input so the number of training data points would be reduced.
+To speed up training, we have implemented packing without **cross-contamination attention** by monkey-patching ``MistralForCausalLM``, ``LlamaForCausalLM`` and ``MixtralForCausalLM``. The idea of packing is to merge/pack short inputs into a single input so the number of training data points would be reduced.
 
 Concretely, when we pack inputs, the attention should be only within individual sequences. For example, assume that we are packing 2 inputs: packed input = [input 1] [input 2]. Tokens from **input 1** only attend to tokens from **input 1** and tokens from **input 2** only attend to tokens from **input 2**
 
@@ -24,7 +24,7 @@ Some notes:
 
 **Note that our implementation is only correct if using [Flash Attenion](https://github.com/Dao-AILab/flash-attention)**
 
-We recommend using ``transformers==4.35.0``
+We recommend using ``transformers==4.36.0``
 
 So the additional requirement is only Flash Attention:
 
@@ -32,14 +32,18 @@ So the additional requirement is only Flash Attention:
 pip install flash-attn --no-build-isolation
 ```
 
-To use, you just need to replace the ``MistralForCausalLM`` or ``LlamaForCausalLM`` with our monkey-patched versions:
+To use, you just need to replace the ``MistralForCausalLM`` or ``LlamaForCausalLM`` or ``MixtralForCausalLM`` with our monkey-patched versions:
 ```python 
 #from transformers import LlamaForCausalLM
 from llama_monkey_patch import LlamaForCausalLM
 
 #from transformers import MistralForCausalLM
 from mistral_monkey_patch import MistralForCausalLM
-model = MistralForCausalLM(model_path, ...,use_flash_attention_2=True)
+
+#from transformers import MixtralForCausalLM
+from mixtral_monkey_patch import MixtralForCausalLM
+
+model = MixtralForCausalLM(model_path, ...)
 ```
 
 ### Convert to Packed Dataset
@@ -73,7 +77,7 @@ The script will randomly select 100 items from: "tatsu-lab/alpaca" for comparing
 To run the script you need to install:
 ```shell
 # Install Dependencies
-pip install accelerate==0.23.0 transformers==4.35.0 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 deepspeed==0.11.1 typer==0.9.0
+pip install accelerate==0.23.0 transformers==4.36.0 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 deepspeed==0.11.1 typer==0.9.0
 
 pip install flash-attn==2.3.2 --no-build-isolation
 ```
@@ -81,7 +85,7 @@ pip install flash-attn==2.3.2 --no-build-isolation
 You can run the script to verify that the implementation of monkey-patch is correct:
 
 ```shell
-python assert_monkey_patch.py mistralai/Mistral-7B-v0.1 mistral
+python assert_monkey_patch.py mistralai/Mixtral-8x7B-v0.1
 ```
 
 The output would show that the difference between loss from **(original dataset, original model)** and **(packed dataset, monkey-patched model)** is almost 0%.

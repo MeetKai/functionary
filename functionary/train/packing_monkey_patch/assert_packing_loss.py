@@ -1,8 +1,5 @@
-from llama_monkey_patch import LlamaForCausalLM
-from mistral_monkey_patch import MistralForCausalLM
-from mixtral_monkey_patch import MixtralForCausalLM
 import transformers
-from transformers import LlamaTokenizerFast
+from transformers import AutoTokenizer
 from torch.utils.data import Dataset
 from typing import List, Dict, Any, Tuple
 import torch
@@ -85,8 +82,14 @@ def compute_loss_for_model_class(
         pretrained_path,
         torch_dtype=torch.bfloat16,
         device_map="auto",
-        use_flash_attention_2=True,
+        attn_implementation="flash_attention_2",
     )
+    if hasattr(model, "router_aux_loss_coef"):
+        print("set au_coef=0")
+        model.router_aux_loss_coef = (
+            0  # excluding auxilary loss (in MoE model) in comparison
+        )
+
     return compute_loss_of_model(model, ds, tokenizer)
 
 
@@ -132,9 +135,35 @@ def main(
     Returns:
         _type_: _description_
     """
-    tokenizer = LlamaTokenizerFast.from_pretrained(pretrained_path, legacy=True)
+
+    tokenizer = AutoTokenizer.from_pretrained(pretrained_path, legacy=True)
     tokenizer.pad_token = tokenizer.eos_token
     print("tokenizer: ", tokenizer)
+
+    model_config = transformers.AutoConfig.from_pretrained(pretrained_path)
+    config_type = type(model_config).__name__.lower()
+    if "mistral" in config_type:
+        print("model: Mistral ")
+        from mistral_monkey_patch import MistralForCausalLM
+
+        mk_model_class = MistralForCausalLM
+    elif "llama" in config_type:
+        print("model: Llama ")
+        from llama_monkey_patch import LlamaForCausalLM
+
+        mk_model_class = LlamaForCausalLM
+    elif "mixtral" in config_type:
+        # Mixtral requires this ?
+        tokenizer.padding_side = "left"
+        print("model: Mixtral")
+        from mixtral_monkey_patch import MixtralForCausalLM
+
+        mk_model_class = MixtralForCausalLM
+    else:
+        print(
+            f"{config_type} is not supported, currently we only support: Mistral, Mixtral, Llama"
+        )
+        sys.exit(1)
 
     ds = load_dataset("tatsu-lab/alpaca")["train"]
     # extract 100 random data points from ds
@@ -170,26 +199,16 @@ def main(
     packed_ds = PackedDataset(ex_ds, tokenizer, pack_length)
     packed_ds.stat()
 
+    mk_avg_loss, mk_token_count = compute_loss_for_model_class(
+        pretrained_path, mk_model_class, tokenizer, packed_ds
+    )
+    print("monkey_patched loss: ", mk_avg_loss)
     original_model_class = transformers.AutoModelForCausalLM
-    
-    model_config = transformers.AutoConfig.from_pretrained(pretrained_path)
-    config_type = type(model_config).__name__.lower()
-    if "mistral" in config_type:
-        mk_model_class = MistralForCausalLM
-    elif "llama" in config_type:
-        mk_model_class = LlamaForCausalLM
-    elif "mixtral" in config_type:
-        mk_model_class = MixtralForCausalLM
-    else:
-        print(f"{config_type} is not supported, currently we only support: Mistral, Mixtral, Llama")
 
     original_avg_loss, original_token_count = compute_loss_for_model_class(
         pretrained_path, original_model_class, tokenizer, ex_ds
     )
     print("original_loss: ", original_avg_loss)
-    mk_avg_loss, mk_token_count = compute_loss_for_model_class(
-        pretrained_path, mk_model_class, tokenizer, packed_ds
-    )
 
     # Make sure that number of tokens used for computing loss are the same in original dataset and packed dataset
     assert (
@@ -197,7 +216,7 @@ def main(
     ), f"number of tokens for computing loss is different: original_token_count = {original_token_count}, mk_token_count={mk_token_count}"
     diff_loss = math.fabs(mk_avg_loss - original_avg_loss) / original_avg_loss
     print(
-        f"original_loss: {original_avg_loss}, monkey-patched loss: {mk_avg_loss}, diff={diff_loss:.4f}%"
+        f"original_loss: {original_avg_loss}, monkey-patched loss: {mk_avg_loss}, diff={diff_loss:2.4f}%"
     )
 
 

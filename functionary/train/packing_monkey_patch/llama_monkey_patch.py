@@ -802,11 +802,8 @@ class LlamaDecoderLayer(nn.Module):
     def __init__(self, config: LlamaConfig):
         super().__init__()
         self.hidden_size = config.hidden_size
-        self.self_attn = (
-            LlamaAttention(config=config)
-            if not getattr(config, "_flash_attn_2_enabled", False)
-            else LlamaFlashAttention2(config=config)
-        )
+        # Always use flash attention 2
+        self.self_attn = LlamaFlashAttention2(config=config)
         self.mlp = LlamaMLP(config)
         self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = LlamaRMSNorm(
@@ -1075,21 +1072,21 @@ class LlamaModel(LlamaPreTrainedModel):
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
 
-        if getattr(self.config, "_flash_attn_2_enabled", False):
+        # if getattr(self.config, "_flash_attn_2_enabled", False):
             # 2d mask is passed through the layers
-            attention_mask = (
-                attention_mask
-                if (attention_mask is not None and 0 in attention_mask)
-                else None
-            )
-        else:
-            # 4d mask is passed through the layers
-            attention_mask = _prepare_4d_causal_attention_mask(
-                attention_mask,
-                (batch_size, seq_length),
-                inputs_embeds,
-                past_key_values_length,
-            )
+        attention_mask = (
+            attention_mask
+            if (attention_mask is not None and 0 in attention_mask)
+            else None
+        )
+        # else:
+        #     # 4d mask is passed through the layers
+        #     attention_mask = _prepare_4d_causal_attention_mask(
+        #         attention_mask,
+        #         (batch_size, seq_length),
+        #         inputs_embeds,
+        #         past_key_values_length,
+        #     )
 
         # embed positions
         hidden_states = inputs_embeds

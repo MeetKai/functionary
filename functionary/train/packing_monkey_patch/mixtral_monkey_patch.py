@@ -99,7 +99,10 @@ def load_balancing_loss_func(
 
     if isinstance(gate_logits, tuple):
         # cat along the layers?
-        gate_logits = torch.cat(gate_logits, dim=0)
+        compute_device = gate_logits[0].device
+        gate_logits = torch.cat(
+            [gate.to(compute_device) for gate in gate_logits], dim=0
+        )
 
     routing_weights, selected_experts = torch.topk(gate_logits, top_k, dim=-1)
     routing_weights = routing_weights.softmax(dim=-1)
@@ -152,7 +155,7 @@ def _get_unpad_data_old(attention_mask):
         cu_seqlens,
         max_seqlen_in_batch,
     )
-    
+
 
 def _get_unpad_data(attention_mask):
     seqlens_in_batch = get_max_seqlen_in_batch(
@@ -880,7 +883,8 @@ class MixtralDecoderLayer(nn.Module):
         super().__init__()
         self.hidden_size = config.hidden_size
 
-        self.self_attn = MISTRAL_ATTENTION_CLASSES[config._attn_implementation](
+        # always use FlashAttention2
+        self.self_attn = MixtralFlashAttention2(
             config, layer_idx
         )
 
@@ -1098,7 +1102,8 @@ class MixtralModel(MixtralPreTrainedModel):
                 for layer_idx in range(config.num_hidden_layers)
             ]
         )
-        self._use_flash_attention_2 = config._attn_implementation == "flash_attention_2"
+        # Always use flash attention 2
+        self._use_flash_attention_2 = True #= config._attn_implementation == "flash_attention_2"
         self.norm = MixtralRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
         self.gradient_checkpointing = False
@@ -1185,7 +1190,7 @@ class MixtralModel(MixtralPreTrainedModel):
             inputs_embeds = self.embed_tokens(input_ids)
 
         if attention_mask is not None and self._use_flash_attention_2 and use_cache:
-            is_padding_right = attention_mask[:, -1].sum().item() != batch_size
+            is_padding_right = (attention_mask[:, -1] > 0).sum().item() != batch_size
             if is_padding_right:
                 raise ValueError(
                     "You are attempting to perform batched generation with padding_side='right'"
