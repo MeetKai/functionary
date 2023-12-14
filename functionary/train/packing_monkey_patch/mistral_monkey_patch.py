@@ -720,11 +720,9 @@ class MistralDecoderLayer(nn.Module):
     def __init__(self, config: MistralConfig):
         super().__init__()
         self.hidden_size = config.hidden_size
-        self.self_attn = (
-            MistralAttention(config=config)
-            if not getattr(config, "_flash_attn_2_enabled", False)
-            else MistralFlashAttention2(config)
-        )
+        # Always use flash attention 2
+        self.self_attn = MistralFlashAttention2(config)
+
         self.mlp = MistralMLP(config)
         self.input_layernorm = MistralRMSNorm(
             config.hidden_size, eps=config.rms_norm_eps
@@ -1002,11 +1000,9 @@ class MistralModel(MistralPreTrainedModel):
 
         if (
             attention_mask is not None
-            and hasattr(self.config, "_flash_attn_2_enabled")
-            and self.config._flash_attn_2_enabled
             and past_key_values is not None
         ):
-            is_padding_right = attention_mask[:, -1].sum().item() != batch_size
+            is_padding_right = (attention_mask[:, -1] > 0).sum().item() != batch_size
             if is_padding_right:
                 raise ValueError(
                     "You are attempting to perform batched generation with padding_side='right'"
@@ -1014,22 +1010,22 @@ class MistralModel(MistralPreTrainedModel):
                     " call `tokenizer.padding_side  = 'left'` before tokenizing the input. "
                 )
 
-        if getattr(self.config, "_flash_attn_2_enabled", False):
-            # 2d mask is passed through the layers
-            attention_mask = (
-                attention_mask
-                if (attention_mask is not None and 0 in attention_mask)
-                else None
-            )
-        else:
-            # 4d mask is passed through the layers
-            attention_mask = _prepare_4d_causal_attention_mask(
-                attention_mask,
-                (batch_size, seq_length),
-                inputs_embeds,
-                past_key_values_length,
-                sliding_window=self.config.sliding_window,
-            )
+        # if getattr(self.config, "_flash_attn_2_enabled", False):
+        # 2d mask is passed through the layers
+        attention_mask = (
+            attention_mask
+            if (attention_mask is not None and 0 in attention_mask)
+            else None
+        )
+        # else:
+        #     # 4d mask is passed through the layers
+        #     attention_mask = _prepare_4d_causal_attention_mask(
+        #         attention_mask,
+        #         (batch_size, seq_length),
+        #         inputs_embeds,
+        #         past_key_values_length,
+        #         sliding_window=self.config.sliding_window,
+        #     )
 
         hidden_states = inputs_embeds
 
