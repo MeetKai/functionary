@@ -1,5 +1,6 @@
 from llama_monkey_patch import LlamaForCausalLM
 from mistral_monkey_patch import MistralForCausalLM
+from mixtral_monkey_patch import MixtralForCausalLM
 import transformers
 from transformers import LlamaTokenizerFast
 from torch.utils.data import Dataset
@@ -117,7 +118,6 @@ def create_labels_from_input_ids(input_ids: List[int], tokenizer: Any) -> List[i
 
 def main(
     pretrained_path: str,
-    model_type: str,
     max_input_length: int = typer.Option(default=4096),
     pack_length: int = typer.Option(default=4096),
     masking_labels: bool = typer.Option(default=False),
@@ -126,14 +126,12 @@ def main(
 
     Args:
         pretrained_path (str): model_path
-        model_type (str): one of 2 values: llama or mistral
         max_input_length (int, optional): max_length at tokenizing data. Defaults to 4096.
         pack_length (int, optional): the length used for packing. Defaults to 6000.
         masking_labels: whether we mask labels such that only Output tokens are used for computing the loss
     Returns:
         _type_: _description_
     """
-    assert model_type.lower() in ["llama", "mistral"]
     tokenizer = LlamaTokenizerFast.from_pretrained(pretrained_path, legacy=True)
     tokenizer.pad_token = tokenizer.eos_token
     print("tokenizer: ", tokenizer)
@@ -173,10 +171,17 @@ def main(
     packed_ds.stat()
 
     original_model_class = transformers.AutoModelForCausalLM
-    if model_type.lower() == "mistral":
+    
+    model_config = transformers.AutoConfig.from_pretrained(pretrained_path)
+    config_type = type(model_config).__name__.lower()
+    if "mistral" in config_type:
         mk_model_class = MistralForCausalLM
-    else:
+    elif "llama" in config_type:
         mk_model_class = LlamaForCausalLM
+    elif "mixtral" in config_type:
+        mk_model_class = MixtralForCausalLM
+    else:
+        print(f"{config_type} is not supported, currently we only support: Mistral, Mixtral, Llama")
 
     original_avg_loss, original_token_count = compute_loss_for_model_class(
         pretrained_path, original_model_class, tokenizer, ex_ds
