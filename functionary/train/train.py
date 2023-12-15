@@ -216,19 +216,29 @@ def train():
         config = AutoConfig.from_pretrained(model_args.model_name_or_path)
         config_type = type(config).__name__.lower()
         if "mistral" in config_type:
-            from functionary.train.monkey_patch.mistral_monkey_patch import (
+            print_rank0("using Monkey-patched MistralForCausalLM")
+            from functionary.train.packing_monkey_patch.mistral_monkey_patch import (
                 MistralForCausalLM,
             )
 
-            print("using Monkey-patched Mistral")
             model_class = MistralForCausalLM
         elif "llama" in config_type:  # llama
-            from functionary.train.monkey_patch.llama_monkey_patch import (
+            print_rank0("using Monkey-patched LlamaForCausalLM")
+            from functionary.train.packing_monkey_patch.llama_monkey_patch import (
                 LlamaForCausalLM,
             )
 
-            print("using Monkey-patched Llama")
             model_class = LlamaForCausalLM
+        elif "mixtral" in config_type:
+            print_rank0("using Monkey-patched Mixtral")
+            from functionary.train.packing_monkey_patch.mixtral_monkey_patch import (
+                MixtralForCausalLM,
+            )
+
+            model_class = MixtralForCausalLM
+        else:
+            print("packing only supports models: Mistral, Llama, Mixtral")
+            sys.exit(1)
 
     compute_dtype = (
         torch.float16
