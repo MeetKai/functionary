@@ -209,6 +209,8 @@ class PromptTemplate:
         # Form the functions/parameters options
         if gen_state["stage"] in ["pre-function", "function"]:
             options = [tool_or_func["name"] for tool_or_func in tools_or_functions]
+        elif gen_state["stage"] == "pre-parameter":
+            options = [self.fn_param_sep_token]
         else:
             func_name = gen_state["func_name"]
             for tool_or_func in tools_or_functions:
@@ -222,9 +224,9 @@ class PromptTemplate:
         if gen_state["stage"] == "function":
             options += self.get_predefined_function_names()
 
-        # No grammar sampling needed if gen_state not in "function" or "parameter-name"
-        # stages. Just return the model_sampled_token_id
-        if gen_state["stage"] not in ["function", "parameter-name"]:
+        # No grammar sampling needed if gen_state not in "function" or "pre-parameter"
+        # or "parameter-name" stages. Just return the model_sampled_token_id
+        if gen_state["stage"] not in ["function", "pre-parameter", "parameter-name"]:
             grammar_sampled_token_id = model_sampled_token_id
             grammar_sampled_token = tokenizer.decode([model_sampled_token_id])
 
@@ -259,6 +261,24 @@ class PromptTemplate:
                         self.fn_param_sep_token.startswith(sampled_token)
                         or any(options_mask)
                     ) and sampled_token.strip(" ") != "":
+                        grammar_sampled_token_id = sampled_token_ind
+                        grammar_sampled_token = sampled_token
+                        break
+                elif gen_state["stage"] == "pre-parameter":
+                    # Form the function name with the current sampled token id
+                    new_curr_tokens_id = gen_state["curr_tokens"] + [sampled_token_ind]
+                    new_curr_tokens = tokenizer.decode(new_curr_tokens_id)
+
+                    options_mask = [
+                        True
+                        if option.startswith(new_curr_tokens.lstrip(" "))
+                        or new_curr_tokens.lstrip(" ").startswith(option)
+                        else False
+                        for option in options
+                    ]
+
+                    # We just need to check if the option (fn_param_sep_token) is True
+                    if any(options_mask) and sampled_token.strip(" ") != "":
                         grammar_sampled_token_id = sampled_token_ind
                         grammar_sampled_token = sampled_token
                         break
@@ -454,4 +474,5 @@ class PromptTemplate:
     def get_prompt_template(cls):
         if cls._instance is None:
             cls._instance = cls()
+        return cls._instance
         return cls._instance
