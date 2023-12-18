@@ -1,9 +1,14 @@
-from functionary.train.custom_datasets import PackedDataset
-from functionary.prompt_template import get_prompt_template_by_version
-from transformers import AutoTokenizer
+# This script is used to tokenize the dataset ahead for packing
+# It is not necessary to run this script if you are using the PackedDataset class.
+# Beware: This uses Functionary prompting template to tokenize.
 import json
-import typer
 import os
+
+import typer
+from transformers import AutoTokenizer
+
+from functionary.prompt_template import get_prompt_template_by_version
+from functionary.train.custom_datasets import PackedDataset
 
 
 def main(

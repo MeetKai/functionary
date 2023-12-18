@@ -19,12 +19,12 @@ from deepspeed import zero
 from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import (
+    AutoConfig,
     BitsAndBytesConfig,
     LlamaTokenizer,
     LlamaTokenizerFast,
     Trainer,
     deepspeed,
-    AutoConfig,
 )
 
 from functionary.prompt_template import get_prompt_template_by_version
@@ -74,7 +74,7 @@ class TrainingArguments(transformers.TrainingArguments):
     report_to: str = field(
         default="wandb", metadata={"help": "Report logging to wandb"}
     )
-    
+
     keep_assistant_prefix: bool = field(
         default=True,
         metadata={
@@ -189,21 +189,19 @@ def load_model_with_rope_scaling(
         config_type = type(config).__name__.lower()
         if "mistral" in config_type:
             print_rank0("using Monkey-patched MistralForCausalLM")
-            from functionary.train.packing_monkey_patch.mistral_monkey_patch import (
+            from functionary.train.packing.mistral_monkey_patch import (
                 MistralForCausalLM,
             )
 
             model_class = MistralForCausalLM
         elif "llama" in config_type:  # llama
             print_rank0("using Monkey-patched LlamaForCausalLM")
-            from functionary.train.packing_monkey_patch.llama_monkey_patch import (
-                LlamaForCausalLM,
-            )
+            from functionary.train.packing.llama_monkey_patch import LlamaForCausalLM
 
             model_class = LlamaForCausalLM
         elif "mixtral" in config_type:
             print_rank0("using Monkey-patched Mixtral")
-            from functionary.train.packing_monkey_patch.mixtral_monkey_patch import (
+            from functionary.train.packing.mixtral_monkey_patch import (
                 MixtralForCausalLM,
             )
 
@@ -365,7 +363,7 @@ def initialize_tokenizer(
     model_name_or_path: str,
     model_max_length: int,
     cache_dir: str,
-    prompt_template_version: str
+    prompt_template_version: str,
 ):
     """Initialize tokenizer and add special tokens, resizing vocab and embedding"""
     # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
@@ -432,7 +430,7 @@ def train():
         model_args.model_name_or_path,
         training_args.model_max_length,
         training_args.cache_dir,
-        training_args.prompt_template_version
+        training_args.prompt_template_version,
     )
 
     assert data_args.train_data_path is not None, "Please provide a training data file."

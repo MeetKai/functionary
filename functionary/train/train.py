@@ -12,10 +12,10 @@ import torch.distributed
 import transformers
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer, Trainer, AutoConfig
+from transformers import AutoConfig, AutoTokenizer, Trainer
 
 #  sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-from functionary.prompt_template import get_prompt_template_by_version, PromptTemplate
+from functionary.prompt_template import PromptTemplate, get_prompt_template_by_version
 from functionary.train.custom_datasets import read_dataset
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
@@ -217,21 +217,19 @@ def train():
         config_type = type(config).__name__.lower()
         if "mistral" in config_type:
             print_rank0("using Monkey-patched MistralForCausalLM")
-            from functionary.train.packing_monkey_patch.mistral_monkey_patch import (
+            from functionary.train.packing.mistral_monkey_patch import (
                 MistralForCausalLM,
             )
 
             model_class = MistralForCausalLM
         elif "llama" in config_type:  # llama
             print_rank0("using Monkey-patched LlamaForCausalLM")
-            from functionary.train.packing_monkey_patch.llama_monkey_patch import (
-                LlamaForCausalLM,
-            )
+            from functionary.train.packing.llama_monkey_patch import LlamaForCausalLM
 
             model_class = LlamaForCausalLM
         elif "mixtral" in config_type:
             print_rank0("using Monkey-patched Mixtral")
-            from functionary.train.packing_monkey_patch.mixtral_monkey_patch import (
+            from functionary.train.packing.mixtral_monkey_patch import (
                 MixtralForCausalLM,
             )
 
