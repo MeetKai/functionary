@@ -56,6 +56,7 @@ class PromptTemplate:
               - pre-parameter: when the model is generating the part between function name and parameter
               - parameter-name: when the model is generating a parameter name
               - parameter-value: when the model is generating a parameter value
+              - no-function-call: when the model is generating content
             - curr_tokens: all the tokens for the current stage being generated
             - curr_text: curr_tokens but in string text form
             - func_name: the function name, if any
@@ -82,6 +83,7 @@ class PromptTemplate:
               - pre-parameter: when the model is generating the part between function name and parameter
               - parameter-name: when the model is generating a parameter name
               - parameter-value: when the model is generating a parameter value
+              - no-function-call: when the model is generating content
             - curr_tokens: all the tokens for the current stage being generated
             - curr_text: curr_tokens but in string text form
             - func_name: the function name, if any
@@ -112,7 +114,7 @@ class PromptTemplate:
         elif gen_state["stage"] == "function":
             gen_state["func_name"] = gen_state["curr_text"].rstrip()
 
-            # Check if the new state is in "pre-parameter" stage
+            # Check if the new state is in "pre-parameter" or "no-function-call" stage
             if gen_state["curr_text"].endswith(
                 self.get_stop_token_for_function_parameter(stage="function")
             ) or (
@@ -135,8 +137,13 @@ class PromptTemplate:
                 else:
                     gen_state["curr_text"], gen_state["curr_tokens"] = "", []
         elif gen_state["stage"] == "pre-parameter":
-            # Check if the new state is in "parameter" stage
-            if self.fn_param_sep_token in gen_state["curr_text"]:
+            # Check if the new state is in "parameter" or "no-function-call" stage
+            if (
+                self.fn_param_sep_token.rstrip("{").rstrip() in gen_state["curr_text"]
+                and gen_state["func_name"] in self.get_predefined_function_names()
+            ):
+                gen_state["stage"] = "no-function-call"
+            elif self.fn_param_sep_token in gen_state["curr_text"]:
                 gen_state["stage"] = "parameter-name"
                 gen_state["curr_text"], gen_state["curr_tokens"] = "", []
         elif gen_state["stage"] == "parameter-name":
@@ -176,6 +183,18 @@ class PromptTemplate:
                     gen_state["curr_text"], gen_state["curr_tokens"] = "", []
                 except:
                     pass
+        elif gen_state["stage"] == "no-function-call":
+            # probability of stop token is not 100% at the end of no-function-call
+            # We still need to check if the stage will go to "function" by checking
+            # for the presence of the start_of_function_call token
+            if gen_state["curr_text"].endswith(self.get_start_of_function_call_token()):
+                gen_state = {
+                    "stage": "function",
+                    "curr_tokens": [],
+                    "curr_text": "",
+                    "func_name": "",
+                    "param_names": [],
+                }
 
         return gen_state
 
@@ -207,6 +226,7 @@ class PromptTemplate:
         grammar_sampled_token_id, grammar_sampled_token = None, None
 
         # Form the functions/parameters options
+        options = []
         if gen_state["stage"] in ["pre-function", "function"]:
             options = [tool_or_func["name"] for tool_or_func in tools_or_functions]
         elif gen_state["stage"] == "pre-parameter":

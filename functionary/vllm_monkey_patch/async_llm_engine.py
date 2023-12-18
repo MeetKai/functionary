@@ -183,7 +183,7 @@ class _AsyncLLMEngine(LLMEngine):
     # This is a dict mappingg request_id to the generation_state. It contains
     # the following information:
     # - stage: one of the following:
-    # ["pre-function", "function", "pre-parameter", "parameter-name", "parameter-value"]
+    # ["pre-function", "function", "pre-parameter", "parameter-name", "parameter-value", "no-function-call"]
     # - curr_tokens: all the tokens for the current stage being generated
     # - curr_text: curr_tokens but in string text form
     # - func_name: the function name, if any

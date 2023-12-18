@@ -272,6 +272,8 @@ async def create_chat_completion(raw_request: Request):
         tools_or_functions = [item.dict() for item in request.functions]
     elif request.tools:
         tools_or_functions = [item.dict() for item in request.tools]
+    else:
+        tools_or_functions = []
 
     if args.grammar_sampling:
         result_generator = engine.generate(
