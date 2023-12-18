@@ -19,6 +19,7 @@ from deepspeed import zero
 from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import (
+    AutoConfig,
     BitsAndBytesConfig,
     LlamaTokenizer,
     LlamaTokenizerFast,
@@ -28,7 +29,6 @@ from transformers import (
 
 from functionary.prompt_template import get_prompt_template_by_version
 from functionary.train.custom_datasets import read_dataset
-from functionary.train.monkey_patch.llama_attention_mask_monkey_patch import LlamaForCausalLM
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
@@ -73,6 +73,17 @@ class TrainingArguments(transformers.TrainingArguments):
     )
     report_to: str = field(
         default="wandb", metadata={"help": "Report logging to wandb"}
+    )
+
+    keep_assistant_prefix: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to mask the assistant prefix `<|from|>assistant\n<|recipient|>` during training"
+        },
+    )
+
+    prompt_template_version: str = field(
+        default="v2", metadata={"help": "choose prompt template to use for training"}
     )
 
 
@@ -171,28 +182,46 @@ def load_model_with_rope_scaling(
         else (torch.bfloat16 if training_args.bf16 else torch.float32)
     )
 
-    use_flash_attention_2 = True
+    model_class = transformers.AutoModelForCausalLM
     if data_args.packing:
-        print_rank0("do not use flash attention because of using packing")
-        use_flash_attention_2 = (
-            False  # currently packing is only possible when use_flash_attention_2=False
-        )
-    if data_args.packing:  # have to monkey-patch
-        model_class = LlamaForCausalLM
-    else:
-        model_class = transformers.AutoModelForCausalLM
+        print("Packing=True, using monkey-patched")
+        config = AutoConfig.from_pretrained(model_args.model_name_or_path)
+        config_type = type(config).__name__.lower()
+        if "mistral" in config_type:
+            print_rank0("using Monkey-patched MistralForCausalLM")
+            from functionary.train.packing.mistral_monkey_patch import (
+                MistralForCausalLM,
+            )
+
+            model_class = MistralForCausalLM
+        elif "llama" in config_type:  # llama
+            print_rank0("using Monkey-patched LlamaForCausalLM")
+            from functionary.train.packing.llama_monkey_patch import LlamaForCausalLM
+
+            model_class = LlamaForCausalLM
+        elif "mixtral" in config_type:
+            print_rank0("using Monkey-patched Mixtral")
+            from functionary.train.packing.mixtral_monkey_patch import (
+                MixtralForCausalLM,
+            )
+
+            model_class = MixtralForCausalLM
+        else:
+            print("packing only supports models: Mistral, Llama, Mixtral")
+            sys.exit(1)
 
     model = model_class.from_pretrained(
         model_args.model_name_or_path,
         config=config,
         cache_dir=training_args.cache_dir,
         device_map=get_device_map(training_args, lora_args),
-        use_flash_attention_2=use_flash_attention_2,
+        attn_implementation="flash_attention_2",  # use_flash_attention_2 is replaced by this from version: 4.36.0
+        torch_dtype=compute_dtype,
         quantization_config=BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
-            use_flash_attention_2=use_flash_attention_2,
+            attn_implementation="flash_attention_2",
             bnb_4bit_compute_dtype=compute_dtype,
         )
         if lora_args.q_lora
@@ -334,6 +363,7 @@ def initialize_tokenizer(
     model_name_or_path: str,
     model_max_length: int,
     cache_dir: str,
+    prompt_template_version: str,
 ):
     """Initialize tokenizer and add special tokens, resizing vocab and embedding"""
     # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
@@ -346,8 +376,12 @@ def initialize_tokenizer(
 
     # Add special tokens
     tokenizer.pad_token = tokenizer.unk_token
-    prompt_template = get_prompt_template_by_version("v2")
-    special_tokens = {"additional_special_tokens": prompt_template.get_additional_tokens()}
+    prompt_template = prompt_template = get_prompt_template_by_version(
+        prompt_template_version
+    )
+    special_tokens = {
+        "additional_special_tokens": prompt_template.get_additional_tokens()
+    }
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
 
     # Resize embedding
@@ -396,17 +430,21 @@ def train():
         model_args.model_name_or_path,
         training_args.model_max_length,
         training_args.cache_dir,
+        training_args.prompt_template_version,
     )
 
     assert data_args.train_data_path is not None, "Please provide a training data file."
 
     train_dataset = read_dataset(data_args, training_args, tokenizer, "train")
-    # print_some_examples(train_dataset, tokenizer)
+    print_rank0("****** Examples from train_dataset *****")
+    print_some_examples(train_dataset, tokenizer)
     print_rank0("final train size: ", len(train_dataset))
 
     if training_args.do_eval:
         eval_dataset = read_dataset(data_args, training_args, tokenizer, "eval")
         print_rank0("final eval size: ", len(eval_dataset))
+        print_rank0("****** Examples from eval_dataset *****")
+        print_some_examples(eval_dataset, tokenizer)
 
     print_rank0("tokenizer.model_max_length: ", tokenizer.model_max_length)
 
