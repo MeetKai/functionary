@@ -144,21 +144,31 @@ class PromptTemplate:
             ):
                 gen_state["stage"] = "no-function-call"
             elif self.fn_param_sep_token in gen_state["curr_text"]:
-                gen_state["stage"] = "parameter-name"
-                gen_state["curr_text"], gen_state["curr_tokens"] = "", []
+                # Check if no arguments are called and go straight to "pre-function"
+                if gen_state["curr_text"].endswith("{}"):
+                    gen_state["stage"] = "pre-function"
+                else:
+                    gen_state["stage"] = "parameter-name"
+                    gen_state["curr_text"], gen_state["curr_tokens"] = "", []
         elif gen_state["stage"] == "parameter-name":
-            # Get the latest param
-            latest_param_str = gen_state["curr_text"]
+            # Check if no arguments are called and go straight to "pre-function"
+            if gen_state["curr_text"] == self.fn_param_sep_token + "}":
+                gen_state["stage"] = "pre-function"
+            else:
+                # Get the latest param
+                latest_param_str = gen_state["curr_text"]
 
-            # Check if the new state is in "parameter-value" stage
-            stop_token = self.get_stop_token_for_function_parameter(stage="parameter")
-            if latest_param_str.endswith(stop_token):
-                gen_state["param_names"].append(
-                    gen_state["curr_text"].removesuffix(stop_token)
+                # Check if the new state is in "parameter-value" stage
+                stop_token = self.get_stop_token_for_function_parameter(
+                    stage="parameter"
                 )
-                gen_state["stage"] = "parameter-value"
-                gen_state["curr_text"] = stop_token
-                gen_state["curr_tokens"] = [new_token_id]
+                if latest_param_str.endswith(stop_token):
+                    gen_state["param_names"].append(
+                        gen_state["curr_text"].removesuffix(stop_token)
+                    )
+                    gen_state["stage"] = "parameter-value"
+                    gen_state["curr_text"] = stop_token
+                    gen_state["curr_tokens"] = [new_token_id]
         elif gen_state["stage"] == "parameter-value":
             # Check if the new state is in "pre-function" stage
             try:
