@@ -143,11 +143,12 @@ class PromptTemplate:
                 and gen_state["func_name"] in self.get_predefined_function_names()
             ):
                 gen_state["stage"] = "no-function-call"
+            # Either '{' or '{"' or '{}'
             elif self.fn_param_sep_token in gen_state["curr_text"]:
                 # Check if no arguments are called and go straight to "pre-function"
-                if gen_state["curr_text"].endswith("{}"):
+                if gen_state["curr_text"].endswith("}"):
                     gen_state["stage"] = "pre-function"
-                else:
+                elif gen_state["curr_text"].endswith('"'):
                     gen_state["stage"] = "parameter-name"
                     gen_state["curr_text"], gen_state["curr_tokens"] = "", []
         elif gen_state["stage"] == "parameter-name":
@@ -299,15 +300,21 @@ class PromptTemplate:
                     new_curr_tokens_id = gen_state["curr_tokens"] + [sampled_token_ind]
                     new_curr_tokens = tokenizer.decode(new_curr_tokens_id)
 
-                    options_mask = [
-                        True
-                        if option.startswith(new_curr_tokens.lstrip(" "))
-                        or new_curr_tokens.lstrip(" ").startswith(option)
-                        else False
-                        for option in options
-                    ]
+                    options_mask = []
+                    for option in options:
+                        suffix = new_curr_tokens.removeprefix(self.fn_param_sep_token)
+                        suffix_endswith = [
+                            suffix.endswith(endswith) for endswith in ['"', "}"]
+                        ]
+                        if option.startswith(new_curr_tokens.lstrip(" ")) or any(
+                            suffix_endswith
+                        ):
+                            options_mask.append(True)
+                        else:
+                            options_mask.append(False)
 
                     # We just need to check if the option (fn_param_sep_token) is True
+                    # or fn_param_sep_token + one of ['}', '"'] is present
                     if any(options_mask) and sampled_token.strip(" ") != "":
                         grammar_sampled_token_id = sampled_token_ind
                         grammar_sampled_token = sampled_token
