@@ -9,8 +9,10 @@ import torch
 import transformers
 from torch.utils.data import Dataset
 
-from functionary.prompt_template import (PromptTemplate,
-                                         get_prompt_template_from_tokenizer)
+from functionary.prompt_template import (
+    PromptTemplate,
+    get_prompt_template_from_tokenizer,
+)
 
 
 def get_batch_indices(size: int, batch_size: int) -> List[Tuple[int, int]]:
@@ -82,7 +84,7 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
         data_args (_type_): _description_
         training_args (_type_): _description_
         tokenizer (_type_): _description_
-        ds_type (_type_): one of: "train"
+        ds_type (_type_): one of: "train"/"validation"
 
     Returns:
         _type_: _description_
@@ -116,6 +118,9 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
     # Rank 0 will process the dataset and save the result to cached_folder, other ranks will read from the cached_folder
     cached_folder = os.path.join(training_args.output_dir, f"{ds_type}_cached")
 
+    pack_length = data_args.pack_length if data_args.pack_length > 0 else None
+    print("pack_length: ", pack_length)
+
     if (
         training_args.local_rank > 0
     ):  # If this is not rank 0, stay here, wait for rank 0 to process the data
@@ -140,9 +145,10 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
             raw_train_data,
             tokenizer,
             cached_folder=cached_folder,
-            ignore_cached=True,
+            ignore_cached=False,
             keep_assistant_prefix=keep_assistant_prefix,
             use_flash_attention=True,
+            pack_length=pack_length,
         )
         print(f"process: {local_rank} finish processing data")
         world_size = int(os.environ.get("WORLD_SIZE", 1))
@@ -156,6 +162,7 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
         cached_folder=cached_folder,
         ignore_cached=False,
         use_flash_attention=True,
+        pack_length=pack_length,
     )
     if local_rank == 0:
         ds.stat()  #  print some statistics about the dataset
@@ -344,7 +351,7 @@ def prepare_training_inputs_batch(
     for messages in batch_messages:
         # old format: functions, new format: tools
         tools_or_functions = (
-            messages["tools"] if "tools" in messages else messages["functions"]
+            messages["tools"] if "tools" in messages else messages.get("functions", [])
         )
 
         prompt_str = prompt_template.get_prompt_from_messages(
@@ -497,7 +504,7 @@ def get_causal_mask(length: int, m_value: float) -> torch.tensor:
 
 
 def create_mask_from_lengths(
-    lengths: List[int], tokenizer: Any, m_value: float
+    lengths: List[int], pack_length: int, m_value: float
 ) -> torch.tensor:
     """create attention_mask: N x N where masked value = m_value
     Args:
@@ -508,7 +515,7 @@ def create_mask_from_lengths(
     Returns:
         torch.tensor: _description_
     """
-    max_length = tokenizer.model_max_length
+    max_length = pack_length
     result = torch.full((max_length, max_length), m_value)
     acc_leng = 0
     for length in lengths:
@@ -524,7 +531,7 @@ def create_mask_from_lengths(
     return result
 
 
-def pack_data_points(data_points: List[Dict], tokenizer: Any) -> Dict:
+def pack_data_points(data_points: List[Dict], tokenizer: Any, pack_length: int) -> Dict:
     """This method is used to pack multiple data points into a single data point used for Normal Attention (vs FlashAttention)
 
     Args:
@@ -545,10 +552,8 @@ def pack_data_points(data_points: List[Dict], tokenizer: Any) -> Dict:
         label_ids += labels
         lengths.append(len(item["input_ids"]))
 
-    attention_mask = create_mask_from_lengths(lengths, tokenizer, float("-inf"))
-    pad_leng = tokenizer.model_max_length - len(
-        input_ids
-    )  # padding to model_max_length
+    attention_mask = create_mask_from_lengths(lengths, pack_length, float("-inf"))
+    pad_leng = pack_length - len(input_ids)  # padding to model_max_length
 
     if tokenizer.padding_side == "right":
         input_ids = input_ids + [tokenizer.pad_token_id for _ in range(pad_leng)]
@@ -557,12 +562,7 @@ def pack_data_points(data_points: List[Dict], tokenizer: Any) -> Dict:
         input_ids = [tokenizer.pad_token_id for _ in range(pad_leng)] + input_ids
         label_ids = [-100 for _ in range(pad_leng)] + label_ids
 
-    assert (
-        len(input_ids)
-        == len(label_ids)
-        == attention_mask.size(0)
-        == tokenizer.model_max_length
-    )
+    assert len(input_ids) == len(label_ids) == attention_mask.size(0) == pack_length
 
     return {
         "input_ids": torch.tensor(input_ids),
@@ -573,7 +573,9 @@ def pack_data_points(data_points: List[Dict], tokenizer: Any) -> Dict:
     }
 
 
-def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
+def pack_data_points_FA(
+    data_points: List[Dict], tokenizer: Any, pack_length: int
+) -> Dict:
     """This method is used to pack multiple data_points into a single data point usable for Flash Attention
 
     For example, we want to pack 2 inputs with padding_size=right:
@@ -609,9 +611,7 @@ def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
         lengths.append(len(item["input_ids"]))
         attention_mask += [index + 1 for _ in range(len(item["input_ids"]))]
 
-    pad_leng = tokenizer.model_max_length - len(
-        input_ids
-    )  # padding to model_max_length
+    pad_leng = pack_length - len(input_ids)  # padding to model_max_length
 
     if tokenizer.padding_side == "right":
         input_ids = input_ids + [tokenizer.pad_token_id for _ in range(pad_leng)]
@@ -622,7 +622,7 @@ def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
         label_ids = [-100 for _ in range(pad_leng)] + label_ids
         attention_mask = [0 for _ in range(pad_leng)] + attention_mask
 
-    assert len(input_ids) == len(label_ids) == len(attention_mask)
+    assert len(input_ids) == len(label_ids) == len(attention_mask) == pack_length
     return {
         "input_ids": torch.tensor(input_ids),
         "labels": torch.tensor(label_ids),
@@ -817,9 +817,12 @@ class PackedDataset(CachedDataset):
         batch_size: int = 5000,
         keep_assistant_prefix: bool = False,
         use_flash_attention: bool = True,
+        pack_length: Optional[int] = None,
     ):
         super().__init__(tokenizer, cached_folder, ignore_cached)
         self.use_flash_attention = use_flash_attention
+        self.pack_length = pack_length if pack_length else tokenizer.model_max_length
+        print("self.pack_length: ", self.pack_length)
         if not self.load_from_cache:
             self.data_points = map_raw_data_to_input_dic(
                 raw_data=raw_data,
@@ -837,9 +840,7 @@ class PackedDataset(CachedDataset):
 
     def update_packing_info(self):
         self.lengths = [len(item["input_ids"]) for item in self.data_points]
-        self.groups = merge_data_points_by_length(
-            self.lengths, self.tokenizer.model_max_length
-        )
+        self.groups = merge_data_points_by_length(self.lengths, self.pack_length)
 
     def __len__(self):
         return len(self.groups)
@@ -848,8 +849,8 @@ class PackedDataset(CachedDataset):
         group = self.groups[i]
         group_data_points = [self.data_points[index] for index in group]
         if not self.use_flash_attention:
-            return pack_data_points(group_data_points, self.tokenizer)
-        return pack_data_points_FA(group_data_points, self.tokenizer)
+            return pack_data_points(group_data_points, self.tokenizer, self.pack_length)
+        return pack_data_points_FA(group_data_points, self.tokenizer, self.pack_length)
 
     def stat(self):
         print(

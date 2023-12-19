@@ -12,10 +12,10 @@ import torch.distributed
 import transformers
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer, Trainer
+from transformers import AutoConfig, AutoTokenizer, Trainer
 
 #  sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-from functionary.prompt_template import get_prompt_template_by_version, PromptTemplate
+from functionary.prompt_template import PromptTemplate, get_prompt_template_by_version
 from functionary.train.custom_datasets import read_dataset
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
@@ -47,6 +47,12 @@ class DataArguments:
     )
     packing: bool = field(
         default=False, metadata={"help": "Whether use packing or not"}
+    )
+    pack_length: int = field(
+        default=0,
+        metadata={
+            "help": "pack_length used to pack data points, default = 0 --> = model_max_length"
+        },
     )
 
 
@@ -206,12 +212,31 @@ def train():
 
     model_class = transformers.AutoModelForCausalLM
     if data_args.packing:
-        print("Packing=True, using monkey-patched MistralForCausalLM")
-        from functionary.functionary.train.packing_monkey_patch.mistral_monkey_patch import (
-            MistralForCausalLM,
-        )
+        print("Packing=True, using monkey-patched")
+        config = AutoConfig.from_pretrained(model_args.model_name_or_path)
+        config_type = type(config).__name__.lower()
+        if "mistral" in config_type:
+            print_rank0("using Monkey-patched MistralForCausalLM")
+            from functionary.train.packing.mistral_monkey_patch import (
+                MistralForCausalLM,
+            )
 
-        model_class = MistralForCausalLM
+            model_class = MistralForCausalLM
+        elif "llama" in config_type:  # llama
+            print_rank0("using Monkey-patched LlamaForCausalLM")
+            from functionary.train.packing.llama_monkey_patch import LlamaForCausalLM
+
+            model_class = LlamaForCausalLM
+        elif "mixtral" in config_type:
+            print_rank0("using Monkey-patched Mixtral")
+            from functionary.train.packing.mixtral_monkey_patch import (
+                MixtralForCausalLM,
+            )
+
+            model_class = MixtralForCausalLM
+        else:
+            print("packing only supports models: Mistral, Llama, Mixtral")
+            sys.exit(1)
 
     compute_dtype = (
         torch.float16
@@ -240,17 +265,17 @@ def train():
         model_max_length=training_args.model_max_length,
         cache_dir=training_args.cache_dir,
     )
-    
+
     if LOCAL_RANK == 0:
         if not os.path.exists(training_args.output_dir):
             os.mkdir(training_args.output_dir)
-        
+
         tokenizer_folder = os.path.join(training_args.output_dir, "tokenizer")
         if not os.path.exists(tokenizer_folder):
             os.mkdir(tokenizer_folder)
-        # Save tokenizer 
+        # Save tokenizer
         tokenizer.save_pretrained(tokenizer_folder)
-    
+
     # get id of added tokens to compute the accuracy of predicing the token
     id2token = {
         tokenizer.encode(token)[-1]: token
