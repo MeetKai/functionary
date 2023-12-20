@@ -208,7 +208,9 @@ def train():
     if orig_ctx_len and training_args.model_max_length > orig_ctx_len:
         scaling_factor = float(math.ceil(training_args.model_max_length / orig_ctx_len))
         config.rope_scaling = {"type": "linear", "factor": scaling_factor}
+        print_rank0("Rope scaling enabled")
     config.use_cache = False
+    config.sliding_window = training_args.model_max_length
 
     model_class = transformers.AutoModelForCausalLM
     if data_args.packing:

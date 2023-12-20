@@ -7,10 +7,10 @@ python3 -m venv venv && source venv/bin/activate
 pip3 install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
 
 # Install Dependencies
-pip install accelerate==0.23.0 transformers==4.35.0 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 deepspeed==0.11.1 typer==0.9.0
+pip install accelerate==0.23.0 transformers==4.35.2 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 deepspeed==0.11.1 typer==0.9.0 tensorboard==2.15.1 wheel==0.42.0
 
 # Install Flash Attention 2
-pip install flash-attn==2.3.2 --no-build-isolation
+pip install flash-attn==2.3.3 --no-build-isolation
 ```
 
 ### Llama-2 models
@@ -61,7 +61,7 @@ torchrun --nproc_per_node=2 --master_port=20001 -m functionary.train.train \
     --per_device_train_batch_size 2 \
     --gradient_accumulation_steps 64 \
     --per_device_eval_batch_size 4 \
-    --eval_accumulation_steps 16 \
+    --eval_accumulation_steps 12 \
     --evaluation_strategy "steps" \
     --eval_steps 400 \
     --save_strategy "steps" \
@@ -95,31 +95,32 @@ DeepSpeed is the recommended multi-GPU option for Mistral finetuning currently b
 # DeepSpeed ZeRO3 with accelerate launcher
 # 4xA100 80GB, from the root directory of the repository
 export WANDB_ENTITY=NAME_OF_ENTITY
-export WANDB_PROJECT=NAME_OF_PROJECT
+export WANDB_PROJECT=functionary
 accelerate launch --config_file "functionary/train/accelerate_configs/ds3_config.yaml" -m functionary.train.train \
     --model_name_or_path mistralai/Mistral-7B-v0.1 \
-    --train_data_path train_dataset.jsonl \
-    --eval_data_path eval_dataset.jsonl \
+    --train_data_path 2023-12-20_train.jsonl \
+    --eval_data_path 2023-12-20_val.jsonl \
     --bf16 True \
-    --num_train_epochs 2 \
+    --num_train_epochs 1 \
     --per_device_train_batch_size 8 \
-    --gradient_accumulation_steps 12 \
+    --gradient_accumulation_steps 1 \
     --per_device_eval_batch_size 8 \
-    --eval_accumulation_steps 16 \
+    --eval_accumulation_steps 1 \
     --evaluation_strategy "steps" \
-    --eval_steps 20 \
-    --save_strategy "steps" \
-    --save_steps 115 \
+    --eval_steps 75 \
+    --save_strategy "no" \
+    --save_steps 200 \
     --save_total_limit 5 \
-    --learning_rate 2e-5 \
-    --weight_decay 0.1 \
+    --learning_rate 9e-6 \
+    --weight_decay 0.01 \
     --warmup_ratio 0.03 \
+    --max_grad_norm 1.0 \
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
-    --model_max_length 4096 \
+    --model_max_length 8192 \
     --optim "paged_adamw_32bit" \
     --gradient_checkpointing True \
-    --output_dir functionary-v1
+    --output_dir functionary-v2.1
 ```
 
 ### Compute requirements
@@ -138,8 +139,7 @@ As WandB is [not compatible](https://github.com/huggingface/accelerate/issues/18
 If you are running the training on container-based GPU instances which do not provide large enough volumes of disk space in the root directory (like RunPod), you should set the following WandB environment variables to a disk with large enough disk space. Else, you will encounter disk out of space error when trying to upload the artifacts.
 
 ```shell
-export WANDB_DATA_DIR=NAME_OF_NEW_DIR
-export WANDB_CACHE_DIR=NAME_OF_NEW_DIR
+export WANDB_DATA_DIR=/workspace/wandb_data
 ```
 
 ```shell
