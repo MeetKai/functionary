@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from abc import abstractmethod
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
@@ -182,7 +183,8 @@ class PromptTemplate:
 
             # Check if the current state can be converted to json, it means the
             # new state is back to "parameter-name" stage
-            if gen_state["curr_text"].endswith(', "'):
+            pattern = r',.*"$'
+            if bool(re.search(pattern, gen_state["curr_text"])):
                 try:
                     _ = json.loads(
                         '{"'
