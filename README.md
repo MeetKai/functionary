@@ -17,7 +17,7 @@ pip install -r requirements.txt
 Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server:
 
 ```shell
-python3 server_vllm.py --model "meetkai/functionary-7b-v2" --host 0.0.0.0
+python3 server_vllm.py --model "meetkai/functionary-7b-v2.1" --host 0.0.0.0
 ```
 
 ### OpenAI Compatible Usage
@@ -28,7 +28,7 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 
 client.chat.completions.create(
-    model="meetkai/functionary-7b-v2",
+    model="meetkai/functionary-7b-v2.1",
     messages=[{"role": "user",
             "content": "What is the weather for Istanbul?"}
     ],
@@ -64,7 +64,7 @@ client.chat.completions.create(
 import requests
 
 data = {
-    'model': 'meetkai/functionary-7b-v2', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
+    'model': 'meetkai/functionary-7b-v2.1', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
     'messages': [
         {
             "role": "user",
@@ -113,13 +113,13 @@ sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functi
 ```
 
 ## Models Available
-| Model                                                                                | Functionality                                                                                                                         | Base Model                                                   |
+| Model                                                                                | Description                                                                                                                         | Base Model                                                   |
 |:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------|
-| [functionary-7b-v2](https://huggingface.co/meetkai/functionary-7b-v2)                |Supports **parallel function calls** with improved accuracy <br>in function call capabilities and instruction-following abilities.     | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
-| [functionary-7b-v2-GGUF](https://huggingface.co/meetkai/functionary-7b-v2-GGUF)      |GGUF file version from functionary-7b-v2 version model                                                                                 | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
-| [functionary-7b-v1.4](https://huggingface.co/meetkai/functionary-7b-v1.4)            |Supports single function calls with improved accuracy <br>in both function call capabilities and instruction-following <br>abilities.  | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
-| [functionary-7b-v1.4-GGUF](https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF)  |GGUF file version from functionary-7b-v1.4 version model                                                                               | [Mistral 7B](https://mistral.ai/news/announcing-mistral-7b/) |
-| [functionary-7b-v1.1](https://huggingface.co/meetkai/functionary-7b-v1.1)            |Support single function calls                                                                                                          | [Llama 2](https://arxiv.org/abs/2307.09288).                 |
+| [functionary-7b-v2.1](https://huggingface.co/meetkai/functionary-7b-v2.1)            | 8k context | Mistral 7B
+| [functionary-7b-v2](https://huggingface.co/meetkai/functionary-7b-v2) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2-GGUF)                | Parallel function call support.    | Mistral 7B |
+| [functionary-7b-v1.4](https://huggingface.co/meetkai/functionary-7b-v1.4) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF)            | Better accuracy  | Mistral 7B |
+| [functionary-7b-v1.1](https://huggingface.co/meetkai/functionary-7b-v1.1)            | 4k context                                                                                                          | Llama 2 |
+| functionary-7b-v0.1            | 2k context Not recommended, use 2.1                                                                                                          | Llama 1 |
 
 
 Compatibility information:
