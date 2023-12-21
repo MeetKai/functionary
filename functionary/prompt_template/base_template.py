@@ -164,13 +164,20 @@ class PromptTemplate:
                 stop_token = self.get_stop_token_for_function_parameter(
                     stage="parameter"
                 )
-                if latest_param_str.endswith(stop_token):
+                pattern = stop_token + r".*$"
+                match_res = re.search(pattern, latest_param_str)
+                if bool(match_res):
                     gen_state["param_names"].append(
-                        gen_state["curr_text"].removesuffix(stop_token)
+                        gen_state["curr_text"].removesuffix(match_res.group(0))
                     )
                     gen_state["stage"] = "parameter-value"
-                    gen_state["curr_text"] = stop_token
-                    gen_state["curr_tokens"] = [new_token_id]
+                    gen_state["curr_text"] = match_res.group(0)
+                    new_tokens = []
+                    for token in gen_state["curr_tokens"][::-1]:
+                        new_tokens.append(token)
+                        if tokenizer.decode(new_tokens) == match_res.group(0):
+                            gen_state["curr_tokens"] = new_tokens
+                            break
         elif gen_state["stage"] == "parameter-value":
             # Check if the new state is in "pre-function" stage
             try:
