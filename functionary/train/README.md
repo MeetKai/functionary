@@ -15,7 +15,8 @@ pip install flash-attn==2.3.3 --no-build-isolation
 
 ### Llama-2 models
 
-We have produced full-parameter finetuning scripts compatible with FSDP and DDP respectively.
+<details>
+    We have produced full-parameter finetuning scripts compatible with FSDP and DDP respectively.
 
 ```shell
 # FSDP with accelerate launcher
@@ -86,6 +87,7 @@ torchrun --nproc_per_node=2 --master_port=20001 -m functionary.train.train \
 ```shell
 export NCCL_P2P_DISABLE=1
 ```
+</details>
 
 ### Mistral models
 
