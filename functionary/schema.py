@@ -115,7 +115,12 @@ def get_param_info(param: Dict) -> Optional[str]:
     return None
 
 
-def append_new_param_info(info_list: List[str], param_declaration: str, comment_info: Optional[str], depth: int):
+def append_new_param_info(
+    info_list: List[str],
+    param_declaration: str,
+    comment_info: Optional[str],
+    depth: int,
+):
     """Append a new parameter with comment to the info_list
 
     Args:
@@ -150,7 +155,9 @@ def get_enum_option_str(enum_options: List) -> str:
     return " | ".join([f'"{v}"' if type(v) is str else str(v) for v in enum_options])
 
 
-def get_array_typescript(param_name: Optional[str], param_dic: dict, depth: int = 0) -> str:
+def get_array_typescript(
+    param_name: Optional[str], param_dic: dict, depth: int = 0
+) -> str:
     """recursive implementation for generating type script of array
 
     Args:
@@ -221,7 +228,7 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
     """
     tp_lines = []
     for param_name, param in properties.items():
-        # Sometimes properties have "required" field as a list of string. 
+        # Sometimes properties have "required" field as a list of string.
         # Even though its supposed to be not under properties. So we skip it
         if not isinstance(param, dict):
             continue
@@ -239,7 +246,9 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
             offset = "".join(["    " for _ in range(depth)])
 
         if param_type == "object":  # param_type is object
-            child_lines = get_parameter_typescript(param.get("properties", {}), param.get("required", []), depth + 1)
+            child_lines = get_parameter_typescript(
+                param.get("properties", {}), param.get("required", []), depth + 1
+            )
             if comment_info is not None:
                 tp_lines.append(f"{offset}{comment_info}")
 
@@ -254,7 +263,9 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
                 param_declaration += ": [],"
                 append_new_param_info(tp_lines, param_declaration, comment_info, depth)
             else:
-                array_declaration = get_array_typescript(param_declaration, param, depth)
+                array_declaration = get_array_typescript(
+                    param_declaration, param, depth
+                )
                 if not array_declaration.endswith(","):
                     array_declaration += ","
                 if comment_info is not None:
@@ -262,14 +273,17 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
                 tp_lines.append(array_declaration)
         else:
             if "enum" in param:
-                param_type = " | ".join([f'"{v}"' for v in param["enum"]])
+                param_type = get_enum_option_str(param["enum"])
+                # param_type = " | ".join([f'"{v}"' for v in param["enum"]])
             param_declaration += f": {param_type},"
             append_new_param_info(tp_lines, param_declaration, comment_info, depth)
 
     return tp_lines
 
 
-def generate_schema_from_functions(functions: List[Function], namespace="functions") -> str:
+def generate_schema_from_functions(
+    functions: List[Function], namespace="functions"
+) -> str:
     """
     Convert functions schema to a schema that language models can understand.
     """
@@ -293,7 +307,9 @@ def generate_schema_from_functions(functions: List[Function], namespace="functio
         if parameters is not None and parameters.get("properties") is not None:
             schema += " = (_: {\n"
             required_params = parameters.get("required", [])
-            tp_lines = get_parameter_typescript(parameters.get("properties"), required_params, 0)
+            tp_lines = get_parameter_typescript(
+                parameters.get("properties"), required_params, 0
+            )
             schema += "\n".join(tp_lines)
             schema += "\n}) => any;\n\n"
         else:
@@ -305,7 +321,9 @@ def generate_schema_from_functions(functions: List[Function], namespace="functio
     return schema
 
 
-def generate_schema_from_openapi(specification: Dict[str, Any], description: str, namespace: str) -> str:
+def generate_schema_from_openapi(
+    specification: Dict[str, Any], description: str, namespace: str
+) -> str:
     """
     Convert OpenAPI specification object to a schema that language models can understand.
 
@@ -343,7 +361,9 @@ def generate_schema_from_openapi(specification: Dict[str, Any], description: str
             schema += f"// {description}\n"
             schema += f"type {operationId}"
 
-            if ("requestBody" in method_info) or (method_info.get("parameters") is not None):
+            if ("requestBody" in method_info) or (
+                method_info.get("parameters") is not None
+            ):
                 schema += f"  = (_: {{\n"
                 # Body
                 if "requestBody" in method_info:
@@ -387,7 +407,9 @@ def generate_schema_from_openapi(specification: Dict[str, Any], description: str
 
                     # Param Name
                     schema += f"{param['name']}"
-                    if (not param.get("required", False)) or (param.get("nullable", False)):
+                    if (not param.get("required", False)) or (
+                        param.get("nullable", False)
+                    ):
                         schema += "?"
                     if param.get("schema") is None:
                         continue
@@ -396,7 +418,9 @@ def generate_schema_from_openapi(specification: Dict[str, Any], description: str
                     if param_type == "integer":
                         param_type = "number"
                     if "enum" in param["schema"]:
-                        param_type = " | ".join([f'"{v}"' for v in param["schema"]["enum"]])
+                        param_type = " | ".join(
+                            [f'"{v}"' for v in param["schema"]["enum"]]
+                        )
                     schema += f": {param_type},\n"
 
                 schema += f"}}) => any;\n\n"
@@ -409,10 +433,14 @@ def generate_schema_from_openapi(specification: Dict[str, Any], description: str
     return schema
 
 
-def generate_specification_from_openapi_url(openapi_url: str, proxies: dict = None) -> str:
+def generate_specification_from_openapi_url(
+    openapi_url: str, proxies: dict = None
+) -> str:
     # Make Request
     headers = {"Accept": "application/x-yaml, text/yaml, text/x-yaml, application/json"}
-    response = requests.get(openapi_url, verify=False, headers=headers, timeout=60, proxies=proxies)
+    response = requests.get(
+        openapi_url, verify=False, headers=headers, timeout=60, proxies=proxies
+    )
 
     if response.status_code == 200:
         # Trust content-type first
