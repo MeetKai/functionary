@@ -1,4 +1,4 @@
-transformers==4.35.2
+transformers==4.36.2
 accelerate~=0.21.0
 sentencepiece~=0.1.99
 fastapi~=0.104.0
@@ -10,5 +10,5 @@ requests~=2.31.0
 PyYAML~=6.0.1
 typer==0.9.0
 protobuf==3.20.0
-tokenizers==0.14.1
-vllm==0.2.1
+tokenizers==0.15.0
+vllm==0.2.6

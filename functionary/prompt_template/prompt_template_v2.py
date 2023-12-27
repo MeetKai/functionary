@@ -1,6 +1,7 @@
+import json
 import random
 import string
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.prompt_template.base_template import PromptTemplate
 
@@ -10,6 +11,32 @@ class PromptTemplateV2(PromptTemplate):
     recipient_token = "<|recipient|>"
     content_token = "<|content|>"
     stop_token = "<|stop|>"
+    version = "v2"
+    # This token splits between function name and parameters
+    fn_param_sep_token = "\n<|content|> {"
+
+    def get_start_of_function_call_token(self) -> str:
+        return self.recipient_token
+
+    def get_stop_token_for_function_parameter(
+        self, stage: Literal["function", "parameter"]
+    ) -> int:
+        if stage == "function":
+            return "\n"  # 13
+        else:
+            return '":'  # 1264
+
+    def get_predefined_function_names(self) -> List[str]:
+        return ["all"]
+
+    def initialize_grammar_sampling_gen_state(self) -> Dict:
+        return {
+            "stage": "function",
+            "curr_tokens": [],
+            "curr_text": "",
+            "func_name": "",
+            "param_names": [],
+        }
 
     def get_additional_tokens(self) -> List[str]:
         return [
@@ -264,7 +291,7 @@ class PromptTemplateV2(PromptTemplate):
                 "func_name": None,  # function_name of the current tool, if the response requires to use tool
                 "response_type": None,  # response_type=text(text response)/function (using tool)
                 "func_index": -1,  # index of the tool in tool_calls
-                "call_id": None,  # call_id of the current tool 
+                "call_id": None,  # call_id of the current tool
                 # skip_until_reach we skip new tokens until we reach certain token. This is used when we hit special tokens
                 "skip_until_reach": self.content_token,  # at first we will skip until reach <|content|>
                 "first_time": True,  # if first_time we return an tempty delta with role=assistant

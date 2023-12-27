@@ -30,7 +30,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from vllm.engine.arg_utils import AsyncEngineArgs
-from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.entrypoints.openai.protocol import (
     ErrorResponse,
     LogProbs,
@@ -55,7 +54,10 @@ from functionary.openai_types import (
     StreamChoice,
     Tool,
 )
-from functionary.prompt_template import PromptTemplate, get_prompt_template_from_tokenizer
+from functionary.prompt_template import (
+    PromptTemplate,
+    get_prompt_template_from_tokenizer,
+)
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -261,13 +263,34 @@ async def create_chat_completion(raw_request: Request):
             ignore_eos=request.ignore_eos,
             use_beam_search=request.use_beam_search,
             skip_special_tokens=False,
+            logprobs=len(tokenizer.vocab.keys()),
         )
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
 
-    result_generator = engine.generate(
-        None, sampling_params, request_id, prompt_token_ids=prompt_token_ids
-    )
+    if request.functions:
+        tools_or_functions = [item.dict() for item in request.functions]
+    elif request.tools:
+        tools_or_functions = [item.dict() for item in request.tools]
+    else:
+        tools_or_functions = []
+
+    if args.grammar_sampling:
+        result_generator = engine.generate(
+            prompt=None,
+            sampling_params=sampling_params,
+            request_id=request_id,
+            prompt_token_ids=prompt_token_ids,
+            tools_or_functions=tools_or_functions,
+            prompt_template_cls=prompt_template,
+        )
+    else:
+        result_generator = engine.generate(
+            prompt=None,
+            sampling_params=sampling_params,
+            request_id=request_id,
+            prompt_token_ids=prompt_token_ids,
+        )
 
     async def abort_request() -> None:
         await engine.abort(request_id)
@@ -388,9 +411,20 @@ if __name__ == "__main__":
         "specified, the model name will be the same as "
         "the huggingface name.",
     )
+    parser.add_argument(
+        "--grammar-sampling",
+        type=bool,
+        default=True,
+        help="enable/disable grammar sampling for function names",
+    )
 
     parser = AsyncEngineArgs.add_cli_args(parser)
     args = parser.parse_args()
+
+    if args.grammar_sampling:
+        from functionary.vllm_monkey_patch.async_llm_engine import AsyncLLMEngine
+    else:
+        from vllm.engine.async_llm_engine import AsyncLLMEngine
 
     app.add_middleware(
         CORSMiddleware,

@@ -1,4 +1,5 @@
-from typing import Any, Dict, List, Optional, Tuple, Union
+import json
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.prompt_template.base_template import PromptTemplate
 
@@ -10,6 +11,9 @@ class PromptTemplateV1(PromptTemplate):
     end_assistant = "<|END_OF_ASSISTANT|>"
     end_function = "<|END_OF_FUNCTION_RESULT|>"
     end_function_call = "<|END_OF_FUNCTION_CALL|>"
+    version = "v1"
+    # This token splits between function name and parameters
+    fn_param_sep_token = ":\n{"
 
     def get_end_token_from_message(self, message: Dict) -> str:
         """this function is used for getting the end token for each message.
@@ -35,6 +39,26 @@ class PromptTemplateV1(PromptTemplate):
                 return self.end_function_call
             else:
                 return self.end_assistant
+
+    def get_start_of_function_call_token(self) -> str:
+        return self.start_function
+
+    def get_stop_token_for_function_parameter(
+        self, stage: Literal["function", "parameter"]
+    ) -> int:
+        if stage == "function":
+            return ":"  # 28747
+        else:
+            return '":'  # 1264
+
+    def initialize_grammar_sampling_gen_state(self) -> Dict:
+        return {
+            "stage": "pre-function",
+            "curr_tokens": [],
+            "curr_text": "",
+            "func_name": "",
+            "param_names": [],
+        }
 
     def get_additional_tokens(self) -> List[str]:
         return [
@@ -234,4 +258,3 @@ class PromptTemplateV1(PromptTemplate):
         chat_template = chat_template.replace("<br>\n", "")
         chat_template = chat_template.strip()
         return chat_template
-    

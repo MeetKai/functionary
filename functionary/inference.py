@@ -1,12 +1,18 @@
 from typing import List, Optional
 
 import torch
-from transformers import (LlamaForCausalLM, LlamaTokenizer, StoppingCriteria,
-                          StoppingCriteriaList)
+from transformers import (
+    LlamaForCausalLM,
+    LlamaTokenizer,
+    StoppingCriteria,
+    StoppingCriteriaList,
+)
 
 from functionary.openai_types import ChatMessage, Function, FunctionCall, Tool
-from functionary.prompt_template import (PromptTemplate,
-                                         get_prompt_template_from_tokenizer)
+from functionary.prompt_template import (
+    PromptTemplate,
+    get_prompt_template_from_tokenizer,
+)
 
 
 class StopWordsCriteria(StoppingCriteria):
@@ -37,9 +43,8 @@ def prepare_messages_for_inference(
     tools: Optional[List[Tool]] = None,
     device="cuda:0",
 ) -> torch.Tensor:
-    
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
-    
+
     dic_messages = [mess.dict() for mess in messages]
     dic_messages.append({"role": "assistant"})
 
