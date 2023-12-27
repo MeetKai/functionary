@@ -210,7 +210,7 @@ class PromptTemplate:
 
             # Check if the current state can be converted to json, it means the
             # new state is back to "parameter-name" stage
-            pattern = r',[\n\s]*"'
+            pattern = r',[\s]*"'
             match_res = re.findall(pattern, latest_param_val, re.DOTALL)
             if '"' in tokenizer.decode(new_token_id) and len(match_res) > 0:
                 latest_match = match_res[-1]
