@@ -41,7 +41,6 @@ def prepare_messages_for_inference(
     messages: List[ChatMessage],
     functions: Optional[List[Function]] = None,
     tools: Optional[List[Tool]] = None,
-    tool_choice: Optional[str] = None,
     device="cuda:0",
 ) -> torch.Tensor:
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
@@ -57,7 +56,7 @@ def prepare_messages_for_inference(
 
     dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)
     final_prompt = prompt_template.get_prompt_from_messages(
-        dic_messages, tools_or_functions=tools_or_functions, tool_choice=tool_choice
+        dic_messages, tools_or_functions=tools_or_functions
     )
     input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
     input_ids = input_ids.to(device)

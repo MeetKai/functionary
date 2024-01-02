@@ -71,7 +71,7 @@ class ChatCompletionRequest(BaseModel):
     messages: List[ChatMessage]
     functions: Optional[List[Function]] = None
     tools: Optional[List[Tool]] = None
-    tool_choice: Optional[str] = None
+    tool_choice: Optional[Union[str, Tool]] = None
     temperature: Optional[float] = 0.7
     top_p: Optional[float] = 1.0
     n: Optional[int] = 1
@@ -244,43 +244,19 @@ async def create_chat_completion(raw_request: Request):
     else:
         tools_or_functions = []
 
-    # Check if tool_choice is acceptable
-    # if request.tool_choice is not None:
-    #     tools_or_funcs_names = []
-    #     if request.tools is not None:
-    #         tools_or_funcs_names = [
-    #             tool_or_func["function"]["name"] for tool_or_func in tools_or_functions
-    #         ]
-    #     elif request.functions is not None:
-    #         tools_or_funcs_names = [
-    #             tool_or_func["name"] for tool_or_func in tools_or_functions
-    #         ]
-    #     assert (
-    #         request.tool_choice in ["none", "auto"] + tools_or_funcs_names
-    #     ), f'Please correct a tool_choice value that is one of "none", "auto" or one of the tool/function names'
-
-    #     if request.tool_choice == "none":
-    #         request.tools, request.functions = None, None
-    #     elif request.tool_choice != "auto":
-    #         if request.tools is not None:
-    #             tools_or_functions = [
-    #                 tool_or_func
-    #                 for tool_or_func in tools_or_functions
-    #                 if tool_or_func["function"]["name"] == request.tool_choice
-    #             ]
-    #         elif request.functions is not None:
-    #             tools_or_functions = [
-    #                 tool_or_func
-    #                 for tool_or_func in tools_or_functions
-    #                 if tool_or_func["name"] == request.tool_choice
-    #             ]
+    # Adjust tools_or_functions based on tool_choice
+    if request.tool_choice is not None:
+        if isinstance(request.tool_choice, str) and request.tool_choice == "none":
+            tools_or_functions = request.tools = []
+        elif isinstance(request.tool_choice, Tool):
+            tools_or_functions = [request.tool_choice.dict()]
+            request.tools = [request.tool_choice]
 
     prompt_token_ids = prepare_messages_for_inference(
         tokenizer=tokenizer,
         messages=request.messages,
         functions=request.functions,
         tools=request.tools,
-        tool_choice=request.tool_choice,
     ).tolist()[0]
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     if error_check_ret is not None:
@@ -457,7 +433,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--grammar-sampling",
         type=bool,
-        default=True,
+        default=False,
         help="enable/disable grammar sampling for function names",
     )
 

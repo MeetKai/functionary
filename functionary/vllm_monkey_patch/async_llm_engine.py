@@ -197,6 +197,7 @@ class _AsyncLLMEngine(LLMEngine):
     # - curr_text: curr_tokens but in string text form
     # - func_name: the function name, if any
     # - param_names: the parameters names, if any
+    # - tool_choice: whether the user provided tool_choice
     gen_states: dict = {}
 
     async def step_async(self) -> List[RequestOutput]:
@@ -480,7 +481,7 @@ class AsyncLLMEngine:
         prompt_token_ids: Optional[List[int]] = None,
         tools_or_functions: Optional[List[dict]] = None,
         prompt_template_cls: Optional[Any] = None,
-        tool_choice: Optional[str] = None,
+        tool_choice: Optional[Any] = None,
     ) -> RequestOutput:
         """Generate outputs for a request.
 
@@ -510,16 +511,6 @@ class AsyncLLMEngine:
             tool_or_func if "function" not in tool_or_func else tool_or_func["function"]
             for tool_or_func in tools_or_functions
         ]
-        breakpoint()
-        # if tool_choice is not None:
-        #     if tool_choice == "all":
-        #         self.engine.tools_or_functions[
-        #             request_id
-        #         ] = prompt_template_cls.get_predefined_function_names()
-        #     elif tool_choice != "auto":
-        #         breakpoint()
-        #         self.engine.tools_or_functions[request_id] = [tool_or_func for tool_or_func in tools_or_functions]
-
         self.engine.prompt_templates[request_id] = prompt_template_cls
 
         # Initialize the request_id entry of self.gen_states

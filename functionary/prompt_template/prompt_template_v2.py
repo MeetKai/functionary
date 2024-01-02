@@ -29,26 +29,22 @@ class PromptTemplateV2(PromptTemplate):
     def get_predefined_function_names(self) -> List[str]:
         return ["all"]
 
-    def initialize_grammar_sampling_gen_state(
-        self, tool_choice: Optional[str] = None
-    ) -> Dict:
-        # Determine stage based on tool_choice
-        if tool_choice is not None and tool_choice != "auto":
-            if tool_choice == "none":
-                func_name = self.get_predefined_function_names()[0]
-                stage = "no-function-call"
+    def initialize_grammar_sampling_gen_state(self, tool_choice: Optional[Any]) -> Dict:
+        if tool_choice is not None:
+            if isinstance(tool_choice, str):
+                add_predefined_fns = True
             else:
-                func_name = tool_choice
-                stage = "pre-parameter"
+                add_predefined_fns = False
         else:
-            func_name, stage = "", "function"
+            add_predefined_fns = True
 
         return {
-            "stage": stage,
+            "stage": "function",
             "curr_tokens": [],
             "curr_text": "",
-            "func_name": func_name,
+            "func_name": "",
             "param_names": [],
+            "add_predefined_fns": add_predefined_fns,
         }
 
     def get_additional_tokens(self) -> List[str]:
@@ -111,14 +107,7 @@ class PromptTemplateV2(PromptTemplate):
             if llm_output.endswith(stop):
                 llm_output = llm_output[: -len(stop)]
 
-        recipient_to_fill = ""
-        if tool_choice is not None and tool_choice != "auto":
-            if tool_choice == "none":
-                recipient_to_fill = self.get_predefined_function_names()[0]
-            else:
-                recipient_to_fill = tool_choice
-
-        llm_output = f"{self.from_token}assistant\n{self.recipient_token}{recipient_to_fill}{llm_output}"
+        llm_output = f"{self.from_token}assistant\n{self.recipient_token}" + llm_output
         responses = llm_output.split(self.from_token)
         responses = [response.strip() for response in responses]
 
