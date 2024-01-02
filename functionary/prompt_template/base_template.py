@@ -46,9 +46,11 @@ class PromptTemplate:
         return []
 
     @abstractmethod
-    def initialize_grammar_sampling_gen_state(self) -> Dict:
+    def initialize_grammar_sampling_gen_state(self, tool_choice: Optional[str]) -> Dict:
         """initializes and returns a new generation state. Each template version may be initialized
         at different starting stage
+        Args:
+            tool_choice (Optional[str]): the choice of tool determined by the user
         Returns:
             dict: the gen_state. It contains the following:
             - stage: one of the following:
@@ -454,7 +456,10 @@ class PromptTemplate:
         return messages
 
     def get_prompt_from_messages(
-        self, messages: List[Dict], tools_or_functions: Optional[List[Dict]] = None
+        self,
+        messages: List[Dict],
+        tools_or_functions: Optional[List[Dict]] = None,
+        tool_choice: Optional[str] = None,
     ) -> str:
         """This function is used to get the complete prompt for list of messages
 
@@ -485,7 +490,16 @@ class PromptTemplate:
         full_text = ""
         for message in messages_clone:
             full_text += self.convert_message_to_prompt(message)
-        return full_text.strip()
+        full_text = full_text.strip()
+
+        # add function name to prompt if the user is forcing a function or no functions
+        if tool_choice is not None:
+            if tool_choice == "none":
+                full_text += self.get_predefined_function_names()[0]
+            elif tool_choice != "auto":
+                full_text += tool_choice
+
+        return full_text
 
     def get_end_token_to_token_id(self, tokenizer: Any) -> Dict[str, int]:
         """return a dictionary mapping from end_token --> token_id
@@ -508,11 +522,14 @@ class PromptTemplate:
         return result
 
     @abstractmethod
-    def parse_assistant_response(self, llm_output: str) -> Dict:
+    def parse_assistant_response(
+        self, llm_output: str, tool_choice: Optional[str] = None
+    ) -> Dict:
         """This function is used to parse llm_output to the Message of OpenAI ({"role": xxx, "content": xxx, ...})
         this is used in inference.
         Args:
             llm_output (str): The generated content from Model
+            tool_choice (Optional[str]): Any choice of tool provided by the user
 
         Returns:
             Dict: Dictionary of OpenAI message format

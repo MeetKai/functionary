@@ -28,7 +28,7 @@ from fastapi import BackgroundTasks, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.entrypoints.openai.protocol import (
     ErrorResponse,
@@ -71,6 +71,7 @@ class ChatCompletionRequest(BaseModel):
     messages: List[ChatMessage]
     functions: Optional[List[Function]] = None
     tools: Optional[List[Tool]] = None
+    tool_choice: Optional[str] = None
     temperature: Optional[float] = 0.7
     top_p: Optional[float] = 1.0
     n: Optional[int] = 1
@@ -86,6 +87,15 @@ class ChatCompletionRequest(BaseModel):
     top_k: Optional[int] = -1
     ignore_eos: Optional[bool] = False
     use_beam_search: Optional[bool] = False
+
+    @validator("tool_choice", always=True)
+    def validate_tool_choice(cls, value, values):
+        if value is None:
+            if values["tools"] is None and value["functions"] is None:
+                return "none"
+            else:
+                return "auto"
+        return value
 
 
 class ChatCompletionResponseChoice(BaseModel):
@@ -227,11 +237,50 @@ async def create_chat_completion(raw_request: Request):
             HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
         )
 
+    if request.functions:
+        tools_or_functions = [item.dict() for item in request.functions]
+    elif request.tools:
+        tools_or_functions = [item.dict() for item in request.tools]
+    else:
+        tools_or_functions = []
+
+    # Check if tool_choice is acceptable
+    # if request.tool_choice is not None:
+    #     tools_or_funcs_names = []
+    #     if request.tools is not None:
+    #         tools_or_funcs_names = [
+    #             tool_or_func["function"]["name"] for tool_or_func in tools_or_functions
+    #         ]
+    #     elif request.functions is not None:
+    #         tools_or_funcs_names = [
+    #             tool_or_func["name"] for tool_or_func in tools_or_functions
+    #         ]
+    #     assert (
+    #         request.tool_choice in ["none", "auto"] + tools_or_funcs_names
+    #     ), f'Please correct a tool_choice value that is one of "none", "auto" or one of the tool/function names'
+
+    #     if request.tool_choice == "none":
+    #         request.tools, request.functions = None, None
+    #     elif request.tool_choice != "auto":
+    #         if request.tools is not None:
+    #             tools_or_functions = [
+    #                 tool_or_func
+    #                 for tool_or_func in tools_or_functions
+    #                 if tool_or_func["function"]["name"] == request.tool_choice
+    #             ]
+    #         elif request.functions is not None:
+    #             tools_or_functions = [
+    #                 tool_or_func
+    #                 for tool_or_func in tools_or_functions
+    #                 if tool_or_func["name"] == request.tool_choice
+    #             ]
+
     prompt_token_ids = prepare_messages_for_inference(
         tokenizer=tokenizer,
         messages=request.messages,
         functions=request.functions,
         tools=request.tools,
+        tool_choice=request.tool_choice,
     ).tolist()[0]
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     if error_check_ret is not None:
@@ -268,13 +317,6 @@ async def create_chat_completion(raw_request: Request):
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
 
-    if request.functions:
-        tools_or_functions = [item.dict() for item in request.functions]
-    elif request.tools:
-        tools_or_functions = [item.dict() for item in request.tools]
-    else:
-        tools_or_functions = []
-
     if args.grammar_sampling:
         result_generator = engine.generate(
             prompt=None,
@@ -283,6 +325,7 @@ async def create_chat_completion(raw_request: Request):
             prompt_token_ids=prompt_token_ids,
             tools_or_functions=tools_or_functions,
             prompt_template_cls=prompt_template,
+            tool_choice=request.tool_choice,
         )
     else:
         result_generator = engine.generate(
@@ -345,7 +388,7 @@ async def create_chat_completion(raw_request: Request):
     for output in final_res.outputs:
         text_response = output.text.strip()
         chat_mess = prompt_template.parse_assistant_response(
-            text_response
+            llm_output=text_response, tool_choice=request.tool_choice
         )  # parse_generated_content(text_response)
         choice_data = ChatCompletionResponseChoice(
             index=output.index,

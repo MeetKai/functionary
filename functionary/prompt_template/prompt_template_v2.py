@@ -29,12 +29,25 @@ class PromptTemplateV2(PromptTemplate):
     def get_predefined_function_names(self) -> List[str]:
         return ["all"]
 
-    def initialize_grammar_sampling_gen_state(self) -> Dict:
+    def initialize_grammar_sampling_gen_state(
+        self, tool_choice: Optional[str] = None
+    ) -> Dict:
+        # Determine stage based on tool_choice
+        if tool_choice is not None and tool_choice != "auto":
+            if tool_choice == "none":
+                func_name = self.get_predefined_function_names()[0]
+                stage = "no-function-call"
+            else:
+                func_name = tool_choice
+                stage = "pre-parameter"
+        else:
+            func_name, stage = "", "function"
+
         return {
-            "stage": "function",
+            "stage": stage,
             "curr_tokens": [],
             "curr_text": "",
-            "func_name": "",
+            "func_name": func_name,
             "param_names": [],
         }
 
@@ -91,12 +104,21 @@ class PromptTemplateV2(PromptTemplate):
     def get_assistant_prefixes(self) -> List[str]:
         return [f"{self.from_token}assistant\n{self.recipient_token}"]
 
-    def parse_assistant_response(self, llm_output: str) -> Dict:
+    def parse_assistant_response(
+        self, llm_output: str, tool_choice: Optional[str] = None
+    ) -> Dict:
         for stop in self.get_stop_tokens_for_generation():
             if llm_output.endswith(stop):
                 llm_output = llm_output[: -len(stop)]
 
-        llm_output = f"{self.from_token}assistant\n{self.recipient_token}" + llm_output
+        recipient_to_fill = ""
+        if tool_choice is not None and tool_choice != "auto":
+            if tool_choice == "none":
+                recipient_to_fill = self.get_predefined_function_names()[0]
+            else:
+                recipient_to_fill = tool_choice
+
+        llm_output = f"{self.from_token}assistant\n{self.recipient_token}{recipient_to_fill}{llm_output}"
         responses = llm_output.split(self.from_token)
         responses = [response.strip() for response in responses]
 
@@ -116,6 +138,12 @@ class PromptTemplateV2(PromptTemplate):
             if recipient == "all":
                 text_response = content
             else:
+                if (
+                    recipient == ""
+                    and tool_choice is not None
+                    and tool_choice not in ["all", "none"]
+                ):
+                    recipient = tool_choice
                 tool_calls.append(
                     {
                         "function": {"name": recipient, "arguments": content},

@@ -480,6 +480,7 @@ class AsyncLLMEngine:
         prompt_token_ids: Optional[List[int]] = None,
         tools_or_functions: Optional[List[dict]] = None,
         prompt_template_cls: Optional[Any] = None,
+        tool_choice: Optional[str] = None,
     ) -> RequestOutput:
         """Generate outputs for a request.
 
@@ -509,12 +510,22 @@ class AsyncLLMEngine:
             tool_or_func if "function" not in tool_or_func else tool_or_func["function"]
             for tool_or_func in tools_or_functions
         ]
+        breakpoint()
+        # if tool_choice is not None:
+        #     if tool_choice == "all":
+        #         self.engine.tools_or_functions[
+        #             request_id
+        #         ] = prompt_template_cls.get_predefined_function_names()
+        #     elif tool_choice != "auto":
+        #         breakpoint()
+        #         self.engine.tools_or_functions[request_id] = [tool_or_func for tool_or_func in tools_or_functions]
+
         self.engine.prompt_templates[request_id] = prompt_template_cls
 
         # Initialize the request_id entry of self.gen_states
         self.engine.gen_states[request_id] = self.engine.prompt_templates[
             request_id
-        ].initialize_grammar_sampling_gen_state()
+        ].initialize_grammar_sampling_gen_state(tool_choice=tool_choice)
 
         try:
             stream = await self.add_request(
