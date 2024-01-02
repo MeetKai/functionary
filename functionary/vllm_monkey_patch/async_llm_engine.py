@@ -513,10 +513,32 @@ class AsyncLLMEngine:
         ]
         self.engine.prompt_templates[request_id] = prompt_template_cls
 
+        # Initialize gen_state based on tool_choice
+        fn_stop_token = prompt_template_cls.get_stop_token_for_function_parameter(
+            stage="function"
+        )
+        if tool_choice is not None:
+            if tool_choice == "none":
+                tool_choice_name = tool_choice
+                curr_text = fn_stop_token
+                curr_tokens = self.engine.tokenizer.encode(curr_text)[-1:]
+            elif tool_choice == "auto":
+                tool_choice_name = ""
+                curr_text, curr_tokens = "", []
+            else:
+                tool_choice_name = tool_choice.function.name
+                curr_text = fn_stop_token
+                curr_tokens = self.engine.tokenizer.encode(curr_text)[-1:]
+        else:
+            tool_choice_name = ""
+            curr_text, curr_tokens = "", []
+
         # Initialize the request_id entry of self.gen_states
         self.engine.gen_states[request_id] = self.engine.prompt_templates[
             request_id
-        ].initialize_grammar_sampling_gen_state(tool_choice=tool_choice)
+        ].initialize_grammar_sampling_gen_state(
+            tool_choice=tool_choice_name, curr_text=curr_text, curr_tokens=curr_tokens
+        )
 
         try:
             stream = await self.add_request(

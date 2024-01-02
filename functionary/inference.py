@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import torch
 from transformers import (
@@ -41,6 +41,7 @@ def prepare_messages_for_inference(
     messages: List[ChatMessage],
     functions: Optional[List[Function]] = None,
     tools: Optional[List[Tool]] = None,
+    tool_choice: Optional[Union[str, Tool]] = None,
     device="cuda:0",
 ) -> torch.Tensor:
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
@@ -58,6 +59,16 @@ def prepare_messages_for_inference(
     final_prompt = prompt_template.get_prompt_from_messages(
         dic_messages, tools_or_functions=tools_or_functions
     )
+
+    if tool_choice is not None and tool_choice != "auto":
+        if tool_choice == "none":
+            final_prompt += prompt_template.get_predefined_function_names()[0]
+        else:
+            final_prompt += tool_choice.function.name
+        final_prompt += prompt_template.get_stop_token_for_function_parameter(
+            stage="function"
+        )
+
     input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
     input_ids = input_ids.to(device)
     return input_ids

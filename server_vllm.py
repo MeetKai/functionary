@@ -257,6 +257,7 @@ async def create_chat_completion(raw_request: Request):
         messages=request.messages,
         functions=request.functions,
         tools=request.tools,
+        tool_choice=request.tool_choice,
     ).tolist()[0]
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     if error_check_ret is not None:
@@ -364,7 +365,7 @@ async def create_chat_completion(raw_request: Request):
     for output in final_res.outputs:
         text_response = output.text.strip()
         chat_mess = prompt_template.parse_assistant_response(
-            llm_output=text_response
+            llm_output=text_response, tool_choice=request.tool_choice
         )  # parse_generated_content(text_response)
         choice_data = ChatCompletionResponseChoice(
             index=output.index,
