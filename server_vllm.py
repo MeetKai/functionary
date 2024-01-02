@@ -329,8 +329,9 @@ async def create_chat_completion(raw_request: Request):
                     yield delta_text, finish_reason
         yield "", "stop"
 
-    async def completion_stream_generator() -> AsyncGenerator[str, None]:
+    async def completion_stream_generator(tool_choice) -> AsyncGenerator[str, None]:
         generator = wrap_vllm_generator()
+        delta_count = 0
         async for response in generate_openai_format_from_stream_async(
             generator, prompt_template
         ):
@@ -339,6 +340,44 @@ async def create_chat_completion(raw_request: Request):
             chunk_dic = result.dict(exclude_unset=True)
             chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
             yield f"data: {chunk_data}\n\n"
+            delta_count += 1
+            if (
+                delta_count == 1
+                and tool_choice is not None
+                and isinstance(tool_choice, Tool)
+            ):
+                response["delta"].update(
+                    {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": None,
+                                "function": {
+                                    "arguments": "",
+                                    "name": tool_choice.function.name,
+                                },
+                                "type": "function",
+                            }
+                        ]
+                    }
+                )
+                chunk = StreamChoice(**response)
+                result = ChatCompletionChunk(id=request_id, choices=[chunk])
+                chunk_dic = result.dict(exclude_unset=True)
+                chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
+                yield f"data: {chunk_data}\n\n"
+                chunk_dic["choices"][0]["delta"]["tool_calls"][0].update(
+                    {
+                        "function": {
+                            "arguments": prompt_template.get_stop_token_for_function_parameter(
+                                stage="function"
+                            ),
+                            "name": "",
+                        }
+                    }
+                )
+                chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
+                yield f"data: {chunk_data}\n\n"
         yield "data: [DONE]\n\n"
 
     # Streaming response
@@ -347,7 +386,7 @@ async def create_chat_completion(raw_request: Request):
         # Abort the request if the client disconnects.
         background_tasks.add_task(abort_request)
         return StreamingResponse(
-            completion_stream_generator(),
+            completion_stream_generator(tool_choice=request.tool_choice),
             media_type="text/event-stream",
             background=background_tasks,
         )
