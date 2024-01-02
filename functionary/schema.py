@@ -305,6 +305,7 @@ def generate_schema_from_functions(
 
         parameters = function.get("parameters", None)
         if parameters is not None and parameters.get("properties") is not None:
+            parameters = deepcopy(jsonref.JsonRef.replace_refs(parameters))
             schema += " = (_: {\n"
             required_params = parameters.get("required", [])
             tp_lines = get_parameter_typescript(
