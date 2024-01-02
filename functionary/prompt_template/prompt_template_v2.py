@@ -100,9 +100,7 @@ class PromptTemplateV2(PromptTemplate):
     def get_assistant_prefixes(self) -> List[str]:
         return [f"{self.from_token}assistant\n{self.recipient_token}"]
 
-    def parse_assistant_response(
-        self, llm_output: str, tool_choice: Optional[str] = None
-    ) -> Dict:
+    def parse_assistant_response(self, llm_output: str) -> Dict:
         for stop in self.get_stop_tokens_for_generation():
             if llm_output.endswith(stop):
                 llm_output = llm_output[: -len(stop)]
@@ -127,12 +125,6 @@ class PromptTemplateV2(PromptTemplate):
             if recipient == "all":
                 text_response = content
             else:
-                if (
-                    recipient == ""
-                    and tool_choice is not None
-                    and tool_choice not in ["all", "none"]
-                ):
-                    recipient = tool_choice
                 tool_calls.append(
                     {
                         "function": {"name": recipient, "arguments": content},

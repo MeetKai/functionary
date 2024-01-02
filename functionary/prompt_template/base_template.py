@@ -46,11 +46,11 @@ class PromptTemplate:
         return []
 
     @abstractmethod
-    def initialize_grammar_sampling_gen_state(self, tool_choice: bool) -> Dict:
+    def initialize_grammar_sampling_gen_state(self, tool_choice: Optional[Any]) -> Dict:
         """initializes and returns a new generation state. Each template version may be initialized
         at different starting stage
         Args:
-            tool_choice (bool): whether the user provided a tool_choice
+            tool_choice (Optional[Any]): the tool_choice provided by the user, if any
         Returns:
             dict: the gen_state. It contains the following:
             - stage: one of the following:
@@ -490,9 +490,7 @@ class PromptTemplate:
         full_text = ""
         for message in messages_clone:
             full_text += self.convert_message_to_prompt(message)
-        full_text = full_text.strip()
-
-        return full_text
+        return full_text.rstrip()
 
     def get_end_token_to_token_id(self, tokenizer: Any) -> Dict[str, int]:
         """return a dictionary mapping from end_token --> token_id
@@ -515,9 +513,7 @@ class PromptTemplate:
         return result
 
     @abstractmethod
-    def parse_assistant_response(
-        self, llm_output: str, tool_choice: Optional[str] = None
-    ) -> Dict:
+    def parse_assistant_response(self, llm_output: str) -> Dict:
         """This function is used to parse llm_output to the Message of OpenAI ({"role": xxx, "content": xxx, ...})
         this is used in inference.
         Args:

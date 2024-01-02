@@ -364,7 +364,7 @@ async def create_chat_completion(raw_request: Request):
     for output in final_res.outputs:
         text_response = output.text.strip()
         chat_mess = prompt_template.parse_assistant_response(
-            llm_output=text_response, tool_choice=request.tool_choice
+            llm_output=text_response
         )  # parse_generated_content(text_response)
         choice_data = ChatCompletionResponseChoice(
             index=output.index,
@@ -433,7 +433,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--grammar-sampling",
         type=bool,
-        default=False,
+        default=True,
         help="enable/disable grammar sampling for function names",
     )
 
