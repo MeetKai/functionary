@@ -249,8 +249,27 @@ async def create_chat_completion(raw_request: Request):
         if isinstance(request.tool_choice, str) and request.tool_choice == "none":
             tools_or_functions = request.tools = []
         elif isinstance(request.tool_choice, Tool):
-            tools_or_functions = [request.tool_choice.dict()]
-            request.tools = [request.tool_choice]
+            if (
+                request.tool_choice.function.description == ""
+                and request.tool_choice.function.parameters == None
+            ):
+                tools_or_functions = [
+                    tool_or_func
+                    for tool_or_func in tools_or_functions
+                    if tool_or_func["function"]["name"]
+                    == request.tool_choice.function.name
+                ]
+                assert (
+                    len(tools_or_functions) > 0
+                ), f"Invalid value for 'tool_choice': no function named {request.tool_choice.function.name} was specified in the 'tools' parameter"
+                request.tools = [
+                    item
+                    for item in request.tools
+                    if item.function.name == request.tool_choice.function.name
+                ]
+            else:
+                tools_or_functions = [request.tool_choice.dict()]
+                request.tools = [request.tool_choice]
 
     prompt_token_ids = prepare_messages_for_inference(
         tokenizer=tokenizer,

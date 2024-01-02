@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 class FunctionCall(BaseModel):
     name: Optional[str] = None
     arguments: str
-    
+
 
 class ToolCall(BaseModel):
     index: Optional[int] = None
@@ -19,7 +19,7 @@ class ToolCall(BaseModel):
 class Function(BaseModel):
     name: str
     description: Optional[str] = Field(default="")
-    parameters: dict
+    parameters: Optional[dict]
 
 
 class Tool(BaseModel):
