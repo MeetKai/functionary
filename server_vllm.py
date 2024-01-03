@@ -334,7 +334,9 @@ async def create_chat_completion(raw_request: Request):
     async def abort_request() -> None:
         await engine.abort(request_id)
 
-    async def wrap_vllm_generator() -> AsyncGenerator[Tuple[str, Optional[str]], None]:
+    async def wrap_vllm_generator(
+        tool_choice,
+    ) -> AsyncGenerator[Tuple[str, Optional[str]], None]:
         previous_texts = ""
         async for res in result_generator:
             for output in res.outputs:
@@ -345,12 +347,25 @@ async def create_chat_completion(raw_request: Request):
                     delta_text.strip()
                     not in prompt_template.get_stop_tokens_for_generation()
                 ):
+                    if (
+                        previous_texts == delta_text
+                        and delta_text in prompt_template.fn_param_sep_token
+                    ):
+                        if tool_choice == "none":
+                            yield prompt_template.get_predefined_function_names()[
+                                0
+                            ] + prompt_template.get_stop_token_for_function_parameter(
+                                stage="function"
+                            ), finish_reason
+                        elif isinstance(tool_choice, Tool):
+                            yield tool_choice.function.name + prompt_template.get_stop_token_for_function_parameter(
+                                stage="function"
+                            ), finish_reason
                     yield delta_text, finish_reason
         yield "", "stop"
 
     async def completion_stream_generator(tool_choice) -> AsyncGenerator[str, None]:
-        generator = wrap_vllm_generator()
-        delta_count = 0
+        generator = wrap_vllm_generator(tool_choice=tool_choice)
         async for response in generate_openai_format_from_stream_async(
             generator, prompt_template
         ):
@@ -359,44 +374,6 @@ async def create_chat_completion(raw_request: Request):
             chunk_dic = result.dict(exclude_unset=True)
             chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
             yield f"data: {chunk_data}\n\n"
-            delta_count += 1
-            if (
-                delta_count == 1
-                and tool_choice is not None
-                and isinstance(tool_choice, Tool)
-            ):
-                response["delta"].update(
-                    {
-                        "tool_calls": [
-                            {
-                                "index": 0,
-                                "id": None,
-                                "function": {
-                                    "arguments": "",
-                                    "name": tool_choice.function.name,
-                                },
-                                "type": "function",
-                            }
-                        ]
-                    }
-                )
-                chunk = StreamChoice(**response)
-                result = ChatCompletionChunk(id=request_id, choices=[chunk])
-                chunk_dic = result.dict(exclude_unset=True)
-                chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
-                yield f"data: {chunk_data}\n\n"
-                chunk_dic["choices"][0]["delta"]["tool_calls"][0].update(
-                    {
-                        "function": {
-                            "arguments": prompt_template.get_stop_token_for_function_parameter(
-                                stage="function"
-                            ),
-                            "name": "",
-                        }
-                    }
-                )
-                chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
-                yield f"data: {chunk_data}\n\n"
         yield "data: [DONE]\n\n"
 
     # Streaming response
