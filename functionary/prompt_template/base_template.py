@@ -490,7 +490,7 @@ class PromptTemplate:
         full_text = ""
         for message in messages_clone:
             full_text += self.convert_message_to_prompt(message)
-        return full_text.rstrip()
+        return full_text.strip()
 
     def get_end_token_to_token_id(self, tokenizer: Any) -> Dict[str, int]:
         """return a dictionary mapping from end_token --> token_id
