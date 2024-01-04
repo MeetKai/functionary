@@ -347,6 +347,8 @@ async def create_chat_completion(raw_request: Request):
                     delta_text.strip()
                     not in prompt_template.get_stop_tokens_for_generation()
                 ):
+                    # This part checks if delta_text is the first token and tool_choice is provided by user
+                    # If so, it yields the prefix containing the tool_choice name first
                     if (
                         previous_texts == delta_text
                         and delta_text in prompt_template.fn_param_sep_token
