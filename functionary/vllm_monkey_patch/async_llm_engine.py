@@ -197,6 +197,7 @@ class _AsyncLLMEngine(LLMEngine):
     # - curr_text: curr_tokens but in string text form
     # - func_name: the function name, if any
     # - param_names: the parameters names, if any
+    # - tool_choice: whether the user provided tool_choice
     gen_states: dict = {}
 
     async def step_async(self) -> List[RequestOutput]:
@@ -480,6 +481,7 @@ class AsyncLLMEngine:
         prompt_token_ids: Optional[List[int]] = None,
         tools_or_functions: Optional[List[dict]] = None,
         prompt_template_cls: Optional[Any] = None,
+        tool_choice: Optional[Any] = None,
     ) -> RequestOutput:
         """Generate outputs for a request.
 
@@ -511,10 +513,32 @@ class AsyncLLMEngine:
         ]
         self.engine.prompt_templates[request_id] = prompt_template_cls
 
+        # Initialize gen_state based on tool_choice
+        fn_stop_token = prompt_template_cls.get_stop_token_for_function_parameter(
+            stage="function"
+        )
+        if tool_choice is not None:
+            if tool_choice == "none":
+                tool_choice_name = tool_choice
+                curr_text = fn_stop_token
+                curr_tokens = self.engine.tokenizer.encode(curr_text)[-1:]
+            elif tool_choice == "auto":
+                tool_choice_name = ""
+                curr_text, curr_tokens = "", []
+            else:
+                tool_choice_name = tool_choice.function.name
+                curr_text = fn_stop_token
+                curr_tokens = self.engine.tokenizer.encode(curr_text)[-1:]
+        else:
+            tool_choice_name = ""
+            curr_text, curr_tokens = "", []
+
         # Initialize the request_id entry of self.gen_states
         self.engine.gen_states[request_id] = self.engine.prompt_templates[
             request_id
-        ].initialize_grammar_sampling_gen_state()
+        ].initialize_grammar_sampling_gen_state(
+            tool_choice=tool_choice_name, curr_text=curr_text, curr_tokens=curr_tokens
+        )
 
         try:
             stream = await self.add_request(

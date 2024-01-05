@@ -46,9 +46,11 @@ class PromptTemplate:
         return []
 
     @abstractmethod
-    def initialize_grammar_sampling_gen_state(self) -> Dict:
+    def initialize_grammar_sampling_gen_state(self, tool_choice: Optional[Any]) -> Dict:
         """initializes and returns a new generation state. Each template version may be initialized
         at different starting stage
+        Args:
+            tool_choice (Optional[Any]): the tool_choice provided by the user, if any
         Returns:
             dict: the gen_state. It contains the following:
             - stage: one of the following:
@@ -110,6 +112,7 @@ class PromptTemplate:
                     "curr_text": "",
                     "func_name": "",
                     "param_names": [],
+                    "add_predefined_fns": gen_state["add_predefined_fns"],
                 }
                 gen_state["stage"] = "function"
         elif gen_state["stage"] == "function":
@@ -287,7 +290,7 @@ class PromptTemplate:
         # Subjected to changes in future versions
         # Concatenate the list of predefined function names in the respective prompt
         # template version. For e.g., v2 returns ["all"]
-        if gen_state["stage"] == "function":
+        if gen_state["stage"] == "function" and gen_state["add_predefined_fns"] is True:
             options += self.get_predefined_function_names()
 
         # No grammar sampling needed if gen_state not in "function" or "pre-parameter"
@@ -454,7 +457,9 @@ class PromptTemplate:
         return messages
 
     def get_prompt_from_messages(
-        self, messages: List[Dict], tools_or_functions: Optional[List[Dict]] = None
+        self,
+        messages: List[Dict],
+        tools_or_functions: Optional[List[Dict]] = None,
     ) -> str:
         """This function is used to get the complete prompt for list of messages
 
@@ -513,6 +518,7 @@ class PromptTemplate:
         this is used in inference.
         Args:
             llm_output (str): The generated content from Model
+            tool_choice (Optional[str]): Any choice of tool provided by the user
 
         Returns:
             Dict: Dictionary of OpenAI message format

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional, Union
 
 import torch
 from transformers import (
@@ -41,6 +41,7 @@ def prepare_messages_for_inference(
     messages: List[ChatMessage],
     functions: Optional[List[Function]] = None,
     tools: Optional[List[Tool]] = None,
+    tool_choice: Optional[Union[str, Tool]] = None,
     device="cuda:0",
 ) -> torch.Tensor:
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
@@ -58,9 +59,52 @@ def prepare_messages_for_inference(
     final_prompt = prompt_template.get_prompt_from_messages(
         dic_messages, tools_or_functions=tools_or_functions
     )
+
+    if tool_choice is not None and tool_choice != "auto":
+        if tool_choice == "none":
+            final_prompt += prompt_template.get_predefined_function_names()[0]
+        else:
+            final_prompt += tool_choice.function.name
+        final_prompt += prompt_template.get_stop_token_for_function_parameter(
+            stage="function"
+        )
+
     input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
     input_ids = input_ids.to(device)
     return input_ids
+
+
+def enforce_tool_choice(
+    tool_choice: Union[str, Tool], tools: Optional[List[Tool]]
+) -> Optional[List[Tool]]:
+    """This function is used to enforce tool_choice in the list of tools if it is provided by the user
+
+    Args:
+        tool_choice: (Union[str, Tool]): either "auto", "none" or Tool object
+        tools (Optional[List[Tool]]): the existing list of tools passed in from user
+
+    Returns:
+        List[Tool]: the modified tools_or_functions based on tool_choice
+    """
+    if tool_choice == "none":
+        return []
+    elif isinstance(tool_choice, Tool):
+        if (
+            tool_choice.function.description == ""
+            and tool_choice.function.parameters is None
+        ):
+            tools = [
+                tool
+                for tool in tools
+                if tool.function.name == tool_choice.function.name
+            ]
+            assert (
+                len(tools) > 0
+            ), f"Invalid value for 'tool_choice': no function named {tool_choice.function.name} was specified in the 'tools' parameter"
+        else:
+            tools = [tool_choice]
+
+    return tools
 
 
 def remove_stop_tokens_from_end(

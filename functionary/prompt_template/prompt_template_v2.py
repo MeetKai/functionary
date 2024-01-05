@@ -3,6 +3,7 @@ import random
 import string
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
+from functionary.openai_types import Tool
 from functionary.prompt_template.base_template import PromptTemplate
 
 
@@ -29,13 +30,23 @@ class PromptTemplateV2(PromptTemplate):
     def get_predefined_function_names(self) -> List[str]:
         return ["all"]
 
-    def initialize_grammar_sampling_gen_state(self) -> Dict:
+    def initialize_grammar_sampling_gen_state(
+        self, tool_choice: str, curr_text: str, curr_tokens: List[int]
+    ) -> Dict:
+        if tool_choice != "":
+            add_predefined_fns = False
+            stage = "pre-parameter"
+        else:
+            add_predefined_fns = True
+            stage = "function"
+
         return {
-            "stage": "function",
-            "curr_tokens": [],
-            "curr_text": "",
-            "func_name": "",
+            "stage": stage,
+            "curr_tokens": curr_tokens,
+            "curr_text": curr_text,
+            "func_name": tool_choice,
             "param_names": [],
+            "add_predefined_fns": add_predefined_fns,
         }
 
     def get_additional_tokens(self) -> List[str]:
@@ -91,12 +102,30 @@ class PromptTemplateV2(PromptTemplate):
     def get_assistant_prefixes(self) -> List[str]:
         return [f"{self.from_token}assistant\n{self.recipient_token}"]
 
-    def parse_assistant_response(self, llm_output: str) -> Dict:
+    def parse_assistant_response(
+        self, llm_output: str, tool_choice: Optional[Any]
+    ) -> Dict:
         for stop in self.get_stop_tokens_for_generation():
             if llm_output.endswith(stop):
                 llm_output = llm_output[: -len(stop)]
 
-        llm_output = f"{self.from_token}assistant\n{self.recipient_token}" + llm_output
+        recipient_to_fill = ""
+        if tool_choice is not None:
+            if tool_choice == "none":
+                recipient_to_fill = self.get_predefined_function_names()[
+                    0
+                ] + self.get_stop_token_for_function_parameter(stage="function")
+            elif isinstance(tool_choice, Tool):
+                recipient_to_fill = (
+                    tool_choice.function.name
+                    + self.get_stop_token_for_function_parameter(stage="function")
+                )
+
+        llm_output = (
+            f"{self.from_token}assistant\n{self.recipient_token}"
+            + recipient_to_fill
+            + llm_output
+        )
         responses = llm_output.split(self.from_token)
         responses = [response.strip() for response in responses]
 

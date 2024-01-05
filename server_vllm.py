@@ -28,7 +28,7 @@ from fastapi import BackgroundTasks, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.entrypoints.openai.protocol import (
     ErrorResponse,
@@ -44,7 +44,7 @@ from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
-from functionary.inference import prepare_messages_for_inference
+from functionary.inference import enforce_tool_choice, prepare_messages_for_inference
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
     ChatCompletionChunk,
@@ -71,6 +71,7 @@ class ChatCompletionRequest(BaseModel):
     messages: List[ChatMessage]
     functions: Optional[List[Function]] = None
     tools: Optional[List[Tool]] = None
+    tool_choice: Optional[Union[str, Tool]] = None
     temperature: Optional[float] = 0.7
     top_p: Optional[float] = 1.0
     n: Optional[int] = 1
@@ -86,6 +87,15 @@ class ChatCompletionRequest(BaseModel):
     top_k: Optional[int] = -1
     ignore_eos: Optional[bool] = False
     use_beam_search: Optional[bool] = False
+
+    @validator("tool_choice", always=True)
+    def validate_tool_choice(cls, value, values):
+        if value is None:
+            if values["tools"] is None and value["functions"] is None:
+                return "none"
+            else:
+                return "auto"
+        return value
 
 
 class ChatCompletionResponseChoice(BaseModel):
@@ -227,11 +237,22 @@ async def create_chat_completion(raw_request: Request):
             HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
         )
 
+    if request.tools:
+        tools = enforce_tool_choice(
+            tool_choice=request.tool_choice, tools=request.tools
+        )
+        tools_or_functions = [item.dict() for item in tools]
+    elif request.functions:
+        tools_or_functions = [item.dict() for item in request.functions]
+    else:
+        tools_or_functions = []
+
     prompt_token_ids = prepare_messages_for_inference(
         tokenizer=tokenizer,
         messages=request.messages,
         functions=request.functions,
-        tools=request.tools,
+        tools=tools,
+        tool_choice=request.tool_choice,
     ).tolist()[0]
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     if error_check_ret is not None:
@@ -268,13 +289,6 @@ async def create_chat_completion(raw_request: Request):
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
 
-    if request.functions:
-        tools_or_functions = [item.dict() for item in request.functions]
-    elif request.tools:
-        tools_or_functions = [item.dict() for item in request.tools]
-    else:
-        tools_or_functions = []
-
     if args.grammar_sampling:
         result_generator = engine.generate(
             prompt=None,
@@ -283,6 +297,7 @@ async def create_chat_completion(raw_request: Request):
             prompt_token_ids=prompt_token_ids,
             tools_or_functions=tools_or_functions,
             prompt_template_cls=prompt_template,
+            tool_choice=request.tool_choice,
         )
     else:
         result_generator = engine.generate(
@@ -295,7 +310,9 @@ async def create_chat_completion(raw_request: Request):
     async def abort_request() -> None:
         await engine.abort(request_id)
 
-    async def wrap_vllm_generator() -> AsyncGenerator[Tuple[str, Optional[str]], None]:
+    async def wrap_vllm_generator(
+        tool_choice,
+    ) -> AsyncGenerator[Tuple[str, Optional[str]], None]:
         previous_texts = ""
         async for res in result_generator:
             for output in res.outputs:
@@ -306,11 +323,27 @@ async def create_chat_completion(raw_request: Request):
                     delta_text.strip()
                     not in prompt_template.get_stop_tokens_for_generation()
                 ):
+                    # This part checks if delta_text is the first token and tool_choice is provided by user
+                    # If so, it yields the prefix containing the tool_choice name first
+                    if (
+                        previous_texts == delta_text
+                        and delta_text in prompt_template.fn_param_sep_token
+                    ):
+                        if tool_choice == "none":
+                            yield prompt_template.get_predefined_function_names()[
+                                0
+                            ] + prompt_template.get_stop_token_for_function_parameter(
+                                stage="function"
+                            ), finish_reason
+                        elif isinstance(tool_choice, Tool):
+                            yield tool_choice.function.name + prompt_template.get_stop_token_for_function_parameter(
+                                stage="function"
+                            ), finish_reason
                     yield delta_text, finish_reason
         yield "", "stop"
 
-    async def completion_stream_generator() -> AsyncGenerator[str, None]:
-        generator = wrap_vllm_generator()
+    async def completion_stream_generator(tool_choice) -> AsyncGenerator[str, None]:
+        generator = wrap_vllm_generator(tool_choice=tool_choice)
         async for response in generate_openai_format_from_stream_async(
             generator, prompt_template
         ):
@@ -327,7 +360,7 @@ async def create_chat_completion(raw_request: Request):
         # Abort the request if the client disconnects.
         background_tasks.add_task(abort_request)
         return StreamingResponse(
-            completion_stream_generator(),
+            completion_stream_generator(tool_choice=request.tool_choice),
             media_type="text/event-stream",
             background=background_tasks,
         )
@@ -345,7 +378,7 @@ async def create_chat_completion(raw_request: Request):
     for output in final_res.outputs:
         text_response = output.text.strip()
         chat_mess = prompt_template.parse_assistant_response(
-            text_response
+            llm_output=text_response, tool_choice=request.tool_choice
         )  # parse_generated_content(text_response)
         choice_data = ChatCompletionResponseChoice(
             index=output.index,
