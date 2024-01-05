@@ -3,11 +3,17 @@ from __future__ import annotations
 import json
 import re
 from abc import abstractmethod
+from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.schema import generate_schema_from_functions
 
 SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
+
+
+class PredefinedFuncTypes(str, Enum):
+    no_function_call = ""
+    code_gen = ""
 
 
 class PromptTemplate:
@@ -87,6 +93,7 @@ class PromptTemplate:
               - parameter-name: when the model is generating a parameter name
               - parameter-value: when the model is generating a parameter value
               - no-function-call: when the model is generating content
+              - code-gen: when the model is generating code
             - curr_tokens: all the tokens for the current stage being generated
             - curr_text: curr_tokens but in string text form
             - func_name: the function name, if any
@@ -150,12 +157,16 @@ class PromptTemplate:
                 else:
                     gen_state["curr_text"], gen_state["curr_tokens"] = "", []
         elif gen_state["stage"] == "pre-parameter":
-            # Check if the new state is in "parameter" or "no-function-call" stage
-            if (
-                self.fn_param_sep_token.rstrip("{").rstrip() in gen_state["curr_text"]
-                and gen_state["func_name"] in self.get_predefined_function_names()
-            ):
-                gen_state["stage"] = "no-function-call"
+            # Check if the new state is in "parameter" or "no-function-call" or "code-gen" stage
+            if self.fn_param_sep_token.rstrip("{").rstrip() in gen_state["curr_text"]:
+                if gen_state["func_name"] in self.get_predefined_function_names(
+                    function_types=PredefinedFuncTypes.no_function_call
+                ):
+                    gen_state["stage"] = "no-function-call"
+                elif gen_state["func_name"] in self.get_predefined_function_names(
+                    function_types=PredefinedFuncTypes.code_gen
+                ):
+                    gen_state["stage"] = "code-gen"
             # Either '{' or '{"' or '{}'
             elif self.fn_param_sep_token in gen_state["curr_text"]:
                 # Check if no arguments are called and go straight to "pre-function"
@@ -232,7 +243,7 @@ class PromptTemplate:
                         gen_state["curr_text"] = tokenizer.decode([new_token_id])
                 except:
                     pass
-        elif gen_state["stage"] == "no-function-call":
+        elif gen_state["stage"] in ["no-function-call", "code-gen"]:
             # probability of stop token is not 100% at the end of no-function-call
             # We still need to check if the stage will go to "function" by checking
             # for the presence of the start_of_function_call token
@@ -291,7 +302,7 @@ class PromptTemplate:
         # Concatenate the list of predefined function names in the respective prompt
         # template version. For e.g., v2 returns ["all"]
         if gen_state["stage"] == "function" and gen_state["add_predefined_fns"] is True:
-            options += self.get_predefined_function_names()
+            options += self.get_predefined_function_names(function_types="all")
 
         # No grammar sampling needed if gen_state not in "function" or "pre-parameter"
         # or "parameter-name" stages. Just return the model_sampled_token_id
