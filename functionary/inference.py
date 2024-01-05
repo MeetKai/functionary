@@ -14,6 +14,18 @@ from functionary.prompt_template import (
     get_prompt_template_from_tokenizer,
 )
 
+PYTHON_RUN_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "python",
+        "description": "When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files.",  #  Internet access for this session is disabled. Do not make external web requests or API calls as they will fail.
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+}
+
 
 class StopWordsCriteria(StoppingCriteria):
     def __init__(self, stops=[]):
@@ -54,6 +66,8 @@ def prepare_messages_for_inference(
         tools_or_functions = [item.dict() for item in functions]
     elif tools:
         tools_or_functions = [item.dict() for item in tools]
+
+    tools_or_functions.append(PYTHON_RUN_TOOL)
 
     dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)
     final_prompt = prompt_template.get_prompt_from_messages(

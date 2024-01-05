@@ -12,8 +12,8 @@ SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence
 
 
 class PredefinedFuncTypes(str, Enum):
-    no_function_call = ""
-    code_gen = ""
+    no_function_call = "no-function-call"
+    code_gen = "code-gen"
 
 
 class PromptTemplate:
@@ -41,11 +41,13 @@ class PromptTemplate:
         """
         raise NotImplementedError
 
-    def get_predefined_function_names(self) -> List[str]:
+    def get_predefined_function_names(self, function_types: Any) -> List[str]:
         """returns a list of predefined function names. Some prompt template versions may
         require a default/predefined function name to indicate for example, no function called.
         E.g.: in v2, 'all' is generated to indicate normal model response. In this case, the v2
         subclass will overwrite this base method.
+        Args:
+            function_types (Any): Either "all" or one of the function type in PredefinedFuncTypes enum class
         Returns:
             List[str]: list of predefined function names (default to [])
         """
@@ -137,7 +139,7 @@ class PromptTemplate:
             else:
                 gen_state["func_name"] = gen_state["curr_text"].rstrip()
 
-            # Check if the new state is in "pre-parameter" or "no-function-call" stage
+            # Check if the new state is in "pre-parameter" stage
             if (
                 sum([gen_state["func_name"] == option for option in options]) == 1
                 and sum(

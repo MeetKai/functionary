@@ -55,6 +55,7 @@ from functionary.openai_types import (
     Tool,
 )
 from functionary.prompt_template import (
+    PredefinedFuncTypes,
     PromptTemplate,
     get_prompt_template_from_tokenizer,
 )
@@ -330,7 +331,9 @@ async def create_chat_completion(raw_request: Request):
                         and delta_text in prompt_template.fn_param_sep_token
                     ):
                         if tool_choice == "none":
-                            yield prompt_template.get_predefined_function_names()[
+                            yield prompt_template.get_predefined_function_names(
+                                function_types=PredefinedFuncTypes.no_function_call
+                            )[
                                 0
                             ] + prompt_template.get_stop_token_for_function_parameter(
                                 stage="function"

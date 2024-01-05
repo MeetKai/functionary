@@ -35,9 +35,6 @@ class PromptTemplateV2(PromptTemplate):
         else:
             return '":'  # 1264
 
-    # def get_predefined_function_names(self) -> List[str]:
-    #     return ["all"]
-
     def get_predefined_function_names(self, function_types: Any) -> List[str]:
         if function_types == "all":
             return [func_name for func_name in self.predefined_func_names.values()]

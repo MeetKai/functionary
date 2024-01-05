@@ -1,6 +1,10 @@
 from typing import Any
 
-from functionary.prompt_template.base_template import SYSTEM_MESSAGE, PromptTemplate
+from functionary.prompt_template.base_template import (
+    SYSTEM_MESSAGE,
+    PredefinedFuncTypes,
+    PromptTemplate,
+)
 from functionary.prompt_template.prompt_template_v1 import PromptTemplateV1
 from functionary.prompt_template.prompt_template_v2 import PromptTemplateV2
 
