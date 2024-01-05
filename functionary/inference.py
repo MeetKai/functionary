@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import torch
 from transformers import (
@@ -72,6 +72,39 @@ def prepare_messages_for_inference(
     input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
     input_ids = input_ids.to(device)
     return input_ids
+
+
+def enforce_tool_choice(
+    tool_choice: Union[str, Tool], tools: Optional[List[Tool]]
+) -> Optional[List[Tool]]:
+    """This function is used to enforce tool_choice in the list of tools if it is provided by the user
+
+    Args:
+        tool_choice: (Union[str, Tool]): either "auto", "none" or Tool object
+        tools (Optional[List[Tool]]): the existing list of tools passed in from user
+
+    Returns:
+        List[Tool]: the modified tools_or_functions based on tool_choice
+    """
+    if tool_choice == "none":
+        return []
+    elif isinstance(tool_choice, Tool):
+        if (
+            tool_choice.function.description == ""
+            and tool_choice.function.parameters is None
+        ):
+            tools = [
+                tool
+                for tool in tools
+                if tool.function.name == tool_choice.function.name
+            ]
+            assert (
+                len(tools) > 0
+            ), f"Invalid value for 'tool_choice': no function named {tool_choice.function.name} was specified in the 'tools' parameter"
+        else:
+            tools = [tool_choice]
+
+    return tools
 
 
 def remove_stop_tokens_from_end(

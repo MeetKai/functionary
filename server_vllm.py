@@ -44,7 +44,7 @@ from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
-from functionary.inference import prepare_messages_for_inference
+from functionary.inference import enforce_tool_choice, prepare_messages_for_inference
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
     ChatCompletionChunk,
@@ -237,45 +237,21 @@ async def create_chat_completion(raw_request: Request):
             HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
         )
 
-    if request.functions:
+    if request.tools:
+        tools = enforce_tool_choice(
+            tool_choice=request.tool_choice, tools=request.tools
+        )
+        tools_or_functions = [item.dict() for item in tools]
+    elif request.functions:
         tools_or_functions = [item.dict() for item in request.functions]
-    elif request.tools:
-        tools_or_functions = [item.dict() for item in request.tools]
     else:
         tools_or_functions = []
-
-    # Adjust tools_or_functions based on tool_choice
-    if request.tool_choice is not None:
-        if isinstance(request.tool_choice, str) and request.tool_choice == "none":
-            tools_or_functions = request.tools = []
-        elif isinstance(request.tool_choice, Tool):
-            if (
-                request.tool_choice.function.description == ""
-                and request.tool_choice.function.parameters == None
-            ):
-                tools_or_functions = [
-                    tool_or_func
-                    for tool_or_func in tools_or_functions
-                    if tool_or_func["function"]["name"]
-                    == request.tool_choice.function.name
-                ]
-                assert (
-                    len(tools_or_functions) > 0
-                ), f"Invalid value for 'tool_choice': no function named {request.tool_choice.function.name} was specified in the 'tools' parameter"
-                request.tools = [
-                    item
-                    for item in request.tools
-                    if item.function.name == request.tool_choice.function.name
-                ]
-            else:
-                tools_or_functions = [request.tool_choice.dict()]
-                request.tools = [request.tool_choice]
 
     prompt_token_ids = prepare_messages_for_inference(
         tokenizer=tokenizer,
         messages=request.messages,
         functions=request.functions,
-        tools=request.tools,
+        tools=tools,
         tool_choice=request.tool_choice,
     ).tolist()[0]
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
