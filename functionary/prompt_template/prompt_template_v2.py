@@ -130,9 +130,9 @@ class PromptTemplateV2(PromptTemplate):
         recipient_to_fill = ""
         if tool_choice is not None:
             if tool_choice == "none":
-                recipient_to_fill = self.get_predefined_function_names()[
-                    0
-                ] + self.get_stop_token_for_function_parameter(stage="function")
+                recipient_to_fill = self.get_predefined_function_names(
+                    function_types=PredefinedFuncTypes.no_function_call
+                )[0] + self.get_stop_token_for_function_parameter(stage="function")
             elif isinstance(tool_choice, Tool):
                 recipient_to_fill = (
                     tool_choice.function.name
