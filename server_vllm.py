@@ -44,7 +44,11 @@ from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
-from functionary.inference import enforce_tool_choice, prepare_messages_for_inference
+from functionary.inference import (
+    enforce_code_interpreter,
+    enforce_tool_choice,
+    prepare_messages_for_inference,
+)
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
     ChatCompletionChunk,
@@ -242,6 +246,7 @@ async def create_chat_completion(raw_request: Request):
         tools = enforce_tool_choice(
             tool_choice=request.tool_choice, tools=request.tools
         )
+        tools = enforce_code_interpreter(tools=tools)
         tools_or_functions = [item.dict() for item in tools]
     elif request.functions:
         tools_or_functions = [item.dict() for item in request.functions]

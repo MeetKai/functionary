@@ -67,8 +67,6 @@ def prepare_messages_for_inference(
     elif tools:
         tools_or_functions = [item.dict() for item in tools]
 
-    tools_or_functions.append(PYTHON_RUN_TOOL)
-
     dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)
     final_prompt = prompt_template.get_prompt_from_messages(
         dic_messages, tools_or_functions=tools_or_functions
@@ -117,6 +115,27 @@ def enforce_tool_choice(
             ), f"Invalid value for 'tool_choice': no function named {tool_choice.function.name} was specified in the 'tools' parameter"
         else:
             tools = [tool_choice]
+
+    return tools
+
+
+def enforce_code_interpreter(tools: Optional[List[Tool]]) -> Optional[List[Tool]]:
+    """This function checks if {"type": "code_interpreter"} is present and
+    replaces it with PYTHON_RUN_TOOL.
+
+    Args:
+        tools (Optional[List[Tool]]): the existing list of tools passed in from user
+
+    Returns:
+        List[Tool]: the modified tools based on whether code_interpreter is present
+    """
+    if tools is None:
+        return tools
+
+    for i, tool in enumerate(tools):
+        if tool.type == "code_interpreter":
+            tools[i] = Tool.parse_obj(PYTHON_RUN_TOOL)
+            break
 
     return tools
 
