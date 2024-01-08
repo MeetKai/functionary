@@ -496,7 +496,7 @@ We don't change the logit probabilities to conform to a certain schema, but the 
 ### Function Prediction Evaluation
 Evaluation function call prediction in our in-house dataset. The accuracy metric measures the overall correctness of predicted function calls, including function name prediction and arguments extraction.
 
-<img align="left" width="600" src="assets/Functioncall_acc_chart.jpeg">
+<img align="left" width="800" src="assets/Functioncall_acc_chart.jpeg">
 
 | Dataset       | Model Name          | Function Calling  Accuracy (Name & Arguments) |
 | :-------------| :-------------------| ---------------------------: | 
