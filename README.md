@@ -496,12 +496,12 @@ We don't change the logit probabilities to conform to a certain schema, but the 
 ### Function Prediction Evaluation
 Evaluation function call prediction in our in-house dataset. The accuracy metric measures the overall correctness of predicted function calls, including function name prediction and arguments extraction.
 
-<img align="left" width="600" src="assets/Functioncall_acc_chart.png">
+<img align="left" width="600" src="assets/Functioncall_acc_chart.jpeg">
 
 | Dataset       | Model Name          | Function Calling  Accuracy (Name & Arguments) |
 | :-------------| :-------------------| ---------------------------: | 
-| In-house data | functionary-small-v2.2  |                       0.546|
-| In-house data | functionary-medium-v2.2  |                       **0.664**|
+| In-house data | OpenAI-MeetKai-functionary-small-v2.2  |                       0.546|
+| In-house data | OpenAI-MeetKai-functionary-medium-v2.2  |                       **0.664**|
 | In-house data | gpt-3.5-turbo-1106  |                        0.531 |
 | In-house data | gpt-4-1106-preview  |                        **0.737** |
 
