@@ -154,6 +154,18 @@ async def check_model(request) -> Optional[JSONResponse]:
     return ret
 
 
+async def check_functions(request) -> Optional[JSONResponse]:
+    if request.functions is None:
+        return
+    return create_error_response(
+        HTTPStatus.BAD_REQUEST,
+        (
+            "`functions` are no longer supported and maintained for "
+            "Functionary. Please use `tools` instead."
+        ),
+    )
+
+
 async def check_length(request, input_ids, model_config):
     if hasattr(model_config.hf_config, "max_sequence_length"):
         context_len = model_config.hf_config.max_sequence_length
@@ -237,20 +249,21 @@ async def create_chat_completion(raw_request: Request):
             HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
         )
 
+    # Raise bad request error if functions are provided. We no longer support functions
+    error_check_ret = await check_functions(request)
+    if error_check_ret is not None:
+        return error_check_ret
+
+    tools_or_functions = []
     if request.tools:
         tools = enforce_tool_choice(
             tool_choice=request.tool_choice, tools=request.tools
         )
         tools_or_functions = [item.dict() for item in tools]
-    elif request.functions:
-        tools_or_functions = [item.dict() for item in request.functions]
-    else:
-        tools_or_functions = []
 
     prompt_token_ids = prepare_messages_for_inference(
         tokenizer=tokenizer,
         messages=request.messages,
-        functions=request.functions,
         tools=tools,
         tool_choice=request.tool_choice,
     ).tolist()[0]

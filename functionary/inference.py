@@ -39,7 +39,6 @@ def prepare_messages_for_inference(
     *,
     tokenizer: LlamaTokenizer,
     messages: List[ChatMessage],
-    functions: Optional[List[Function]] = None,
     tools: Optional[List[Tool]] = None,
     tool_choice: Optional[Union[str, Tool]] = None,
     device="cuda:0",
@@ -50,9 +49,7 @@ def prepare_messages_for_inference(
     dic_messages.append({"role": "assistant"})
 
     tools_or_functions = []
-    if functions:
-        tools_or_functions = [item.dict() for item in functions]
-    elif tools:
+    if tools:
         tools_or_functions = [item.dict() for item in tools]
 
     dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)

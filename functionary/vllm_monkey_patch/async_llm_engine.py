@@ -508,8 +508,7 @@ class AsyncLLMEngine:
         # Initialize the request_id entry of self.engine.tools_or_functions
         # and prompt_templates at the start of generate method
         self.engine.tools_or_functions[request_id] = [
-            tool_or_func if "function" not in tool_or_func else tool_or_func["function"]
-            for tool_or_func in tools_or_functions
+            tool_or_func["function"] for tool_or_func in tools_or_functions
         ]
         self.engine.prompt_templates[request_id] = prompt_template_cls
 
