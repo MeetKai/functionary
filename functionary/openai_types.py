@@ -1,5 +1,5 @@
 import time
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -23,8 +23,8 @@ class Function(BaseModel):
 
 
 class Tool(BaseModel):
-    type: str = "function"
-    function: Function
+    type: Literal["function", "code_interpreter"] = "function"
+    function: Optional[Function]
 
 
 class ChatMessage(BaseModel):

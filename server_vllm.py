@@ -44,7 +44,11 @@ from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
-from functionary.inference import enforce_tool_choice, prepare_messages_for_inference
+from functionary.inference import (
+    enforce_code_interpreter,
+    enforce_tool_choice,
+    prepare_messages_for_inference,
+)
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
     ChatCompletionChunk,
@@ -55,6 +59,7 @@ from functionary.openai_types import (
     Tool,
 )
 from functionary.prompt_template import (
+    PredefinedFuncTypes,
     PromptTemplate,
     get_prompt_template_from_tokenizer,
 )
@@ -241,6 +246,7 @@ async def create_chat_completion(raw_request: Request):
         tools = enforce_tool_choice(
             tool_choice=request.tool_choice, tools=request.tools
         )
+        tools = enforce_code_interpreter(tools=tools)
         tools_or_functions = [item.dict() for item in tools]
     elif request.functions:
         tools_or_functions = [item.dict() for item in request.functions]
@@ -330,7 +336,9 @@ async def create_chat_completion(raw_request: Request):
                         and delta_text in prompt_template.fn_param_sep_token
                     ):
                         if tool_choice == "none":
-                            yield prompt_template.get_predefined_function_names()[
+                            yield prompt_template.get_predefined_function_names(
+                                function_types=PredefinedFuncTypes.no_function_call
+                            )[
                                 0
                             ] + prompt_template.get_stop_token_for_function_parameter(
                                 stage="function"

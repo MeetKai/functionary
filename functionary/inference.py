@@ -14,6 +14,18 @@ from functionary.prompt_template import (
     get_prompt_template_from_tokenizer,
 )
 
+PYTHON_RUN_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "python",
+        "description": "When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files.",  #  Internet access for this session is disabled. Do not make external web requests or API calls as they will fail.
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+}
+
 
 class StopWordsCriteria(StoppingCriteria):
     def __init__(self, stops=[]):
@@ -103,6 +115,27 @@ def enforce_tool_choice(
             ), f"Invalid value for 'tool_choice': no function named {tool_choice.function.name} was specified in the 'tools' parameter"
         else:
             tools = [tool_choice]
+
+    return tools
+
+
+def enforce_code_interpreter(tools: Optional[List[Tool]]) -> Optional[List[Tool]]:
+    """This function checks if {"type": "code_interpreter"} is present and
+    replaces it with PYTHON_RUN_TOOL.
+
+    Args:
+        tools (Optional[List[Tool]]): the existing list of tools passed in from user
+
+    Returns:
+        List[Tool]: the modified tools based on whether code_interpreter is present
+    """
+    if tools is None:
+        return tools
+
+    for i, tool in enumerate(tools):
+        if tool.type == "code_interpreter":
+            tools[i] = Tool.parse_obj(PYTHON_RUN_TOOL)
+            break
 
     return tools
 
