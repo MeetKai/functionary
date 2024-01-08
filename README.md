@@ -128,7 +128,7 @@ sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functi
 
 Compatibility information:
 
-- v1 models are compatible with both OpenAI-python v0 and v1.
+- v1 models are no longer supported as we will be placing full focus on v2 and newer models.
 - v2 models are designed for compatibility with OpenAI-python v1.
   
 The difference between OpenAI-python v0 and v1 you may refer to the official documentation [here](https://platform.openai.com/docs/api-reference/chat/create#chat-create-tools)
