@@ -500,10 +500,10 @@ Evaluation function call prediction in our in-house dataset. The accuracy metric
 
 | Dataset       | Model Name          | Function Calling  Accuracy (Name & Arguments) |
 | :-------------| :-------------------| ---------------------------: | 
-| In-house data | OpenAI-MeetKai-functionary-small-v2.2  |                       0.546|
-| In-house data | OpenAI-MeetKai-functionary-medium-v2.2  |                       **0.664**|
-| In-house data | gpt-3.5-turbo-1106  |                        0.531 |
-| In-house data | gpt-4-1106-preview  |                        **0.737** |
+| In-house data | MeetKai-functionary-small-v2.2  |                       0.546|
+| In-house data | MeetKai-functionary-medium-v2.2  |                       **0.664**|
+| In-house data | OpenAI-gpt-3.5-turbo-1106  |                        0.531 |
+| In-house data | OpenAI-gpt-4-1106-preview  |                        **0.737** |
 
 </details>
 
