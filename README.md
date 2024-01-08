@@ -19,7 +19,7 @@ pip install -r requirements.txt
 Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server:
 
 ```shell
-python3 server_vllm.py --model "meetkai/functionary-7b-v2.1" --host 0.0.0.0
+python3 server_vllm.py --model "meetkai/functionary-medium-v2.2" --host 0.0.0.0
 ```
 
 ### OpenAI Compatible Usage
@@ -30,7 +30,7 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 
 client.chat.completions.create(
-    model="meetkai/functionary-7b-v2.1",
+    model="meetkai/functionary-medium-v2.2",
     messages=[{"role": "user",
             "content": "What is the weather for Istanbul?"}
     ],
@@ -66,7 +66,7 @@ client.chat.completions.create(
 import requests
 
 data = {
-    'model': 'meetkai/functionary-7b-v2.1', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
+    'model': 'meetkai/functionary-medium-v2.2', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
     'messages': [
         {
             "role": "user",
