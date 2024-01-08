@@ -1,6 +1,6 @@
 # Functionary
 
-<img align="right" width="256" height="256" src="https://github.com/MeetKai/functionary/blob/update_readme/assets/meetkai_logo.jpeg">
+<img align="right" width="256" height="256" src="assets/meetkai_logo.jpeg">
 
 Functionary is a language model that can interpret and execute functions/plugins.
 
@@ -493,6 +493,9 @@ We don't change the logit probabilities to conform to a certain schema, but the 
 
 ### Function Prediction Evaluation
 Evaluation function call prediction in our in-house dataset. The accuracy metric measures the overall correctness of predicted function calls, including function name prediction and arguments extraction.
+
+<img align="left" width="600" src="assets/Functioncall_acc_chart.png">
+
 | Dataset       | Model Name          | Function Calling  Accuracy (Name & Arguments) |
 | :-------------| :-------------------| ---------------------------: | 
 | In-house data | functionary-small-v2.2  |                       0.546|
