@@ -117,13 +117,13 @@ sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functi
 ## Models Available
 | Model                                                                                | Description                                                                                                                         |
 |:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|
-| [functionary-small-v2.2](https://huggingface.co/meetkai/functionary-small-v2.2) | 8k context  | 
+| [functionary-small-v2.2](https://huggingface.co/meetkai/functionary-small-v2.2) | 8k context | 
 | [functionary-medium-v2.2](https://huggingface.co/meetkai/functionary-medium-v2.2) | 8k context, better accuracy |
 | [functionary-7b-v2.1](https://huggingface.co/meetkai/functionary-7b-v2.1)            | 8k context |
-| [functionary-7b-v2](https://huggingface.co/meetkai/functionary-7b-v2) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2-GGUF)                | Parallel function call support.    |
-| [functionary-7b-v1.4](https://huggingface.co/meetkai/functionary-7b-v1.4) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF)            | 4k context, better accuracy  |
-| [functionary-7b-v1.1](https://huggingface.co/meetkai/functionary-7b-v1.1)            | 4k context                                                                                                          | 
-| functionary-7b-v0.1            | 2k context Not recommended, use 2.1                                                                                                          |
+| [functionary-7b-v2](https://huggingface.co/meetkai/functionary-7b-v2) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2-GGUF)                | Parallel function call support.   |
+| [functionary-7b-v1.4](https://huggingface.co/meetkai/functionary-7b-v1.4) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF)            | 4k context, better accuracy (deprecated) |
+| [functionary-7b-v1.1](https://huggingface.co/meetkai/functionary-7b-v1.1)            | 4k context (deprecated)                                                                                                         | 
+| functionary-7b-v0.1            | 2k context Not recommended, use 2.1 (deprecated)                                                                                                         |
 
 
 Compatibility information:
