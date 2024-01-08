@@ -1,6 +1,6 @@
 # Functionary
 
-<img align="right" width="256" height="256" src="https://github.com/musabgultekin/functionary/assets/3749407/c7a1972d-6ad7-40dc-8000-dceabe6baabd">
+<img align="right" width="256" height="256" src="https://github.com/MeetKai/functionary/blob/update_readme/assets/meetkai_logo.jpeg">
 
 Functionary is a language model that can interpret and execute functions/plugins.
 
