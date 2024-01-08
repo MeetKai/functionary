@@ -113,13 +113,15 @@ sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functi
 ```
 
 ## Models Available
-| Model                                                                                | Description                                                                                                                         | Base Model                                                   |
-|:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------|
-| [functionary-7b-v2.1](https://huggingface.co/meetkai/functionary-7b-v2.1)            | 8k context | Mistral 7B
-| [functionary-7b-v2](https://huggingface.co/meetkai/functionary-7b-v2) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2-GGUF)                | Parallel function call support.    | Mistral 7B |
-| [functionary-7b-v1.4](https://huggingface.co/meetkai/functionary-7b-v1.4) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF)            | Better accuracy  | Mistral 7B |
-| [functionary-7b-v1.1](https://huggingface.co/meetkai/functionary-7b-v1.1)            | 4k context                                                                                                          | Llama 2 |
-| functionary-7b-v0.1            | 2k context Not recommended, use 2.1                                                                                                          | Llama 1 |
+| Model                                                                                | Description                                                                                                                         |
+|:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|
+| [functionary-small-v2.2](https://huggingface.co/meetkai/functionary-small-v2.2) | 8k context  | 
+| [functionary-medium-v2.2](https://huggingface.co/meetkai/functionary-medium-v2.2) | 8k context, better accuracy |
+| [functionary-7b-v2.1](https://huggingface.co/meetkai/functionary-7b-v2.1)            | 8k context |
+| [functionary-7b-v2](https://huggingface.co/meetkai/functionary-7b-v2) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2-GGUF)                | Parallel function call support.    |
+| [functionary-7b-v1.4](https://huggingface.co/meetkai/functionary-7b-v1.4) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF)            | Better accuracy  |
+| [functionary-7b-v1.1](https://huggingface.co/meetkai/functionary-7b-v1.1)            | 4k context                                                                                                          | 
+| functionary-7b-v0.1            | 2k context Not recommended, use 2.1                                                                                                          |
 
 
 Compatibility information:
@@ -478,68 +480,25 @@ More on training: [README.md](functionary/train/README.md)
 
 ## How it Works?
 
-We convert function definitions to a similar text like TypeScript definitions. 
+We convert function definitions to a similar text to TypeScript definitions. 
 Then we inject these definitions as system prompts. After that, we inject the default system prompt. 
 Then we start the conversation messages. 
 
 The prompt example can be found here: [V1](https://github.com/MeetKai/functionary/blob/readme_v2/tests/prompt_test_v1.txt) and [V2](https://github.com/MeetKai/functionary/blob/readme_v2/tests/prompt_test_v2.txt)
 
 
-We don't change the logit probabilities to conform a certain schema, but the model itself knows how to conform. This allows us to use existing tools and caching systems with ease.
+We don't change the logit probabilities to conform to a certain schema, but the model itself knows how to conform. This allows us to use existing tools and caching systems with ease.
 
 ## Evaluation
 
-### [MT-Bench](https://github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge) leaderboard
-|                       | MT-Bench |
-|:----------------------|---------:|
-| GPT-4 turbo           |     9.32 |
-| GPT-4                 |     8.99 |
-| Starling-7b           |     8.09 |
-| Claude-2              |     8.06 |
-| GPT-3.5-turbo         |     7.94 | 
-| Claude-1              |     7.90 |
-| WizardLM-70B-v1.      |     7.71 |
-|**Functionary-7B-v1.4**| **7.22** |
-| WizardLM-13B-v1.2     |     7.20 |
-| Vicuna-33B            |     7.12 |
-| Llama-2-70b-chat      |     6.86 |
-| Llama-2-13B-chat      |     6.65 |
-| Vicuna-13B            |     6.57 |
-| Tulu-30B              |     6.43 |
-| Vicuna-7B             |     6.17 |
-| Functionary-7B-v1     |     6.15 |
-| Nous-Hermes-13B       |     5.51 |
-| Koala-13B             |     5.35 |
-| Falcon-40B-Instruct   |     5.17 |
-| Alpaca-13B            |     4.53 |
-| LLaMA-13B             |     2.61 |
-
-### [Alpaca Eval](https://github.com/tatsu-lab/alpaca_eval) Leaderboard
-    
-|                       | Win Rate | Std Error |
-|:----------------------|---------:|----------:|
-| gpt4                  |     95.3 |       0.7 |
-| claude                |     88.4 |       1.1 |
-| chatgpt               |     86.1 |       1.2 |
-| wizardlm-13b          |     75.3 |       1.5 |
-| guanaco-65b           |     71.8 |       1.6 |
-| vicuna-13b            |     70.4 |       1.6 |
-| oasst-rlhf-llama-33b  |     66.5 |       1.7 |
-|**functionary-7b-v1**  | **62.6** |   **1.7** |
-| text_davinci_003      |     50.0 |       0.0 |
-| falcon-40b-instruct   |     45.7 |       1.8 |
-| alpaca-farm-ppo-human |     41.2 |       1.7 |
-| alpaca-7b             |     26.5 |       1.5 |
-| text_davinci_001      |     15.2 |       1.2 |
-
 ### Function Prediction Evaluation
-Evaluation function call prediction in our in-house dataset. We focus on two key metrics: the accuracy of function call prediction and the F1 score for argument extraction. The accuracy metric measures the overall correctness of predicted function calls, while the F1 score assesses the precision and recall of argument extraction. 
-| Dataset       | Model Name          | Function Prediction Accuracy | Arguments extraction F-1 Score |
-| :-------------| :-------------------| ---------------------------: |  ---------------------------:  |
-| In-house data | functionary-7b-v1.4 |                        0.840 |                         0.9005 |
-| In-house data | gpt-3.5-turbo-0613  |                        0.861 |                         0.898  |
-| In-house data | gpt-3.5-turbo-1106  |                        0.836 |                         0.9095 |
-| In-house data | gpt-4-1106-preview  |                        0.878 |                         0.9155 |
+Evaluation function call prediction in our in-house dataset. The accuracy metric measures the overall correctness of predicted function calls, including function name prediction and arguments extraction.
+| Dataset       | Model Name          | Function Calling  Accuracy (Name & Arguments) |
+| :-------------| :-------------------| ---------------------------: | 
+| In-house data | functionary-small-v2.2  |                       0.546|
+| In-house data | functionary-medium-v2.2  |                       **0.664**|
+| In-house data | gpt-3.5-turbo-1106  |                        0.531 |
+| In-house data | gpt-4-1106-preview  |                        **0.737** |
 
 </details>
 
