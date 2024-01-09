@@ -123,7 +123,9 @@ class PromptTemplateV1(PromptTemplate):
             result.append(prefix)
         return result
 
-    def parse_assistant_response(self, llm_output: str) -> Dict:
+    def parse_assistant_response(
+        self, llm_output: str, tool_choice: Optional[Any] = None
+    ) -> Dict:
         generated_content = llm_output.strip()
 
         for endtoken in self.get_stop_tokens_for_generation():

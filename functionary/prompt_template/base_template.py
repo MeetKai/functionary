@@ -513,12 +513,14 @@ class PromptTemplate:
         return result
 
     @abstractmethod
-    def parse_assistant_response(self, llm_output: str) -> Dict:
+    def parse_assistant_response(
+        self, llm_output: str, tool_choice: Optional[Any]
+    ) -> Dict:
         """This function is used to parse llm_output to the Message of OpenAI ({"role": xxx, "content": xxx, ...})
         this is used in inference.
         Args:
             llm_output (str): The generated content from Model
-            tool_choice (Optional[str]): Any choice of tool provided by the user
+            tool_choice (Optional[Any]): Any choice of tool provided by the user
 
         Returns:
             Dict: Dictionary of OpenAI message format

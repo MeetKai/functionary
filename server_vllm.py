@@ -18,6 +18,7 @@
 import argparse
 import asyncio
 import json
+import re
 import time
 from http import HTTPStatus
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
@@ -91,7 +92,7 @@ class ChatCompletionRequest(BaseModel):
     @validator("tool_choice", always=True)
     def validate_tool_choice(cls, value, values):
         if value is None:
-            if values["tools"] is None and value["functions"] is None:
+            if values["tools"] is None and values["functions"] is None:
                 return "none"
             else:
                 return "auto"
@@ -243,8 +244,10 @@ async def create_chat_completion(raw_request: Request):
         )
         tools_or_functions = [item.dict() for item in tools]
     elif request.functions:
+        tools = None
         tools_or_functions = [item.dict() for item in request.functions]
     else:
+        tools = None
         tools_or_functions = []
 
     prompt_token_ids = prepare_messages_for_inference(
@@ -453,6 +456,10 @@ if __name__ == "__main__":
 
     parser = AsyncEngineArgs.add_cli_args(parser)
     args = parser.parse_args()
+
+    pattern = r"v1.*$"
+    if re.search(pattern, args.model):
+        args.grammar_sampling = False
 
     if args.grammar_sampling:
         from functionary.vllm_monkey_patch.async_llm_engine import AsyncLLMEngine
