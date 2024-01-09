@@ -486,7 +486,7 @@ We convert function definitions to a similar text to TypeScript definitions.
 Then we inject these definitions as system prompts. After that, we inject the default system prompt. 
 Then we start the conversation messages. 
 
-The prompt example can be found here: [V1](https://github.com/MeetKai/functionary/blob/main/tests/prompt_test_v1.txt) and [V2](https://github.com/MeetKai/functionary/blob/main/tests/prompt_test_v2.txt)
+The prompt example can be found here: [V1](tests/prompt_test_v1.txt) and [V2](tests/prompt_test_v2.txt)
 
 
 We don't change the logit probabilities to conform to a certain schema, but the model itself knows how to conform. This allows us to use existing tools and caching systems with ease.
