@@ -537,5 +537,6 @@ Dataset preparation process consists of several steps:
   - [X] function_call parameter to server
 - [X] Python function calling support (Automatic detection of type annotations and calling them automatically)
 - [X] Real world usage examples, such as creating agents.
-- [X] Train Mixtral based model 
+- [X] Train Mixtral based model
+- [ ] Code interpreter support
 - **Please consider opening a PR for future requests**
