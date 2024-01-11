@@ -528,13 +528,14 @@ Dataset preparation process consists of several steps:
 
 ## Roadmap
 
-- [ ] Train [Llama 2](https://arxiv.org/abs/2307.09288) 13B model too, with 2x more data.
+- [ ] ~~Train [Llama 2](https://arxiv.org/abs/2307.09288) 13B model too, with 2x more data.~~
 - [ ] OpenAPI specification based plugin support.
 - [X] Fast inference server 
   - [X] [vLLM](https://github.com/vllm-project/vllm) 
   - [ ] [text-generation-inference](https://github.com/huggingface/text-generation-inference) ? See: [License Issue](https://github.com/huggingface/text-generation-inference/issues/726)
   - [X] Streaming Support
-  - [ ] function_call parameter to server
+  - [X] function_call parameter to server
 - [X] Python function calling support (Automatic detection of type annotations and calling them automatically)
 - [X] Real world usage examples, such as creating agents.
+- [X] Train Mixtral based model 
 - **Please consider opening a PR for future requests**
