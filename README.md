@@ -117,7 +117,7 @@ sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functi
 ## Models Available
 | Model                                                                                | Description                                                                                                                         |
 |:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|
-| [functionary-small-v2.2](https://huggingface.co/meetkai/functionary-small-v2.2) | 8k context | 
+| [functionary-small-v2.2](https://huggingface.co/meetkai/functionary-small-v2.2) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.2-GGUF) | 8k context | 
 | [functionary-medium-v2.2](https://huggingface.co/meetkai/functionary-medium-v2.2) | 8k context, better accuracy |
 | [functionary-7b-v2.1](https://huggingface.co/meetkai/functionary-7b-v2.1)            | 8k context |
 | [functionary-7b-v2](https://huggingface.co/meetkai/functionary-7b-v2) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2-GGUF)                | Parallel function call support.   |
