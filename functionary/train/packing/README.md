@@ -22,6 +22,8 @@ Some notes:
 
 ## How to use
 
+The implementation is based on the idea of overwriting the function: _get_unpad_data of ``MistralForCausalLM``, ``LlamaForCausalLM`` and ``MixtralForCausalLM`` with a monkey-patched function that can handle ``attentions_mask`` of packed inputs. You can take a look at the file: **monkey_patch_packing.py**
+
 **Note that our implementation is only correct if using [Flash Attenion](https://github.com/Dao-AILab/flash-attention)**
 
 We recommend using ``transformers==4.36.2`` or later.
@@ -34,7 +36,7 @@ pip install flash-attn --no-build-isolation
 
 Based on your model: ``MistralForCausalLM``,  ``LlamaForCausalLM`` or ``MixtralForCausalLM`` that you will call the function for monkey-patching from: monkey_patch_packing.py accordingly
 
-**For LLama2**
+**For LlamaForCausalLM**
 ```python 
 from monkey_patch_packing import monkey_patch_packing_llama
 monkey_patch_packing_llama() # Monkey-patch LlamaForCausalLM
@@ -43,16 +45,24 @@ monkey_patch_packing_llama() # Monkey-patch LlamaForCausalLM
 model = transformers.AutoModelForCausalLM.from_pretrained(model_path, ...)
 model.config.use_cache = False # In the training, we don't need to use cache, note: must add this
 ```
-If you are using: ``MistralForCausalLM``, use function: ``monkey_patch_packing_mistral``:
+**For MistralForCausalLM**
 ```python
 from monkey_patch_packing import monkey_patch_packing_mistral
 monkey_patch_packing_mistral()
+...
+# Load the model
+model = transformers.AutoModelForCausalLM.from_pretrained(model_path, ...)
+model.config.use_cache = False # In the training, we don't need to use cache, note: must add this
 ```
 
-If you are using: ``MixtralForCausalLM``, use function: ``monkey_patch_packing_mistral``:
+**For MixtralForCausalLM**
 ```python
 from monkey_patch_packing import monkey_patch_packing_mixtral
 monkey_patch_packing_mixtral()
+...
+# Load the model
+model = transformers.AutoModelForCausalLM.from_pretrained(model_path, ...)
+model.config.use_cache = False # In the training, we don't need to use cache, note: must add this
 ```
 
 
