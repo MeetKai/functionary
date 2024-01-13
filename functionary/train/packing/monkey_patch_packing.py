@@ -1,5 +1,6 @@
-import torch 
+import torch
 import torch.nn.functional as F
+import transformers
 
 
 def get_max_seqlen_in_batch(attention_mask):
@@ -29,3 +30,15 @@ def get_unpad_data(attention_mask):
         cu_seqlens,
         max_seqlen_in_batch,
     )
+
+
+def monkey_patch_packing_llama():
+    transformers.models.llama.modeling_llama._get_unpad_data = get_unpad_data
+
+
+def monkey_patch_packing_mistral():
+    transformers.models.mistral.modeling_mistral._get_unpad_data = get_unpad_data
+
+
+def monkey_patch_packing_mixtral():
+    transformers.models.mixtral.modeling_mixtral._get_unpad_data = get_unpad_data

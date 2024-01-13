@@ -3,11 +3,13 @@ import torch
 from torch.utils.data import Dataset
 
 
-def merge_data_points_by_length(lengths: List[int], max_length: int, strategy: str = "") -> List[List[int]]:
-    """Merge data points into groups (each group is a new data point), will be used by PackedDataset, to reduce number of data points in training.
-    Given lengths of data points, we merge them into groups such that the sum of lengths
-    in each group is less than max_length. This is known as: https://en.wikipedia.org/wiki/Bin_packing_problem
-    Here is the greedy algorithm
+def pack_data_points_by_length(lengths: List[int], max_length: int) -> List[List[int]]:
+    """Pack data points into groups (each group is a new data point), will be used by PackedDataset, to reduce number of data points in training.
+    Given lengths of data points, we pack them into groups such that the sum of lengths
+    in each group is less than max_length. Each group will be considered as a data point (packed data point)
+    This is known as: https://en.wikipedia.org/wiki/Bin_packing_problem
+    There are many algorithms to implement this, but here we use the simple algorithm.
+    We will pack/merge a consecutive list of data points until reaching the max_length
     Args:
         lengths (List[int]): _description_
         max_length (int): _description_
@@ -15,27 +17,21 @@ def merge_data_points_by_length(lengths: List[int], max_length: int, strategy: s
     Returns:
         _type_: groups of indices: [[index1, index2, ...], [], ...]
     """
-    items = [{"length": length, "index": i} for i, length in enumerate(lengths)]
-    items = sorted(items, key=lambda x: x["index"])
-    merges = []
-    current_sum = 0
-    current_list = []
-    for i in range(len(items)):
-        cur_length = items[i]["length"]
-        if cur_length + current_sum <= max_length:
-            current_sum += items[i]["length"]
-            current_list.append(i)
+    groups = []
+    current_packed_length = 0
+    current_group = []
+    for i in range(len(lengths)):
+        cur_length = lengths[i]
+        if cur_length + current_packed_length <= max_length:
+            current_packed_length += lengths[i]
+            current_group.append(i)
         else:
-            merges.append(current_list)
-            current_list = [i]
-            current_sum = cur_length
-    if len(current_list) > 0:
-        merges.append(current_list)
-    result = []
-    for merge in merges:
-        sub_items = [items[index]["index"] for index in merge]
-        result.append(sub_items)
-    return result
+            groups.append(current_group)
+            current_group = [i]
+            current_packed_length = cur_length
+    if len(current_group) > 0:
+        groups.append(current_group)
+    return groups
 
 
 def pack_data_points_FA(
@@ -123,7 +119,7 @@ class PackedDataset(Dataset):
         assert self.pack_length >= max(
             self.lengths
         ), f"pack_length must be >= max(input lengths), found pack_length={self.pack_length}, max_input_length={max_input_length}"
-        self.groups = merge_data_points_by_length(self.lengths, self.pack_length)
+        self.groups = pack_data_points_by_length(self.lengths, self.pack_length)
 
     def __len__(self) -> int:
         return len(self.groups)
