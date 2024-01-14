@@ -23,7 +23,7 @@ Some notes:
 ## How To use
 
 To use Packing in the training we just need to:
-+ Convert original dataset into packed datasets
++ Convert original dataset to packed datasets
 + Use monkey-patched implementation of: ``MistralForCausalLM``, ``LlamaForCausalLM`` or ``MixtralForCausalLM``
 
 ### Convert to Packed Dataset
@@ -55,8 +55,6 @@ from packed_dataset import PackedDataset
 packed_ds = PackedDataset(original_ds, tokenizer, pack_length)
 ```
 ### Use monkey-patched implementation
-The implementation is based on the idea of overwriting the function: ``_get_unpad_data`` of ``MistralForCausalLM``, ``LlamaForCausalLM`` and ``MixtralForCausalLM`` with a monkey-patched function that can handle ``attentions_mask`` of packed inputs. You can take a look at the file: **monkey_patch_packing.py**
-
 
 **Note that our implementation is only correct if using [Flash Attenion](https://github.com/Dao-AILab/flash-attention)**
 
@@ -68,7 +66,7 @@ So the additional requirement is only **Flash Attention**:
 pip install flash-attn --no-build-isolation
 ```
 
-Based on your model: ``MistralForCausalLM``,  ``LlamaForCausalLM`` or ``MixtralForCausalLM`` that you will call the function for monkey-patching from: monkey_patch_packing.py accordingly
+Based on your model: ``MistralForCausalLM``,  ``LlamaForCausalLM`` or ``MixtralForCausalLM`` that you will call the function for monkey-patching from: ``monkey_patch_packing.py`` accordingly
 
 **For LlamaForCausalLM**
 ```python 
@@ -98,6 +96,8 @@ monkey_patch_packing_mixtral()
 model = transformers.AutoModelForCausalLM.from_pretrained(model_path, ...)
 model.config.use_cache = False # In the training, we don't need to use cache, note: must add this
 ```
+
+The implementation is based on the idea of overwriting the function: ``_get_unpad_data`` of ``MistralForCausalLM``, ``LlamaForCausalLM`` and ``MixtralForCausalLM`` with a monkey-patched function that can handle ``attentions_mask`` of packed inputs. You can take a look at the file: **monkey_patch_packing.py**
 
 ## Assert Implementation
 To make sure that the implementation is correct, we implemented a script for:
