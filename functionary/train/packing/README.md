@@ -11,7 +11,7 @@ Concretely, when we pack inputs, the attention should be only within individual 
 <p align="center">
 Examples of packing 2 input sequences: "good morning my name is John" and "This is a dog". The left is the attention matrix of packing with cross-contamination, the right is the correct attention matrix of packing</p>
 
-## Reducing Training Time
+## Reduce The Training Time
 The obvious benefit of packing is reducing the training time. This reduction depends on the **pack_length** and the **lengths** of original data points. 
 
 For example, in the training of our model (functionary), we found that the training time was **reduced from 15 hours to 5 hours, almost 1/3** of that without packing. For short data like [tatsu-lab/alpaca](https://huggingface.co/datasets/tatsu-lab/alpaca) if we choose pack_length=4096, from original **52k data points**, we can packed into only **1567** data points. So the training time is only about **3%** of original training data.
@@ -20,9 +20,43 @@ Some notes:
 + pack_length >= max_length (used to tokenize data). If pack_length is big, the number of data points after packing will be small.
 + Pay attention to the **number of data points after packing**. For example, your original datset contains 5000 data points, packed into: 96 data points. If you set batch_size=32 in the training --> model's weights are updated only **3 times** --> **would be poor**. So When you use packing, if you should take a look at the number of data points after packing to tune the hyperparameters for training such as: pack_length, gradient_accumulation_steps, ... To make sure that the number of training steps would be big enough
 
-## How to use
+## How To use
 
-The implementation is based on the idea of overwriting the function: _get_unpad_data of ``MistralForCausalLM``, ``LlamaForCausalLM`` and ``MixtralForCausalLM`` with a monkey-patched function that can handle ``attentions_mask`` of packed inputs. You can take a look at the file: **monkey_patch_packing.py**
+To use Packing in the training we just need to:
++ Convert original dataset into packed datasets
++ Use monkey-patched implementation of: ``MistralForCausalLM``, ``LlamaForCausalLM`` or ``MixtralForCausalLM``
+
+### Convert to Packed Dataset
+The format of packed input (assume that packing n inputs into one)
++ input_ids = 
+  + [input_ids of sequence 1] + [input_ids of sequence 2] + ...  + [input_ids of sequence n] + [padding tokens] **if padding_side=right**
+  + [padding tokens] + [input_ids of sequence 1] + [input_ids of sequence 2] + ...  + [input_ids of sequence n] **if padding_side=left**
+
++ attention_mask = 
+  + [1, ..., 1, 2, ..., 2, ... n, ..., n, 0, 0, ..0] if **padding_side=right** 
+  + [0, 0, ..0, 1, ..., 1, 2, ..., 2, ... n, ..., n] if **padding_side=left**
+  
+  where: 
+  + number of 1s = len(input_ids of sequence 1)
+  + ...
+  + number of n = len(input_ids of sequence n)
+  + number of 0s = len(padding tokens)
+
++ labels = 
+  + [labels of sequence 1] + [labels of sequence 2] + ...  + [labels of sequence n] + [-100, ... -100] **if padding_side = right** where -100: means masking **pad_token** (excluding from computing loss)
+  + [-100, ... -100] + [labels of sequence 1] + [labels of sequence 2] + ...  + [labels of sequence n] **if padding_side = left** 
+
+
+Actually, we had already implemented converting Original Dataset (the function ``__item__ return {"input_ids": xxx, "attention_mask": xxx, "labels": xxxx})``) to Packed Dataset, you can use this with just one line of code:
+```python
+from packed_dataset import PackedDataset
+# Note that pack_length must be >= max_leng used tokenizing the dataset
+# original_ds[index] --> {"input_ids": xxx, "attention_mask": xxx, "labels": xxx}, labels is not necessarily required
+packed_ds = PackedDataset(original_ds, tokenizer, pack_length)
+```
+### Use monkey-patched implementation
+The implementation is based on the idea of overwriting the function: ``_get_unpad_data`` of ``MistralForCausalLM``, ``LlamaForCausalLM`` and ``MixtralForCausalLM`` with a monkey-patched function that can handle ``attentions_mask`` of packed inputs. You can take a look at the file: **monkey_patch_packing.py**
+
 
 **Note that our implementation is only correct if using [Flash Attenion](https://github.com/Dao-AILab/flash-attention)**
 
@@ -43,7 +77,7 @@ monkey_patch_packing_llama() # Monkey-patch LlamaForCausalLM
 ...
 # Load the model
 model = transformers.AutoModelForCausalLM.from_pretrained(model_path, ...)
-model.config.use_cache = False # In the training, we don't need to use cache, note: must add this
+model.config.use_cache = False # In the training, we don't need to use cache, note: must add this or can encounter assertion error
 ```
 **For MistralForCausalLM**
 ```python
@@ -63,28 +97,6 @@ monkey_patch_packing_mixtral()
 # Load the model
 model = transformers.AutoModelForCausalLM.from_pretrained(model_path, ...)
 model.config.use_cache = False # In the training, we don't need to use cache, note: must add this
-```
-
-
-### Convert to Packed Dataset
-The input format to monkey-patched models:
-
-+ input_ids = [input_ids of sequence 1] + [input_ids of sequence 2] + ...  + [input_ids of sequence n] + [padding tokens]
-
-+ attention_mask = [1, ..., 1, 2, ..., 2, ... n, ..., n, 0, 0, ..0] if **padding_side=left**, [0, 0, ..0, 1, ..., 1, 2, ..., 2, ... n, ..., n] if **padding_side=right**
-where: 
-  + number of 1s = len(input_ids of sequence 1)
-  + ...
-  + number of n = len(input_ids of sequence n)
-  + number of 0s = len(padding tokens)
-
-+ labels = [labels of sequence 1] + [labels of sequence 2] + ...  + [labels of sequence n] + [padding tokens]
-
-Actually, we had already implemented converting Original Dataset (function ``__item__ return {"input_ids": xxx, "attention_mask": xxx, "labels": xxxx})`` to Packed Dataset, you can use with just one line of code:
-```python
-from packed_dataset import PackedDataset
-# Note that pack_length must be >= max_leng used tokenizing the dataset
-packed_ds = PackedDataset(original_ds, tokenizer, pack_length)
 ```
 
 ## Assert Implementation
@@ -112,5 +124,3 @@ The output would show:
 + 50 random data points are packed into only 2 data points 
 + Time for computing loss from original model + original dataset is significantly greater than that monkey-patched model + packed dataset (In my run: 30.38 seconds vs 1.14 seconds)
 + The difference between loss from **(original dataset, original model)** and **(packed dataset, monkey-patched model)** is almost 0%.
-
-You also see that the 
