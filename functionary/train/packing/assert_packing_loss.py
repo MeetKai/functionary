@@ -1,16 +1,17 @@
-import transformers
-from transformers import AutoTokenizer
-from torch.utils.data import Dataset
-from typing import List, Dict, Any, Tuple
-import torch
-from datasets import load_dataset
-from torch.utils.data import DataLoader
-import random
+import datetime
 import math
-import typer
+import random
 import sys
-from packed_dataset import PackedDataset
+from typing import Any, Dict, List, Tuple
 
+import monkey_patch_packing
+import torch
+import transformers
+import typer
+from datasets import load_dataset
+from packed_dataset import PackedDataset
+from torch.utils.data import DataLoader, Dataset
+from transformers import AutoTokenizer
 
 random.seed(1)
 torch.manual_seed(3)
@@ -65,7 +66,7 @@ def compute_loss_of_model(
 
 
 def compute_loss_for_model_class(
-    pretrained_path: str, model_class: Any, tokenizer: Any, ds: Any
+    pretrained_path: str, tokenizer: Any, ds: Any
 ) -> Tuple[float, int]:
     """Compute the loss with model initilized from model_class
         also return the number of tokens for computing the loss
@@ -78,19 +79,27 @@ def compute_loss_for_model_class(
     Returns:
         _type_: _description_
     """
-    model = model_class.from_pretrained(
+    model = transformers.AutoModelForCausalLM.from_pretrained(
         pretrained_path,
         torch_dtype=torch.bfloat16,
         device_map="auto",
         attn_implementation="flash_attention_2",
     )
+
+    # In the training, we set use_cache=False, use_cache=True only takes effect at inference
+    model.config.use_cache = False
+
     if hasattr(model, "router_aux_loss_coef"):
         print("set au_coef=0")
         model.router_aux_loss_coef = (
             0  # excluding auxilary loss (in MoE model) in comparison
         )
 
-    return compute_loss_of_model(model, ds, tokenizer)
+    t1 = datetime.datetime.now()
+    result = compute_loss_of_model(model, ds, tokenizer)
+    t2 = datetime.datetime.now()
+    print(f"time for computing the loss: {(t2 - t1).total_seconds()}")
+    return result
 
 
 def create_labels_from_input_ids(input_ids: List[int], tokenizer: Any) -> List[int]:
@@ -125,45 +134,24 @@ def main(
     pack_length: int = typer.Option(default=4096),
     masking_labels: bool = typer.Option(default=False),
 ):
-    """_summary_
-
+    """This function is used to assert that the loss of monkey-patched models on packed datasets == loss of original models on original datasets
+        We will use 50 random data points from dataset: tatsu-lab/alpaca on Huggingface Hub for computing the loss.
     Args:
         pretrained_path (str): model_path
         max_input_length (int, optional): max_length at tokenizing data. Defaults to 4096.
         pack_length (int, optional): the length used for packing. Defaults to 6000.
-        masking_labels: whether we mask labels such that only Output tokens are used for computing the loss
+        masking_labels: whether we mask labels such that only Output tokens are used for computing loss:
+            + masking_labels = True: masking prompt tokens as -100, and keep the output tokens --> only output tokens are used for computing loss
+            + masking_labels = False: no masking, all tokens are used for computing loss
     Returns:
         _type_: _description_
     """
 
     tokenizer = AutoTokenizer.from_pretrained(pretrained_path, legacy=True)
     tokenizer.pad_token = tokenizer.eos_token
-    print("tokenizer: ", tokenizer)
 
     model_config = transformers.AutoConfig.from_pretrained(pretrained_path)
     config_type = type(model_config).__name__.lower()
-    if "mistral" in config_type:
-        print("model: Mistral ")
-        from mistral_monkey_patch import MistralForCausalLM
-
-        mk_model_class = MistralForCausalLM
-    elif "llama" in config_type:
-        print("model: Llama ")
-        from llama_monkey_patch import LlamaForCausalLM
-
-        mk_model_class = LlamaForCausalLM
-    elif "mixtral" in config_type:
-        # Mixtral requires this ?
-        tokenizer.padding_side = "left"
-        print("model: Mixtral")
-        from mixtral_monkey_patch import MixtralForCausalLM
-
-        mk_model_class = MixtralForCausalLM
-    else:
-        print(
-            f"{config_type} is not supported, currently we only support: Mistral, Mixtral, Llama"
-        )
-        sys.exit(1)
 
     ds = load_dataset("tatsu-lab/alpaca")["train"]
     # extract 100 random data points from ds
@@ -171,8 +159,8 @@ def main(
     indices = [i for i in range(size)]
     random.shuffle(indices)
 
-    # We randomly select 150 data points for computing loss
-    ex_ds = ds.select(indices[:100])
+    # We randomly select 50 data points for computing loss
+    ex_ds = ds.select(indices[:50])
     print("number of data points: ", len(ex_ds))
     original_columns = ex_ds.column_names
 
@@ -183,7 +171,7 @@ def main(
         )
 
         if masking_labels:
-            # create labels by masking from start to: "### Response:"
+            # create labels by masking tokens from start to: "### Response:" as -100
             batch_input_ids = input_dic["input_ids"]
             batch_labels = []
             for input_ids in batch_input_ids:
@@ -196,19 +184,36 @@ def main(
     ex_ds = ex_ds.map(process_data, batched=True, remove_columns=original_columns)
     ex_ds.set_format("torch")
 
+    # convert ex_ds --> packed dataset
     packed_ds = PackedDataset(ex_ds, tokenizer, pack_length)
     packed_ds.stat()
 
-    mk_avg_loss, mk_token_count = compute_loss_for_model_class(
-        pretrained_path, mk_model_class, tokenizer, packed_ds
-    )
-    print("monkey_patched loss: ", mk_avg_loss)
-    original_model_class = transformers.AutoModelForCausalLM
-
+    # first compute the average loss of the original model on normal dataset (without packing)
     original_avg_loss, original_token_count = compute_loss_for_model_class(
-        pretrained_path, original_model_class, tokenizer, ex_ds
+        pretrained_path, tokenizer, ex_ds
     )
     print("original_loss: ", original_avg_loss)
+
+    if "mistral" in config_type:
+        print("model: Mistral ")
+        monkey_patch_packing.monkey_patch_packing_mistral()
+    elif "llama" in config_type:
+        print("model: Llama ")
+        monkey_patch_packing.monkey_patch_packing_llama()
+    elif "mixtral" in config_type:
+        print("model: Mixtral")
+        monkey_patch_packing.monkey_patch_packing_mixtral()
+    else:
+        print(
+            f"{config_type} is not supported, currently we only support: Mistral, Mixtral, Llama"
+        )
+        sys.exit(1)
+
+    # compute the loss on packed dataset with monkey-patched model
+    mk_avg_loss, mk_token_count = compute_loss_for_model_class(
+        pretrained_path, tokenizer, packed_ds
+    )
+    print("monkey-patched loss: ", mk_avg_loss)
 
     # Make sure that number of tokens used for computing loss are the same in original dataset and packed dataset
     assert (
