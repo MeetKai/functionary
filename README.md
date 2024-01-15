@@ -489,6 +489,11 @@ Evaluation function call prediction in our in-house dataset. The accuracy metric
 
 </details>
 
+
+## Training
+
+See training [README](functionary/train/README.md)
+
 ## Roadmap
 
 - [ ] OpenAPI specification based plugin support.
