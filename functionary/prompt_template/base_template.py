@@ -243,6 +243,7 @@ class PromptTemplate:
                     "curr_text": "",
                     "func_name": "",
                     "param_names": [],
+                    "add_predefined_fns": gen_state["add_predefined_fns"],
                 }
 
         return gen_state
