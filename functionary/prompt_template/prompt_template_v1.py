@@ -84,7 +84,7 @@ class PromptTemplateV1(PromptTemplate):
         if message["role"] == "system":
             text = f"system:\n{content}{end_token}\n"
 
-        elif message["role"] == "function":
+        elif message["role"] in ["function", "tool"]:
             func_name = message.get("name", "")
             text = f"function name={func_name}:\n{content}{end_token}\n"
 
