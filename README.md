@@ -6,7 +6,7 @@
 
 Functionary is a language model that can interpret and execute functions/plugins.
 
-The model determines when to execute a function and can understand its output. It only triggers functions as needed. Function definitions are given as JSON Schema Objects, similar to OpenAI GPT function calls.
+The model determines when to execute functions, whether in parallel or serially, and can understand their outputs. It only triggers functions as needed. Function definitions are given as JSON Schema Objects, similar to OpenAI GPT function calls.
 
 ### Setup
 
@@ -19,7 +19,7 @@ pip install -r requirements.txt
 Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server:
 
 ```shell
-python3 server_vllm.py --model "meetkai/functionary-7b-v2.1" --host 0.0.0.0
+python3 server_vllm.py --model "meetkai/functionary-small-v2.2" --host 0.0.0.0
 ```
 
 ### OpenAI Compatible Usage
@@ -30,7 +30,7 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 
 client.chat.completions.create(
-    model="meetkai/functionary-7b-v2.1",
+    model="meetkai/functionary-small-v2.2",
     messages=[{"role": "user",
             "content": "What is the weather for Istanbul?"}
     ],
@@ -66,7 +66,7 @@ client.chat.completions.create(
 import requests
 
 data = {
-    'model': 'meetkai/functionary-7b-v2.1', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
+    'model': 'meetkai/functionary-small-v2.2', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
     'messages': [
         {
             "role": "user",
@@ -115,23 +115,34 @@ sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functi
 ```
 
 ## Models Available
-| Model                                                                                | Description                                                                                                                         |
-|:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|
-| [functionary-small-v2.2](https://huggingface.co/meetkai/functionary-small-v2.2) | 8k context | 
-| [functionary-medium-v2.2](https://huggingface.co/meetkai/functionary-medium-v2.2) | 8k context, better accuracy |
-| [functionary-7b-v2.1](https://huggingface.co/meetkai/functionary-7b-v2.1)            | 8k context |
-| [functionary-7b-v2](https://huggingface.co/meetkai/functionary-7b-v2) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2-GGUF)                | Parallel function call support.   |
-| [functionary-7b-v1.4](https://huggingface.co/meetkai/functionary-7b-v1.4) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF)            | 4k context, better accuracy (deprecated) |
-| [functionary-7b-v1.1](https://huggingface.co/meetkai/functionary-7b-v1.1)            | 4k context (deprecated)                                                                                                         | 
-| functionary-7b-v0.1            | 2k context Not recommended, use 2.1 (deprecated)                                                                                                         |
+| Model                                                                                | Description                                                                                                                         | Compute Requirements (for FP16 HF model weights) |
+|:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:------|
+| [functionary-small-v2.2](https://huggingface.co/meetkai/functionary-small-v2.2) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.2-GGUF) | 8k context | Any GPU with 24GB VRAM |
+| [functionary-medium-v2.2](https://huggingface.co/meetkai/functionary-medium-v2.2) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v2.2-GGUF) | 8k context, better accuracy | 2 x A100-80GB or equivalent |
+| [functionary-7b-v2.1](https://huggingface.co/meetkai/functionary-7b-v2.1) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2.1-GGUF)            | 8k context | Any GPU with 24GB VRAM |
+| [functionary-7b-v2](https://huggingface.co/meetkai/functionary-7b-v2) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2-GGUF)                | Parallel function call support.   | Any GPU with 24GB VRAM |
+| [functionary-7b-v1.4](https://huggingface.co/meetkai/functionary-7b-v1.4) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF)            | 4k context, better accuracy (deprecated) | Any GPU with 24GB VRAM |
+| [functionary-7b-v1.1](https://huggingface.co/meetkai/functionary-7b-v1.1)            | 4k context (deprecated)                                                                                                         | Any GPU with 24GB VRAM | 
+| functionary-7b-v0.1            | 2k context (deprecated) Not recommended, use 2.1 onwards                                                                                                  | Any GPU with 24GB VRAM |
 
-
-Compatibility information:
+### Compatibility information
 
 - v1 models are compatible with both OpenAI-python v0 and v1.
 - v2 models are designed for compatibility with OpenAI-python v1.
   
 The difference between OpenAI-python v0 and v1 you may refer to the official documentation [here](https://platform.openai.com/docs/api-reference/chat/create#chat-create-tools)
+
+## Related Projects & Their Differences
+| Feature/Project | [Functionary](https://github.com/MeetKai/functionary) | [NexusRaven](https://github.com/nexusflowai/NexusRaven) | [Gorilla](https://github.com/ShishirPatil/gorilla/tree/main/openfunctions) | [Glaive](https://huggingface.co/glaiveai/glaive-function-calling-v1)| [GPT-4-1106-preview](https://github.com/openai/openai-python) |
+|---|---|---|---|---|---|
+|Single Function Call | ✅ | ✅ | ✅ | ✅ | ✅ |
+|Parallel Function Calls | ✅ | ✅ | ✅ | ❌ | ✅ |
+|Nested Function Calls | ❌ | ✅ | ❌ | ❌ | ❌ |
+|Following Up on Missing Function Arguments | ✅ | ❌ | ❌ | ❌ | ✅ |
+|Multi-turn | ✅ | ❌ | ❌ | ✅ | ✅ |
+|Code Interpreter | ✅ | ❌ | ❌ | ❌ | ✅ |
+|Generate Model Responses Grounded in Tools Execution Results | ✅ | ❌ | ❌ | ❌ | ✅ |
+|Chit-Chat | ✅ | ❌ | ✅ | ✅ | ✅ |
 
 ## Llama_cpp Inference
 
@@ -463,30 +474,13 @@ If you would like a commentary from the model, then you'll call the model again 
 </details>
 
 
-## Training
-
-We use standard HuggingFace Trainer. When calculating the loss, we only calculate the loss on assistant outputs and assistant function calls. Not on function responses and function definitions
-
-We use the similar hyperparameters as its used in LLama 2 [paper](https://arxiv.org/abs/2307.09288). 
-Except we use bigger weight decay (0.3 instead of 0.1) and warmup of 0.03, to reduce overfitting as we sample 2x of the function calling example conversations. But ablation study is required.
-
-**Hyperparameters**:
-
-- Batch size: 64
-- Learning rate: 2e-5
-- Epochs: 2
-- Max length: 4096
-- Weight decay: 0.3
-
-More on training: [README.md](functionary/train/README.md) 
-
 ## How it Works?
 
 We convert function definitions to a similar text to TypeScript definitions. 
 Then we inject these definitions as system prompts. After that, we inject the default system prompt. 
 Then we start the conversation messages. 
 
-The prompt example can be found here: [V1](https://github.com/MeetKai/functionary/blob/readme_v2/tests/prompt_test_v1.txt) and [V2](https://github.com/MeetKai/functionary/blob/readme_v2/tests/prompt_test_v2.txt)
+The prompt example can be found here: [V1](tests/prompt_test_v1.txt) and [V2](tests/prompt_test_v2.txt)
 
 
 We don't change the logit probabilities to conform to a certain schema, but the model itself knows how to conform. This allows us to use existing tools and caching systems with ease.
@@ -507,34 +501,23 @@ Evaluation function call prediction in our in-house dataset. The accuracy metric
 
 </details>
 
-## Dataset Preparation
 
-Dataset preparation process consists of several steps:
+## Training
 
-1. **Function Definitions Conversion:** We begin by selecting multiple function definitions and converting them into TypeScript definitions. This approach benefits from the model's prior exposure to TypeScript tokens during the pretraining phase. [See how we do it](https://github.com/musabgultekin/functionary/blob/17a86de9b06acaedd0afab212717205c0484a218/schema.py#L54) Also see [Microsoft TypeChat](https://github.com/microsoft/TypeChat/blob/d2f2de9ca37ef9adeb108d5fc60703b72fec0a22/site/src/blog/introducing-typechat.md#just-add-types) . Typescript definition files can be seen [here](https://github.com/search?q=namespace+path%3A*.d.ts&type=code), we use the same format with a couple of changes (e.g removing `declare` and `interface`, and always using curly braces because all function parameters are expected to generate a JSON object).
-
-2. **Human Prompts Generation:** We then create human prompts that incorporate the converted TypeScript function definitions. 
-
-3. **Function Calls Generation:** Following the generation of human prompts, we proceed to generate corresponding function calls.
-
-4. **Function Answers Generation:** Once function calls have been generated, we derive the outputs of these function calls would produce.
-
-5. **Function Answers Interpretation:** After procuring function answers, we generate language model answers for the function response. So the model knows how to interpret the function response.
-
-6. **Merging and Training:** We combine all the generated elements (prompts, function calls, function answers, and their interpretations) using a custom formatting. This consolidated dataset is then used for the model's training.
-
-*Note: Llama 2 70b / Falcon 180B is capable of doing all synthetic data generation.*
-
+See training [README](functionary/train/README.md)
 
 ## Roadmap
 
-- [ ] Train [Llama 2](https://arxiv.org/abs/2307.09288) 13B model too, with 2x more data.
 - [ ] OpenAPI specification based plugin support.
 - [X] Fast inference server 
   - [X] [vLLM](https://github.com/vllm-project/vllm) 
   - [ ] [text-generation-inference](https://github.com/huggingface/text-generation-inference) ? See: [License Issue](https://github.com/huggingface/text-generation-inference/issues/726)
   - [X] Streaming Support
-  - [ ] function_call parameter to server
+  - [X] function_call parameter to server
+  - [X] Grammar Sampling to ensure 100% accuracy for function and parameter names
+- [X] Parallel function calling support
 - [X] Python function calling support (Automatic detection of type annotations and calling them automatically)
 - [X] Real world usage examples, such as creating agents.
+- [X] Train Mixtral based model
+- [ ] Code interpreter support
 - **Please consider opening a PR for future requests**

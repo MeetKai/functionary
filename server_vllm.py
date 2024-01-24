@@ -18,6 +18,7 @@
 import argparse
 import asyncio
 import json
+import re
 import time
 from http import HTTPStatus
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
@@ -63,6 +64,7 @@ from functionary.prompt_template import (
     PromptTemplate,
     get_prompt_template_from_tokenizer,
 )
+from functionary.prompt_template.prompt_template_v2 import get_random_tool_call_id
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -96,7 +98,7 @@ class ChatCompletionRequest(BaseModel):
     @validator("tool_choice", always=True)
     def validate_tool_choice(cls, value, values):
         if value is None:
-            if values["tools"] is None and value["functions"] is None:
+            if values["tools"] is None and values["functions"] is None:
                 return "none"
             else:
                 return "auto"
@@ -106,7 +108,9 @@ class ChatCompletionRequest(BaseModel):
 class ChatCompletionResponseChoice(BaseModel):
     index: int
     message: ChatMessage
-    finish_reason: Optional[Literal["stop", "length", "function_call"]] = None
+    finish_reason: Optional[
+        Literal["stop", "length", "function_call", "tool_calls"]
+    ] = None
 
 
 class ChatCompletionResponse(BaseModel):
@@ -249,8 +253,10 @@ async def create_chat_completion(raw_request: Request):
         tools = enforce_code_interpreter(tools=tools)
         tools_or_functions = [item.dict() for item in tools]
     elif request.functions:
+        tools = None
         tools_or_functions = [item.dict() for item in request.functions]
     else:
+        tools = None
         tools_or_functions = []
 
     prompt_token_ids = prepare_messages_for_inference(
@@ -350,11 +356,31 @@ async def create_chat_completion(raw_request: Request):
                     yield delta_text, finish_reason
         yield "", "stop"
 
-    async def completion_stream_generator(tool_choice) -> AsyncGenerator[str, None]:
+    async def completion_stream_generator(
+        tool_choice, functions
+    ) -> AsyncGenerator[str, None]:
         generator = wrap_vllm_generator(tool_choice=tool_choice)
         async for response in generate_openai_format_from_stream_async(
             generator, prompt_template
         ):
+            # Convert v1 from function_call to tool_calls if tools are provided instead of functions
+            if prompt_template.version == "v1" and (
+                functions is None or len(functions) == 0
+            ):
+                if "function_call" in response["delta"]:
+                    response["delta"] = {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "function": response["delta"]["function_call"],
+                                "id": get_random_tool_call_id(),
+                                "type": "function",
+                            }
+                        ],
+                    }
+                if response["finish_reason"] == "function_call":
+                    response["finish_reason"] = "tool_calls"
             chunk = StreamChoice(**response)
             result = ChatCompletionChunk(id=request_id, choices=[chunk])
             chunk_dic = result.dict(exclude_unset=True)
@@ -368,7 +394,9 @@ async def create_chat_completion(raw_request: Request):
         # Abort the request if the client disconnects.
         background_tasks.add_task(abort_request)
         return StreamingResponse(
-            completion_stream_generator(tool_choice=request.tool_choice),
+            completion_stream_generator(
+                tool_choice=request.tool_choice, functions=request.functions
+            ),
             media_type="text/event-stream",
             background=background_tasks,
         )
@@ -388,6 +416,35 @@ async def create_chat_completion(raw_request: Request):
         chat_mess = prompt_template.parse_assistant_response(
             llm_output=text_response, tool_choice=request.tool_choice
         )  # parse_generated_content(text_response)
+
+        # Postprocess finish reason
+        if "function_call" in chat_mess and chat_mess["function_call"] is not None:
+            output.finish_reason = "function_call"
+        if "tool_calls" in chat_mess and chat_mess["tool_calls"] is not None:
+            output.finish_reason = "tool_calls"
+
+        # Convert v1 from function_call to tool_calls if tools are provided instead of functions
+        if (
+            prompt_template.version == "v1"
+            and output.finish_reason == "function_call"
+            and (request.functions is None or len(request.functions) == 0)
+        ):
+            chat_mess = {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": chat_mess["function_call"]["name"],
+                            "arguments": chat_mess["function_call"]["arguments"],
+                        },
+                        "id": get_random_tool_call_id(),
+                        "type": "function",
+                    }
+                ],
+            }
+            output.finish_reason = "tool_calls"
+
         choice_data = ChatCompletionResponseChoice(
             index=output.index,
             message=ChatMessage(**chat_mess),
@@ -461,6 +518,10 @@ if __name__ == "__main__":
 
     parser = AsyncEngineArgs.add_cli_args(parser)
     args = parser.parse_args()
+
+    pattern = r"v1.*$"
+    if re.search(pattern, args.model):
+        args.grammar_sampling = False
 
     if args.grammar_sampling:
         from functionary.vllm_monkey_patch.async_llm_engine import AsyncLLMEngine

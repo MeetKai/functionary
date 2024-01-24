@@ -121,7 +121,7 @@ class PromptTemplateV2(PromptTemplate):
         return [f"{self.from_token}assistant\n{self.recipient_token}"]
 
     def parse_assistant_response(
-        self, llm_output: str, tool_choice: Optional[Any]
+        self, llm_output: str, tool_choice: Optional[Any] = None
     ) -> Dict:
         for stop in self.get_stop_tokens_for_generation():
             if llm_output.endswith(stop):
