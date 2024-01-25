@@ -140,7 +140,6 @@ The difference between OpenAI-python v0 and v1 you may refer to the official doc
 |Nested Function Calls | ❌ | ✅ | ❌ | ❌ | ❌ |
 |Following Up on Missing Function Arguments | ✅ | ❌ | ❌ | ❌ | ✅ |
 |Multi-turn | ✅ | ❌ | ❌ | ✅ | ✅ |
-|Code Interpreter | ✅ | ❌ | ❌ | ❌ | ✅ |
 |Generate Model Responses Grounded in Tools Execution Results | ✅ | ❌ | ❌ | ❌ | ✅ |
 |Chit-Chat | ✅ | ❌ | ✅ | ✅ | ✅ |
 
