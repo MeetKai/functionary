@@ -136,7 +136,7 @@ sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functi
   
 The difference between OpenAI-python v0 and v1 you may refer to the official documentation [here](https://platform.openai.com/docs/api-reference/chat/create#chat-create-tools)
 
-## Related Projects & Their Differences
+## The Differences Between Related Projects
 | Feature/Project | [Functionary](https://github.com/MeetKai/functionary) | [NexusRaven](https://github.com/nexusflowai/NexusRaven) | [Gorilla](https://github.com/ShishirPatil/gorilla/tree/main/openfunctions) | [Glaive](https://huggingface.co/glaiveai/glaive-function-calling-v1)| [GPT-4-1106-preview](https://github.com/openai/openai-python) |
 |---|---|---|---|---|---|
 |Single Function Call | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -144,9 +144,10 @@ The difference between OpenAI-python v0 and v1 you may refer to the official doc
 |Nested Function Calls | ❌ | ✅ | ❌ | ❌ | ❌ |
 |Following Up on Missing Function Arguments | ✅ | ❌ | ❌ | ❌ | ✅ |
 |Multi-turn | ✅ | ❌ | ❌ | ✅ | ✅ |
-|Code Interpreter | ✅ | ❌ | ❌ | ❌ | ✅ |
 |Generate Model Responses Grounded in Tools Execution Results | ✅ | ❌ | ❌ | ❌ | ✅ |
 |Chit-Chat | ✅ | ❌ | ✅ | ✅ | ✅ |
+
+**You can find more details of the features in [here](features_desc.md)**
 
 ## Llama_cpp Inference
 
