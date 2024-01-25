@@ -45,11 +45,7 @@ from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
-from functionary.inference import (
-    enforce_code_interpreter,
-    enforce_tool_choice,
-    prepare_messages_for_inference,
-)
+from functionary.inference import enforce_tool_choice, prepare_messages_for_inference
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
     ChatCompletionChunk,
@@ -163,22 +159,6 @@ async def check_model(request) -> Optional[JSONResponse]:
     return ret
 
 
-async def check_code_interpreter(tools, version) -> Optional[JSONResponse]:
-    if tools is None or version >= 2.2:
-        return
-
-    ret = None
-    if any([tool.type == "code_interpreter" for tool in tools]):
-        ret = create_error_response(
-            HTTPStatus.BAD_REQUEST,
-            (
-                "Functionary versions less than v2.2 do not support code interpreter. "
-                "Please use the appropriate model version."
-            ),
-        )
-    return ret
-
-
 async def check_length(request, input_ids, model_config):
     if hasattr(model_config.hf_config, "max_sequence_length"):
         context_len = model_config.hf_config.max_sequence_length
@@ -262,24 +242,10 @@ async def create_chat_completion(raw_request: Request):
             HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
         )
 
-    # Get the exact version of functionary in float type
-    pattern = r"\{#(.*?)#\}"
-    functionary_version = float(
-        re.search(pattern, tokenizer.chat_template).group(1)[1:]
-    )
-
-    # Check if version < v2.2 is being used with code interpreter. Return error if so.
-    error_check_ret = await check_code_interpreter(
-        tools=request.tools, version=functionary_version
-    )
-    if error_check_ret is not None:
-        return error_check_ret
-
     if request.tools:
         tools = enforce_tool_choice(
             tool_choice=request.tool_choice, tools=request.tools
         )
-        tools = enforce_code_interpreter(tools=tools, version=functionary_version)
         tools_or_functions = [item.dict() for item in tools]
     elif request.functions:
         tools = None
@@ -297,10 +263,11 @@ async def create_chat_completion(raw_request: Request):
     ).tolist()[0]
 
     # Remove any code_interpreter tools remaining
-    tools = [tool for tool in tools if tool.type != "code_interpreter"]
-    tools_or_functions = [
-        tool for tool in tools_or_functions if tool["type"] != "code_interpreter"
-    ]
+    if tools:
+        tools = [tool for tool in tools if tool.type != "code_interpreter"]
+        tools_or_functions = [
+            tool for tool in tools_or_functions if tool["type"] != "code_interpreter"
+        ]
 
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     if error_check_ret is not None:

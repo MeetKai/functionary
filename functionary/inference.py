@@ -14,19 +14,6 @@ from functionary.prompt_template import (
     get_prompt_template_from_tokenizer,
 )
 
-PYTHON_RUN_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "python",
-        "description": "When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files.",  #  Internet access for this session is disabled. Do not make external web requests or API calls as they will fail.
-        "parameters": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-}
-PYTHON_RUN_SYS_MSG = "When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files."
-
 
 class StopWordsCriteria(StoppingCriteria):
     def __init__(self, stops=[]):
@@ -55,7 +42,6 @@ def prepare_messages_for_inference(
     functions: Optional[List[Function]] = None,
     tools: Optional[List[Tool]] = None,
     tool_choice: Optional[Union[str, Tool]] = None,
-    functionary_version: Optional[float] = None,
     device="cuda:0",
 ) -> torch.Tensor:
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
@@ -71,13 +57,8 @@ def prepare_messages_for_inference(
 
     dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)
 
-    # Check for code_interpreter tools and add PYTHON_RUN_SYS_MSG. Remove tools too
-    if any([tool.type == "code_interpreter" for tool in tools]):
-        dic_messages.insert(0, {"role": "system", "content": PYTHON_RUN_SYS_MSG})
-        tools_or_functions = [
-            tool for tool in tools_or_functions if tool["type"] != "code_interpreter"
-        ]
-
+    # This also checks for code_interpreter and adds python default system message instead
+    # default system message
     final_prompt = prompt_template.get_prompt_from_messages(
         dic_messages, tools_or_functions=tools_or_functions
     )
@@ -129,30 +110,6 @@ def enforce_tool_choice(
             ), f"Invalid value for 'tool_choice': no function named {tool_choice.function.name} was specified in the 'tools' parameter"
         else:
             tools = [tool_choice]
-
-    return tools
-
-
-def enforce_code_interpreter(
-    tools: Optional[List[Tool]], version: float
-) -> Optional[List[Tool]]:
-    """This function checks if {"type": "code_interpreter"} is present and
-    replaces it with PYTHON_RUN_TOOL ONLY FOR version == v2.2.
-
-    Args:
-        tools (Optional[List[Tool]]): the existing list of tools passed in from user
-        version (float): the exact functionary version (e.g.: v2.2 -> 2.2)
-
-    Returns:
-        List[Tool]: the modified tools based on whether code_interpreter is present
-    """
-    if tools is None or version > 2.2:
-        return tools
-
-    for i, tool in enumerate(tools):
-        if tool.type == "code_interpreter":
-            tools[i] = Tool.parse_obj(PYTHON_RUN_TOOL)
-            break
 
     return tools
 

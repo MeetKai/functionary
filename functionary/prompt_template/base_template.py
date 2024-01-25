@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from functionary.schema import generate_schema_from_functions
 
 SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
+PYTHON_RUN_SYS_MSG = "When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files."
 
 
 class PredefinedFuncTypes(str, Enum):
@@ -487,19 +488,25 @@ class PromptTemplate:
         messages_clone = messages.copy()  # To avoid modifying the original list
 
         functions = []
+        is_code_interpreter = False
         if tools_or_functions is not None:
             for item in tools_or_functions:
                 if (
-                    "function" in item
+                    "function" in item and item["function"] is not None
                 ):  #  new data format: tools: [{"type": xx, "function": xxx}]
                     functions.append(item["function"])
+                elif "type" in item and item["type"] == "code_interpreter":
+                    is_code_interpreter = True
                 else:
                     functions.append(item)  #  old format
 
         messages_clone.insert(
             0, {"role": "system", "content": generate_schema_from_functions(functions)}
         )
-        messages_clone.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
+        if is_code_interpreter:
+            messages_clone.insert(1, {"role": "system", "content": PYTHON_RUN_SYS_MSG})
+        else:
+            messages_clone.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
 
         full_text = ""
         for message in messages_clone:
