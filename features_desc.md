@@ -157,8 +157,6 @@ client.chat.completions.create(
 ## Multi-turn
 The model supports multi-turn conversations. This means the model can have conversations that go back and forth many times, like a real conversation. It maintains the context and continuity of the conversation, allowing for more complex and detailed discussions. 
 
-## Code Interpreter
-Functionary feature that combines the immense analytical power of large language models (LLMs) with programming. It allows you to run Python code and upload files, significantly increasing the scope of tasks ChatGPT can perform.
 
 ## Generate Model Responses Grounded in Tools Execution Results
 The functionary model can analyze tool outputs and generate model responses grounded in the outputs.
