@@ -143,7 +143,7 @@ The difference between OpenAI-python v0 and v1 you may refer to the official doc
 |Generate Model Responses Grounded in Tools Execution Results | ✅ | ❌ | ❌ | ❌ | ✅ |
 |Chit-Chat | ✅ | ❌ | ✅ | ✅ | ✅ |
 
-You can find more details of the features in [here](features_desc.md)
+**You can find more details of the features in [here](features_desc.md)**
 
 ## Llama_cpp Inference
 
