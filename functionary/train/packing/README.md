@@ -58,7 +58,7 @@ packed_ds = PackedDataset(original_ds, tokenizer, pack_length)
 
 **Note that our implementation is only correct if using [Flash Attenion](https://github.com/Dao-AILab/flash-attention)**
 
-We recommend using ``transformers==4.36.2`` or later.
+We recommend using ``transformers==4.36.2`` for **finetuning LLama or Mistral**. **For Mixtral**, should use the latest implementation: ``pip install git+https://github.com/huggingface/transformers.git``
 
 So the additional requirement is only **Flash Attention**:
 
@@ -109,7 +109,8 @@ The script will randomly select 50 items from: "tatsu-lab/alpaca" for comparing 
 To run the script you need to install:
 ```shell
 # Install Dependencies
-pip install accelerate==0.23.0 transformers==4.36.2 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 deepspeed==0.11.1 typer==0.9.0
+pip install git+https://github.com/huggingface/transformers.git
+pip install accelerate==0.23.0 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 deepspeed==0.11.1 typer==0.9.0
 
 pip install flash-attn==2.3.2 --no-build-isolation
 ```
