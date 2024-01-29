@@ -71,7 +71,7 @@ def prepare_messages_for_inference(
     ):
         if tool_choice == "none":
             final_prompt += prompt_template.get_predefined_function_names(
-                function_types=PredefinedFuncTypes.no_function_call
+                function_types=PredefinedFuncTypes.no_tool_call
             )[0]
         else:
             final_prompt += tool_choice.function.name

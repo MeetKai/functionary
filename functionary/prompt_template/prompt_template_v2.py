@@ -20,8 +20,8 @@ class PromptTemplateV2(PromptTemplate):
     fn_param_sep_token = "\n<|content|> {"
     # This maps the predefined function type to its str name
     predefined_func_names = {
-        PredefinedFuncTypes.no_function_call: "all",
-        PredefinedFuncTypes.code_gen: "python",
+        PredefinedFuncTypes.no_tool_call: "all",
+        PredefinedFuncTypes.code_interpreter: "python",
     }
 
     def get_start_of_function_call_token(self) -> str:
@@ -131,7 +131,7 @@ class PromptTemplateV2(PromptTemplate):
         if tool_choice is not None:
             if tool_choice == "none":
                 recipient_to_fill = self.get_predefined_function_names(
-                    function_types=PredefinedFuncTypes.no_function_call
+                    function_types=PredefinedFuncTypes.no_tool_call
                 )[0] + self.get_stop_token_for_function_parameter(stage="function")
             elif isinstance(tool_choice, Tool):
                 recipient_to_fill = (

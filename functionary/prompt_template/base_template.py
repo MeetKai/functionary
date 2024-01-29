@@ -13,8 +13,8 @@ PYTHON_RUN_SYS_MSG = "When you send a message containing Python code to python, 
 
 
 class PredefinedFuncTypes(str, Enum):
-    no_function_call = "no-function-call"
-    code_gen = "code-gen"
+    no_tool_call = "no-tool-call"
+    code_interpreter = "code-interpreter"
 
 
 class PromptTemplate:
@@ -68,7 +68,7 @@ class PromptTemplate:
               - pre-parameter: when the model is generating the part between function name and parameter
               - parameter-name: when the model is generating a parameter name
               - parameter-value: when the model is generating a parameter value
-              - no-function-call: when the model is generating content
+              - no-tool-call: when the model is generating content
             - curr_tokens: all the tokens for the current stage being generated
             - curr_text: curr_tokens but in string text form
             - func_name: the function name, if any
@@ -95,8 +95,8 @@ class PromptTemplate:
               - pre-parameter: when the model is generating the part between function name and parameter
               - parameter-name: when the model is generating a parameter name
               - parameter-value: when the model is generating a parameter value
-              - no-function-call: when the model is generating content
-              - code-gen: when the model is generating code
+              - no-tool-call: when the model is generating content
+              - code-interpreter: when the model is generating code
             - curr_tokens: all the tokens for the current stage being generated
             - curr_text: curr_tokens but in string text form
             - func_name: the function name, if any
@@ -160,16 +160,16 @@ class PromptTemplate:
                 else:
                     gen_state["curr_text"], gen_state["curr_tokens"] = "", []
         elif gen_state["stage"] == "pre-parameter":
-            # Check if the new state is in "parameter" or "no-function-call" or "code-gen" stage
+            # Check if the new state is in "parameter" or "no-tool-call" or "code-interpreter" stage
             if self.fn_param_sep_token.rstrip("{").rstrip() in gen_state["curr_text"]:
                 if gen_state["func_name"] in self.get_predefined_function_names(
-                    function_types=PredefinedFuncTypes.no_function_call
+                    function_types=PredefinedFuncTypes.no_tool_call
                 ):
-                    gen_state["stage"] = "no-function-call"
+                    gen_state["stage"] = "no-tool-call"
                 elif gen_state["func_name"] in self.get_predefined_function_names(
-                    function_types=PredefinedFuncTypes.code_gen
+                    function_types=PredefinedFuncTypes.code_interpreter
                 ):
-                    gen_state["stage"] = "code-gen"
+                    gen_state["stage"] = "code-interpreter"
             # Either '{' or '{"' or '{}'
             elif self.fn_param_sep_token in gen_state["curr_text"]:
                 # Check if no arguments are called and go straight to "pre-function"
@@ -246,8 +246,8 @@ class PromptTemplate:
                         gen_state["curr_text"] = tokenizer.decode([new_token_id])
                 except:
                     pass
-        elif gen_state["stage"] in ["no-function-call", "code-gen"]:
-            # probability of stop token is not 100% at the end of no-function-call
+        elif gen_state["stage"] in ["no-tool-call", "code-interpreter"]:
+            # probability of stop token is not 100% at the end of no-tool-call
             # We still need to check if the stage will go to "function" by checking
             # for the presence of the start_of_function_call token
             if gen_state["curr_text"].endswith(self.get_start_of_function_call_token()):

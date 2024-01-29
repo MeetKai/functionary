@@ -346,7 +346,7 @@ async def create_chat_completion(raw_request: Request):
                     ):
                         if tool_choice == "none":
                             yield prompt_template.get_predefined_function_names(
-                                function_types=PredefinedFuncTypes.no_function_call
+                                function_types=PredefinedFuncTypes.no_tool_call
                             )[
                                 0
                             ] + prompt_template.get_stop_token_for_function_parameter(
