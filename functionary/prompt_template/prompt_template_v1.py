@@ -116,7 +116,7 @@ class PromptTemplateV1(PromptTemplate):
     def get_stop_tokens_for_generation(self) -> List[str]:
         return [self.end_assistant, self.end_function_call]
 
-    def get_assistant_prefixes(self) -> List[str]:
+    def get_assistant_prefixes(self, code_only: bool = False) -> List[str]:
         result = []
         for item in [self.end_user, self.end_function]:
             prefix = f"{item}\nassistant:"

@@ -37,7 +37,7 @@ def get_batch_indices(size: int, batch_size: int) -> List[Tuple[int, int]]:
 
 
 def get_prefix_assistant_token_ids(
-    prompt_template: PromptTemplate, tokenizer: Any
+    prompt_template: PromptTemplate, tokenizer: Any, code_only: bool = False
 ) -> List[List[int]]:
     """Get prefix assistant token_ids for masking labels.
     In message where role=assistant, content of assistant always start with a prefix, such as: "Assistant:" or "<|from|>assistant"
@@ -50,7 +50,7 @@ def get_prefix_assistant_token_ids(
         List[List[int]]: List of token_ids of assistant prefixs
     """
     result = []
-    for prefix in prompt_template.get_assistant_prefixes():
+    for prefix in prompt_template.get_assistant_prefixes(code_only=code_only):
         token_ids = tokenizer.encode(prefix, add_special_tokens=False)
         if token_ids[0] == 29871:
             token_ids = token_ids[1:]
@@ -109,7 +109,10 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
             if data_ratio < 1:
                 raw_data = raw_data[: int(data_ratio * len(raw_data))]
         ds = LazyPreprocessDataset(
-            raw_data, tokenizer, keep_assistant_prefix=keep_assistant_prefix
+            raw_data,
+            tokenizer,
+            keep_assistant_prefix=keep_assistant_prefix,
+            code_only=training_args.code_only,
         )
         return ds
 
@@ -177,6 +180,7 @@ def prepare_training_inputs(
     max_length: Optional[int] = None,
     return_tensor: bool = True,
     keep_assistant_prefix: bool = False,
+    code_only: bool = False,
     verbose=False,
 ) -> Dict[str, Union[str, Dict]]:
     """This function is used to convert a data point into input that is ready for training.
@@ -189,6 +193,7 @@ def prepare_training_inputs(
         max_length (Optional[int], optional): _description_. Defaults to None.
         return_tensor (bool, optional): _description_. Defaults to True.
         keep_assistant_prefix (bool, optional): _description_. Defaults to False.
+        code_only (bool, optional): _description_. Defaults to False.
         verbose (bool, optional): _description_. Defaults to False.
 
     Returns:
@@ -201,6 +206,7 @@ def prepare_training_inputs(
         max_length=max_length,
         return_tensor=return_tensor,
         keep_assistant_prefix=keep_assistant_prefix,
+        code_only=code_only,
         verbose=verbose,
     )
     return dict(
@@ -323,6 +329,7 @@ def prepare_training_inputs_batch(
     max_length: Optional[int] = None,
     return_tensor: bool = True,
     keep_assistant_prefix: bool = False,
+    code_only: bool = False,
     verbose=False,
 ) -> List[Dict[str, Union[str, Dict]]]:
     """This function is used for when you want to get a dictionary input for the model.forward.
@@ -335,6 +342,8 @@ def prepare_training_inputs_batch(
         padding (str, optional): type of padding (longest, max_length), this is passed to tokenizer(). Defaults to "max_length".
         max_length (Optional[int], optional): maximum number of tokens allowed in prompt. Defaults to None.
         return_tensor (bool, optional): if true, the input_dic will be dictionary[str, Tensor] else dictionary[str, List[int]]. Defaults to True.
+        keep_assistant_prefix (bool, optional): if true, the label tokens will not mask the assistant prefixes. Defaults to False.
+        code_only (bool, optional): this is set to true if we want to train a code-only model. Defaults to False.
         verbose (bool, optional): to print some useful information or not. Defaults to False.
 
     Returns:
@@ -345,7 +354,9 @@ def prepare_training_inputs_batch(
     # a dictionary mapping from end_token_ --> end_token
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
     assistant_stop_token_ids = get_assistant_stop_token_ids(prompt_template, tokenizer)
-    assistant_prefix_tokens = get_prefix_assistant_token_ids(prompt_template, tokenizer)
+    assistant_prefix_tokens = get_prefix_assistant_token_ids(
+        prompt_template, tokenizer, code_only
+    )
 
     prompt_str_list = []
     for messages in batch_messages:
@@ -776,6 +787,7 @@ class LazyPreprocessDataset(Dataset):
         raw_data,
         tokenizer: transformers.PreTrainedTokenizer,
         keep_assistant_prefix: bool = False,
+        code_only: bool = False,
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -783,6 +795,7 @@ class LazyPreprocessDataset(Dataset):
         self.raw_data = raw_data
         self.cached_data_dict = {}
         self.keep_assistant_prefix = keep_assistant_prefix
+        self.code_only = code_only
 
     def __len__(self):
         return len(self.raw_data)
@@ -795,6 +808,7 @@ class LazyPreprocessDataset(Dataset):
             messages=self.raw_data[i],
             tokenizer=self.tokenizer,
             keep_assistant_prefix=self.keep_assistant_prefix,
+            code_only=self.code_only,
         )
         ret = {
             "input_ids": ret["inputs"]["input_ids"],

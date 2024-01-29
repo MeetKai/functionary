@@ -434,11 +434,14 @@ class PromptTemplate:
         raise NotImplementedError
 
     @abstractmethod
-    def get_assistant_prefixes(self) -> List[str]:
+    def get_assistant_prefixes(self, code_only: bool = False) -> List[str]:
         """Return the assistant prefixs in the final prompt, this is used for masking the labels
         in unmasking labels, the system will unmask chunks that start with assistant prefixs and end with stop tokens.
         For example, assistant_prefixes might be: "<|from|>assistant\n<|recipient|>"
         In this case unmasked chunks in labels would be tokens in ... of: <|from|>assistant\n<|recipient|> ... <|stop|>
+        Args:
+            code_only (bool): if true, this method will return the prefix with python tool call
+
         Returns:
             List[str]: list of possible assistant prefixs
         """
