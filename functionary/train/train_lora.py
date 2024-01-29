@@ -182,35 +182,38 @@ def load_model_with_rope_scaling(
         else (torch.bfloat16 if training_args.bf16 else torch.float32)
     )
 
-    model_class = transformers.AutoModelForCausalLM
     if data_args.packing:
         print("Packing=True, using monkey-patched")
         config = AutoConfig.from_pretrained(model_args.model_name_or_path)
         config_type = type(config).__name__.lower()
         if "mistral" in config_type:
             print_rank0("using Monkey-patched MistralForCausalLM")
-            from functionary.train.packing.mistral_monkey_patch import (
-                MistralForCausalLM,
+            from functionary.train.packing.monkey_patch_packing import (
+                monkey_patch_packing_mistral,
             )
 
-            model_class = MistralForCausalLM
+            monkey_patch_packing_mistral()
+
         elif "llama" in config_type:  # llama
             print_rank0("using Monkey-patched LlamaForCausalLM")
-            from functionary.train.packing.llama_monkey_patch import LlamaForCausalLM
-
-            model_class = LlamaForCausalLM
-        elif "mixtral" in config_type:
-            print_rank0("using Monkey-patched Mixtral")
-            from functionary.train.packing.mixtral_monkey_patch import (
-                MixtralForCausalLM,
+            from functionary.train.packing.monkey_patch_packing import (
+                monkey_patch_packing_llama,
             )
 
-            model_class = MixtralForCausalLM
+            monkey_patch_packing_llama()
+
+        elif "mixtral" in config_type:
+            print_rank0("using Monkey-patched Mixtral")
+            from functionary.train.packing.monkey_patch_packing import (
+                monkey_patch_packing_mixtral,
+            )
+
+            monkey_patch_packing_mixtral()
         else:
             print("packing only supports models: Mistral, Llama, Mixtral")
             sys.exit(1)
 
-    model = model_class.from_pretrained(
+    model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         config=config,
         cache_dir=training_args.cache_dir,
@@ -263,6 +266,11 @@ def prepare_model_for_training(
         model.enable_input_require_grads()
 
     model.config.use_cache = False
+    # Activate computing load balancing loss iin MixtralForCausalLM
+    if hasattr(model.config, "output_router_logits"):
+        setattr(model.config, "output_router_logits", True)
+        print_rank0("Activate computing load balancing loss")
+
     print_trainable_parameters(model)
     return model
 
