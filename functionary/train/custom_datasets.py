@@ -150,6 +150,7 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
             cached_folder=cached_folder,
             ignore_cached=False,
             keep_assistant_prefix=keep_assistant_prefix,
+            code_only=training_args.code_only,
             use_flash_attention=True,
             pack_length=pack_length,
         )
@@ -164,6 +165,7 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
         tokenizer,
         cached_folder=cached_folder,
         ignore_cached=False,
+        code_only=training_args.code_only,
         use_flash_attention=True,
         pack_length=pack_length,
     )
@@ -416,6 +418,7 @@ def map_raw_data_to_input_dic(
     padding: str,
     batch_size: int = 5000,
     keep_assistant_prefix: bool = False,
+    code_only: bool = False,
 ) -> List[Dict]:
     """This function is used to map list of raw_data to list of processed data points for packing
     Args:
@@ -424,6 +427,7 @@ def map_raw_data_to_input_dic(
         padding (str): _description_
         batch_size (int, optional): _description_. Defaults to 5000.
         keep_assistant_prefix (bool, optional): if we unmask assistant prefix in computing loss. Defaults to False.
+        code_only (bool, optional): if true, we unmask assistant turns with python tool call only. Defaults to False.
 
     Returns:
         List[Dict]: _description_
@@ -439,7 +443,9 @@ def map_raw_data_to_input_dic(
             padding=padding,
             return_tensor=False,
             keep_assistant_prefix=keep_assistant_prefix,
+            code_only=code_only,
         )
+        breakpoint()
 
         assert len(batch_result["batch_inputs"]) == len(raw_data[start:end])
         for item in batch_result["batch_inputs"]:
@@ -830,6 +836,7 @@ class PackedDataset(CachedDataset):
         ignore_cached: bool = False,
         batch_size: int = 5000,
         keep_assistant_prefix: bool = False,
+        code_only: bool = False,
         use_flash_attention: bool = True,
         pack_length: Optional[int] = None,
     ):
@@ -844,6 +851,7 @@ class PackedDataset(CachedDataset):
                 padding="do_not_pad",
                 batch_size=batch_size,
                 keep_assistant_prefix=keep_assistant_prefix,
+                code_only=code_only,
             )
             self.update_packing_info()
             if cached_folder is not None:
