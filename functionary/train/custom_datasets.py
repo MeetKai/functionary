@@ -445,7 +445,6 @@ def map_raw_data_to_input_dic(
             keep_assistant_prefix=keep_assistant_prefix,
             code_only=code_only,
         )
-        breakpoint()
 
         assert len(batch_result["batch_inputs"]) == len(raw_data[start:end])
         for item in batch_result["batch_inputs"]:
