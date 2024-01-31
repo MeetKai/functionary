@@ -3,11 +3,18 @@ from __future__ import annotations
 import json
 import re
 from abc import abstractmethod
+from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.schema import generate_schema_from_functions
 
 SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
+PYTHON_RUN_SYS_MSG = "When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files."
+
+
+class PredefinedFuncTypes(str, Enum):
+    no_tool_call = "no-tool-call"
+    code_interpreter = "code-interpreter"
 
 
 class PromptTemplate:
@@ -35,11 +42,13 @@ class PromptTemplate:
         """
         raise NotImplementedError
 
-    def get_predefined_function_names(self) -> List[str]:
+    def get_predefined_function_names(self, function_types: Any) -> List[str]:
         """returns a list of predefined function names. Some prompt template versions may
         require a default/predefined function name to indicate for example, no function called.
         E.g.: in v2, 'all' is generated to indicate normal model response. In this case, the v2
         subclass will overwrite this base method.
+        Args:
+            function_types (Any): Either "all" or one of the function type in PredefinedFuncTypes enum class
         Returns:
             List[str]: list of predefined function names (default to [])
         """
@@ -59,7 +68,7 @@ class PromptTemplate:
               - pre-parameter: when the model is generating the part between function name and parameter
               - parameter-name: when the model is generating a parameter name
               - parameter-value: when the model is generating a parameter value
-              - no-function-call: when the model is generating content
+              - no-tool-call: when the model is generating content
             - curr_tokens: all the tokens for the current stage being generated
             - curr_text: curr_tokens but in string text form
             - func_name: the function name, if any
@@ -86,7 +95,8 @@ class PromptTemplate:
               - pre-parameter: when the model is generating the part between function name and parameter
               - parameter-name: when the model is generating a parameter name
               - parameter-value: when the model is generating a parameter value
-              - no-function-call: when the model is generating content
+              - no-tool-call: when the model is generating content
+              - code-interpreter: when the model is generating code
             - curr_tokens: all the tokens for the current stage being generated
             - curr_text: curr_tokens but in string text form
             - func_name: the function name, if any
@@ -130,7 +140,7 @@ class PromptTemplate:
             else:
                 gen_state["func_name"] = gen_state["curr_text"].rstrip()
 
-            # Check if the new state is in "pre-parameter" or "no-function-call" stage
+            # Check if the new state is in "pre-parameter" stage
             if (
                 sum([gen_state["func_name"] == option for option in options]) == 1
                 and sum(
@@ -150,12 +160,16 @@ class PromptTemplate:
                 else:
                     gen_state["curr_text"], gen_state["curr_tokens"] = "", []
         elif gen_state["stage"] == "pre-parameter":
-            # Check if the new state is in "parameter" or "no-function-call" stage
-            if (
-                self.fn_param_sep_token.rstrip("{").rstrip() in gen_state["curr_text"]
-                and gen_state["func_name"] in self.get_predefined_function_names()
-            ):
-                gen_state["stage"] = "no-function-call"
+            # Check if the new state is in "parameter" or "no-tool-call" or "code-interpreter" stage
+            if self.fn_param_sep_token.rstrip("{").rstrip() in gen_state["curr_text"]:
+                if gen_state["func_name"] in self.get_predefined_function_names(
+                    function_types=PredefinedFuncTypes.no_tool_call
+                ):
+                    gen_state["stage"] = "no-tool-call"
+                elif gen_state["func_name"] in self.get_predefined_function_names(
+                    function_types=PredefinedFuncTypes.code_interpreter
+                ):
+                    gen_state["stage"] = "code-interpreter"
             # Either '{' or '{"' or '{}'
             elif self.fn_param_sep_token in gen_state["curr_text"]:
                 # Check if no arguments are called and go straight to "pre-function"
@@ -232,8 +246,8 @@ class PromptTemplate:
                         gen_state["curr_text"] = tokenizer.decode([new_token_id])
                 except:
                     pass
-        elif gen_state["stage"] == "no-function-call":
-            # probability of stop token is not 100% at the end of no-function-call
+        elif gen_state["stage"] in ["no-tool-call", "code-interpreter"]:
+            # probability of stop token is not 100% at the end of no-tool-call
             # We still need to check if the stage will go to "function" by checking
             # for the presence of the start_of_function_call token
             if gen_state["curr_text"].endswith(self.get_start_of_function_call_token()):
@@ -292,7 +306,7 @@ class PromptTemplate:
         # Concatenate the list of predefined function names in the respective prompt
         # template version. For e.g., v2 returns ["all"]
         if gen_state["stage"] == "function" and gen_state["add_predefined_fns"] is True:
-            options += self.get_predefined_function_names()
+            options += self.get_predefined_function_names(function_types="all")
 
         # No grammar sampling needed if gen_state not in "function" or "pre-parameter"
         # or "parameter-name" stages. Just return the model_sampled_token_id
@@ -474,19 +488,25 @@ class PromptTemplate:
         messages_clone = messages.copy()  # To avoid modifying the original list
 
         functions = []
+        is_code_interpreter = False
         if tools_or_functions is not None:
             for item in tools_or_functions:
                 if (
-                    "function" in item
+                    "function" in item and item["function"] is not None
                 ):  #  new data format: tools: [{"type": xx, "function": xxx}]
                     functions.append(item["function"])
+                elif "type" in item and item["type"] == "code_interpreter":
+                    is_code_interpreter = True
                 else:
                     functions.append(item)  #  old format
 
         messages_clone.insert(
             0, {"role": "system", "content": generate_schema_from_functions(functions)}
         )
-        messages_clone.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
+        if is_code_interpreter:
+            messages_clone.insert(1, {"role": "system", "content": PYTHON_RUN_SYS_MSG})
+        else:
+            messages_clone.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
 
         full_text = ""
         for message in messages_clone:
