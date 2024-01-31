@@ -122,7 +122,7 @@ class PromptTemplateV2(PromptTemplate):
     ) -> List[str]:
         prefix = f"{self.from_token}assistant\n{self.recipient_token}"
         if code_only:
-            prefix += f"python\n{self.content_token}"
+            prefix += f"{self.predefined_func_names[PredefinedFuncTypes.code_interpreter]}\n{self.content_token}"
 
         return [prefix]
 
