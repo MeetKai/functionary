@@ -50,7 +50,9 @@ def get_prefix_assistant_token_ids(
         List[List[int]]: List of token_ids of assistant prefixs
     """
     result = []
-    for prefix in prompt_template.get_assistant_prefixes(code_only=code_only):
+    for prefix in prompt_template.get_assistant_prefixes_for_training_masking(
+        code_only=code_only
+    ):
         token_ids = tokenizer.encode(prefix, add_special_tokens=False)
         if token_ids[0] == 29871:
             token_ids = token_ids[1:]

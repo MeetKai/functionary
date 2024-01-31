@@ -99,7 +99,9 @@ class PromptTemplateV2(PromptTemplate):
     def get_stop_tokens_for_generation(self) -> List[str]:
         return [self.stop_token]
 
-    def get_assistant_prefixes(self, code_only: bool = False) -> List[str]:
+    def get_assistant_prefixes_for_training_masking(
+        self, code_only: bool = False
+    ) -> List[str]:
         prefix = f"{self.from_token}assistant\n{self.recipient_token}"
         if code_only:
             prefix += f"python\n{self.content_token}"
