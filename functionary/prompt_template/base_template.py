@@ -329,10 +329,12 @@ class PromptTemplate:
 
                 if gen_state["stage"] == "function":
                     options_mask = [
-                        True
-                        if option.startswith(new_curr_tokens.lstrip(" "))
-                        or new_curr_tokens.lstrip(" ").startswith(option)
-                        else False
+                        (
+                            True
+                            if option.startswith(new_curr_tokens.lstrip(" "))
+                            or new_curr_tokens.lstrip(" ").startswith(option)
+                            else False
+                        )
                         for option in options
                     ]
 

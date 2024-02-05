@@ -14,6 +14,7 @@ from typing import (
     Union,
 )
 
+from transformers import AutoTokenizer
 from vllm.config import ModelConfig
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.llm_engine import LLMEngine
@@ -237,6 +238,11 @@ class _AsyncLLMEngine(LLMEngine):
             prompt_template = self.prompt_templates[request_id]
             gen_state = self.gen_states[request_id]
             tools_or_functions = self.tools_or_functions[request_id]
+            # Check whether self.tokenizer is a TokenizerGroup class
+            if hasattr(self.tokenizer, "tokenizer"):
+                tokenizer = self.tokenizer.tokenizer
+            else:
+                tokenizer = self.tokenizer
 
             # Slot the first entry of logprobs into its original position
             # before getting delta_token_ids_by_logprobs
@@ -261,7 +267,7 @@ class _AsyncLLMEngine(LLMEngine):
                 tools_or_functions=tools_or_functions,
                 delta_token_ids=delta_token_id_by_logprobs,
                 model_sampled_token_id=model_sampled_token_id,
-                tokenizer=self.tokenizer,
+                tokenizer=tokenizer,
             )
 
             # Update the output token to vllm with the newly sampled one
