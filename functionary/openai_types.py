@@ -19,7 +19,7 @@ class ToolCall(BaseModel):
 class Function(BaseModel):
     name: str
     description: Optional[str] = Field(default="")
-    parameters: Optional[dict]
+    parameters: Optional[dict] = None
 
 
 class Tool(BaseModel):
