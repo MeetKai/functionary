@@ -24,7 +24,7 @@ class Function(BaseModel):
 
 class Tool(BaseModel):
     type: Literal["function", "code_interpreter"] = "function"
-    function: Optional[Function]
+    function: Optional[Function] = None
 
 
 class ChatMessage(BaseModel):
