@@ -26,6 +26,15 @@ Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/ge
 python3 server_vllm.py --model "meetkai/functionary-small-v2.2" --host 0.0.0.0
 ```
 
+#### Run in Docker
+
+You can also run functionary in Docker
+
+```shell
+docker build . -t functionary
+docker run -p 8000:8000 functionary
+```
+
 ### OpenAI Compatible Usage
 
 ```python
