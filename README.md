@@ -20,7 +20,8 @@ Make sure you have [PyTorch](https://pytorch.org/get-started/locally/) installed
 pip install -r requirements.txt
 ```
 
-Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server:
+Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server.
+[requirements](https://docs.vllm.ai/en/latest/getting_started/installation.html#requirements)
 
 ```shell
 python3 server_vllm.py --model "meetkai/functionary-small-v2.2" --host 0.0.0.0
