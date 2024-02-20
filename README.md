@@ -27,6 +27,13 @@ Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/ge
 python3 server_vllm.py --model "meetkai/functionary-small-v2.2" --host 0.0.0.0
 ```
 
+If you're having trouble with dependencies, and you have [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#setting-up-nvidia-container-toolkit), 
+you can start your environment like this: 
+
+```shell
+sudo docker run --gpus all -it --ipc=host --name functionary -v ${PWD}/functionary_workspace:/workspace -p 8000:8000 nvcr.io/nvidia/pytorch:23.10-py3
+```
+
 ### OpenAI Compatible Usage
 
 ```python
@@ -110,14 +117,6 @@ print(response.text)
 
 </details>
 
-
-
-If you're having trouble with dependencies, and you have [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#setting-up-nvidia-container-toolkit), 
-you can start your environment like this: 
-
-```shell
-sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functionary_workspace:/workspace -p 8000:8000 nvcr.io/nvidia/pytorch:23.10-py3
-```
 
 ## Models Available
 | Model                                                                                | Description                                                                                                                         | Compute Requirements (for FP16 HF model weights) |
