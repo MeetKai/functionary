@@ -8,7 +8,7 @@ Functionary is a language model that can interpret and execute functions/plugins
 
 The model determines when to execute functions, whether in parallel or serially, and can understand their outputs. It only triggers functions as needed. Function definitions are given as JSON Schema Objects, similar to OpenAI GPT function calls.
 
-Documentation and more examples: [https://functionary.meetkai.com/](https://functionary.meetkai.com/).
+Documentation and more examples: [functionary.meetkai.com](https://functionary.meetkai.com/)
 
 ### Setup
 
