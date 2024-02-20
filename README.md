@@ -116,7 +116,7 @@ If you're having trouble with dependencies, and you have [nvidia-container-toolk
 you can start your environment like this: 
 
 ```shell
-sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functionary_workspace:/workspace -p 8000:8000 nvcr.io/nvidia/pytorch:22.12-py3
+sudo docker run --gpus all -it --shm-size=8g --name functionary -v ${PWD}/functionary_workspace:/workspace -p 8000:8000 nvcr.io/nvidia/pytorch:23.10-py3
 ```
 
 ## Models Available
