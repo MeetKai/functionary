@@ -72,9 +72,14 @@ class TrainingArguments(transformers.TrainingArguments):
             "help": "Whether to mask the assistant prefix `<|from|>assistant\n<|recipient|>` during training"
         },
     )
-
     prompt_template_version: str = field(
         default="v2", metadata={"help": "choose prompt template to use for training"}
+    )
+    code_only: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether the training session is code-only. If so, only assistant turns with tool calls to python tool will be unmasked"
+        },
     )
 
 
