@@ -473,19 +473,17 @@ class PromptTemplate:
         """
         return messages
 
-    def get_prompt_from_messages(
-        self,
-        messages: List[Dict],
-        tools_or_functions: Optional[List[Dict]] = None,
-    ) -> str:
-        """This function is used to get the complete prompt for list of messages
+    def inject_system_messages_based_on_tools(
+        self, messages: List[Dict], tools_or_functions: Optional[List[Dict]] = None
+    ) -> List[Dict]:
+        """This will be used to add Default system message, code-interpreter system message if needed
 
         Args:
             messages (List[Dict]): List of messages
-            tools_or_functions (Optional[List[Dict]], optional): List of tools or functions. Defaults to None.
+            tools_or_functions (Optional[List[Dict]], optional): List of tools, functions. Defaults to None.
 
         Returns:
-            str: the prompt for inference/training
+            List[Dict]: _description_
         """
         messages_clone = messages.copy()  # To avoid modifying the original list
 
@@ -509,6 +507,26 @@ class PromptTemplate:
             messages_clone.insert(1, {"role": "system", "content": PYTHON_RUN_SYS_MSG})
         else:
             messages_clone.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
+
+        return messages_clone
+
+    def get_prompt_from_messages(
+        self,
+        messages: List[Dict],
+        tools_or_functions: Optional[List[Dict]] = None,
+    ) -> str:
+        """This function is used to get the complete prompt for list of messages
+
+        Args:
+            messages (List[Dict]): List of messages
+            tools_or_functions (Optional[List[Dict]], optional): List of tools or functions. Defaults to None.
+
+        Returns:
+            str: the prompt for inference/training
+        """
+        messages_clone = self.inject_system_messages_based_on_tools(
+            messages, tools_or_functions
+        )
 
         full_text = ""
         for message in messages_clone:

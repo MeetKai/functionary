@@ -217,6 +217,7 @@ def get_masked_labels(
     assistant_stop_tokens: List[int],
     keep_assistant_prefix: bool = False,
     verbose: bool = False,
+    masked_assistant_indices: Optional[List[int]] = None,
 ):
     """This function is used to mask labels.
     This will retain only chunks: (prefix assistant tokens) CHUNK_TO_UNMASK (stop tokens) for computing loss
@@ -245,28 +246,38 @@ def get_masked_labels(
     #    print("prefix_token_ids: ", prefix_token_ids)
     index = 0
     total_input_leng = len(input_token_ids)
+    assistant_index = -1
     while index < total_input_leng:
         # finding the index that start with: "<endtoken>assistant" --> we will unmask labels from this position
         matched_prefix = get_matching_prefix(
             assistant_prefix_tokens, input_token_ids[index:]
         )
         if matched_prefix is not None:
+            assistant_index += 1
             end_index = -1
             # unmask until reach <end_of_function> or <end_of_assistant>
             start_masked_index = index + len(matched_prefix)
             if keep_assistant_prefix:  # unmask prefix of assistant
                 start_masked_index = index
 
+            unmask_this = True
+            if masked_assistant_indices and (
+                assistant_index in masked_assistant_indices
+            ):
+                unmask_this = False
+
             for i in range(start_masked_index, total_input_leng):
                 tok_id = input_token_ids[i]
                 if tok_id in assistant_stop_tokens:  # check if this is end of turn
-                    labels[i] = input_token_ids[i]  # unmask labels at this position
+                    if unmask_this:  # if we include this to training
+                        labels[i] = input_token_ids[i]  # unmask labels at this position
                     end_index = i
                     break
                 else:
-                    labels[i] = input_token_ids[i]  # unmask labels at this position
+                    if unmask_this:  # if we include this to training
+                        labels[i] = input_token_ids[i]  # unmask labels at this position
 
-            if verbose:
+            if verbose and unmask_this:
                 print("------------------------")
                 start = start_masked_index  # index + len(matched_prefix)
                 chunk_ids = (
@@ -277,9 +288,11 @@ def get_masked_labels(
                 print("chunk_ids: ", chunk_ids)
                 print(
                     "longer chunk: ",
-                    input_token_ids[index : end_index + 1]
-                    if end_index > 1
-                    else input_token_ids[index:],
+                    (
+                        input_token_ids[index : end_index + 1]
+                        if end_index > 1
+                        else input_token_ids[index:]
+                    ),
                 )
                 print(f"chunk:{tokenizer.decode(chunk_ids)}")
                 print("-------------------")
@@ -365,7 +378,21 @@ def prepare_training_inputs_batch(
     )
     # input_token_ids = input_dic["input_ids"]
     batch_labels = []
-    for input_token_ids in input_dic["input_ids"]:
+    for index, input_token_ids in enumerate(input_dic["input_ids"]):
+        # index of assistant message that will be masked, note that index here is not index from messages
+        # Assume messages=[user1, assistant1, tool1, assistant2, tool2, assitant3, tool3] and we masked assitant1, assitant2
+        # --> masked_assistant_indices = [0, 1]
+        masked_assistant_indices = []
+        assistant_messages = []
+        for message in batch_messages[index]["messages"]:
+            if message["role"] == "assistant":
+                assistant_messages.append(message)
+
+        for message_index, message in enumerate(assistant_messages):
+            metadata = message.get("metadata", {})
+            if metadata.get("masked", False):
+                masked_assistant_indices.append(message_index)
+
         labels = get_masked_labels(
             input_token_ids=input_token_ids,
             tokenizer=tokenizer,
@@ -373,6 +400,7 @@ def prepare_training_inputs_batch(
             assistant_stop_tokens=assistant_stop_token_ids,
             keep_assistant_prefix=keep_assistant_prefix,
             verbose=verbose,
+            masked_assistant_indices=masked_assistant_indices,
         )
 
         batch_labels.append(labels)

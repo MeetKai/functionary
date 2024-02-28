@@ -1,19 +1,12 @@
+import json
 import os
 import re
 import unittest
 from typing import List
 
-from transformers import LlamaTokenizer, LlamaTokenizerFast
-
-from functionary.prompt_template import (
-    get_prompt_template_by_version,
-    PromptTemplateV1,
-    PromptTemplateV2,
-    SYSTEM_MESSAGE,
-)
-from functionary.schema import generate_schema_from_functions
+from functionary.prompt_template import get_prompt_template_by_version
 from functionary.train.custom_datasets import prepare_training_inputs
-import json
+from transformers import AutoTokenizer
 
 
 def extract_unmasked_chunks(labels: List[int]) -> List[List[int]]:
@@ -47,10 +40,14 @@ class TestInsertingEndToken(unittest.TestCase):
         self.prompt_template = get_prompt_template_by_version(self.template_version)
 
         current_folder = os.path.dirname(os.path.abspath(__file__))
-        with open(os.path.join(current_folder, f"test_case_{self.template_version}.json")) as f:
+        with open(
+            os.path.join(current_folder, f"test_case_{self.template_version}.json")
+        ) as f:
             self.test_case = json.loads(f.read())
 
-        with open(os.path.join(current_folder, f"prompt_test_{self.template_version}.txt")) as f:
+        with open(
+            os.path.join(current_folder, f"prompt_test_{self.template_version}.txt")
+        ) as f:
             self.final_prompt = f.read()
             self.final_prompt = self.final_prompt.replace("\n\n<|from|>", "\n<|from|>")
 
@@ -63,42 +60,26 @@ class TestInsertingEndToken(unittest.TestCase):
         final_prompt = self.prompt_template.get_prompt_from_messages(
             self.test_case["messages"], tools_or_functions
         )
-        # print("-----------------------------------------------")
-        # print(final_prompt)
-        # print("-------------------------------")
         self.assertEqual(
             final_prompt,
             self.final_prompt,
             "wrong final prompt from: get_prompt_from_messages",
         )
 
-    def test_prepare_training_inputs_fast_tokenizer(self):
-        print("start testing fast tokenizer")
-        for keep_assistant_prefix in [False]:
-            self.run_prepare_training_inputs(
-                use_fast=True,
-                pretrained="mistralai/Mistral-7B-v0.1",
-                keep_assistant_prefix=keep_assistant_prefix,
-            )
-
     def test_prepare_training_inputs_normal_tokenizer(self):
         print("start testing normal tokenizer")
         for keep_assistant_prefix in [False]:
             self.run_prepare_training_inputs(
-                use_fast=False,
                 pretrained="mistralai/Mistral-7B-v0.1",
                 keep_assistant_prefix=keep_assistant_prefix,
             )
 
     def run_prepare_training_inputs(
-        self, use_fast: bool, pretrained: str, keep_assistant_prefix: bool = False
+        self, pretrained: str, keep_assistant_prefix: bool = False
     ):
         """this function is used to test function: prepare_training_inputs"""
         # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
-        tokenizer_class = LlamaTokenizer
-        if use_fast:
-            tokenizer_class = LlamaTokenizerFast
-        tokenizer = tokenizer_class.from_pretrained(pretrained, legacy=True)
+        tokenizer = AutoTokenizer.from_pretrained(pretrained, legacy=True)
         tokenizer.pad_token = tokenizer.eos_token
         # first we add stop_tokens to the tokenizer
         prompt_template = self.prompt_template
@@ -131,10 +112,17 @@ class TestInsertingEndToken(unittest.TestCase):
                     input_token_id, label_token_id, "input_token_id != label_token_id"
                 )
 
-        # Check if only messages where role=assistant are remained, others will be masked as -100
-        assistant_message = [
-            item for item in self.test_case["messages"] if item["role"] == "assistant"
-        ]
+        # Check if only messages where role=assistant and unmasked are remained, others will be masked as -100
+        assistant_message = []
+        for message in self.test_case["messages"]:
+            if message["role"] == "assistant":
+                masked = False
+
+                if "metadata" in message and message["metadata"].get("masked", False):
+                    masked = True
+
+                if not masked:
+                    assistant_message.append(message)
         # find unmasked chunks in labels (chunk[i] != -100), there chunks are associated with assistant messages
         # for example: labels=[-100, -100, 1, 2, 3, -100, -100, 4, 5] --> chunks = [[1,2,3], [4,5]]
         chunks = extract_unmasked_chunks(labels)
@@ -144,11 +132,15 @@ class TestInsertingEndToken(unittest.TestCase):
             len(assistant_message),
             "number of unmasked chunks in labels is different from number of messages where role=assistant",
         )
+
+        print(f"number of unmasked chunks: {len(chunks)}")
         for chunk, message in zip(chunks, assistant_message):
             if keep_assistant_prefix:
                 prefix = ""
             else:
-                prefix = prompt_template.convert_message_to_prompt({"role": "assistant"})
+                prefix = prompt_template.convert_message_to_prompt(
+                    {"role": "assistant"}
+                )
             decoded_content = prefix + tokenizer.decode(
                 chunk
             )  # note that need to add: "\nassistant" because we mask this, see line 194 in prompt_utils.py
@@ -162,24 +154,12 @@ class TestInsertingEndToken(unittest.TestCase):
             )
 
     def test_chat_template(self):
-        messages = self.test_case["messages"]
-        if "functions" in self.test_case:
-            functions = self.test_case["functions"]
-        else:
-            functions = []
-            for tool in self.test_case["tools"]:
-                functions.append(tool["function"])
-
-        messages.insert(
-            0, {"role": "system", "content": generate_schema_from_functions(functions)}
+        messages = self.prompt_template.inject_system_messages_based_on_tools(
+            self.test_case["messages"], self.test_case["tools"]
         )
-        messages.insert(1, {"role": "system", "content": SYSTEM_MESSAGE})
-
-        chat_template = self.prompt_template.get_chat_template_jinja()
-        tokenizer = LlamaTokenizer.from_pretrained(
-            "meetkai/functionary-7b-v1.1", legacy=True
+        tokenizer = AutoTokenizer.from_pretrained(
+            "meetkai/functionary-small-v2.2", legacy=True
         )
-        tokenizer.chat_template = chat_template
 
         final_prompt = tokenizer.apply_chat_template(messages, tokenize=False)
         self.assertEqual(
