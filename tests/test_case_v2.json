@@ -37,6 +37,9 @@
                     ]
                 }
             }
+        },
+        {
+            "type": "code_interpreter"
         }
         
     ],
@@ -109,6 +112,51 @@
         {
             "role": "assistant",
             "content": "The temperature in Hanoi is: 10 degree Celcious"
+        },
+        {
+            "role": "user",
+            "content": "Given the list: 0,1,2,3,4,5 remove the number in the list that is close to 3.6 the most"
+        },
+        {
+            "role": "assistant",
+            "content": "I will use code interpreter to handle this",
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "python",
+                        "arguments": "l=[0,1,2,3,4,5]\nl.remove(3.6)"
+                    }
+                }
+            ],
+            "metadata": {
+                "masked": true
+            }
+        },
+        {
+            "role": "tool",
+            "name": "python",
+            "content": "ValueError: list.remove(x): x not in list"
+        },
+        {
+            "role": "assistant",
+            "content": "I will fix the code",
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "python",
+                        "arguments": "l=[0,1,2,3,4,5]\nl.remove(4)\nl"
+                    }
+                }
+            ]
+        },
+        {
+            "role": "tool",
+            "name": "python",
+            "content": "[0,1,2,3,5,]"
+        },
+        {
+            "role": "assistant",
+            "content": "The final list is: 0,1,2,3,5"
         }
     ]
 }
