@@ -1,3 +1,4 @@
+import json
 import pdb
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
@@ -159,7 +160,11 @@ def get_examples_info(param_name: str, examples: List) -> List:
     """
     examples_list = [f"// Example {param_name}:"]
     for example in examples:
-        examples_list.append(f"// {str(example)}")
+        if isinstance(example, dict) or isinstance(example, list):
+            example_str = json.dumps(example)
+            examples_list.append(f"// {example_str}")
+        else:
+            examples_list.append(f"// {str(example)}")
 
     return examples_list
 
