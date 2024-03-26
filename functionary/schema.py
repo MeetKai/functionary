@@ -314,6 +314,8 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
             if "enum" in param:
                 param_type = get_enum_option_str(param["enum"])
                 # param_type = " | ".join([f'"{v}"' for v in param["enum"]])
+            if "nullable" in param and param["nullable"] is True:
+                param_type += " | null"
             param_declaration += f": {param_type},"
             append_new_param_info(
                 tp_lines, param_declaration, comment_info, examples_info, depth
