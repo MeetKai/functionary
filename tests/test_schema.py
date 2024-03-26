@@ -14,38 +14,78 @@ class TestSchemaGenerator(unittest.TestCase):
                     "type": "object",
                     "properties": {
                         "param1": {"type": "string"},
-                        "param2": {"type": "string", "description": "description of param 2"},
+                        "param2": {
+                            "type": "string",
+                            "description": "description of param 2",
+                        },
                         "param3": {
                             "type": "string",
                             "default": "option1",
                             "enum": ["option1", "option2"],
                             "description": "description of param 3",
                         },
-                        "param4": {"type": "array", "description": "list of ids", "items": {"type": "string"}},
-                        "param5": {"type": "string", "format": "date-time", "description": "from datetime"},
+                        "param4": {
+                            "type": "array",
+                            "description": "list of ids",
+                            "items": {"type": "string"},
+                        },
+                        "param5": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "from datetime",
+                        },
                         "param6": {"type": "string", "format": "date-time"},
                         "param7": {
-                            "oneOf": [{"format": "date-time", "type": "string"}, {"format": "date", "type": "string"}],
+                            "oneOf": [
+                                {"format": "date-time", "type": "string"},
+                                {"format": "date", "type": "string"},
+                            ],
                             "description": "Description of param 7",
                         },
-                        "param8": {"type": "integer", "maximum": 36, "description": "description of param8"},
-                        "param9": {"type": "integer", "minimum": 1, "description": "description of param 9"},
+                        "param8": {
+                            "type": "integer",
+                            "maximum": 36,
+                            "description": "description of param8",
+                        },
+                        "param9": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "description of param 9",
+                        },
                         "person": {
                             "type": "object",
                             "description": "Number of page that should be returned.",
                             "properties": {
-                                "name": {"type": "string", "description": "name of person"},
-                                "age": {"type": "integer", "description": "age of person"},
+                                "name": {
+                                    "type": "string",
+                                    "description": "name of person",
+                                },
+                                "age": {
+                                    "type": "integer",
+                                    "description": "age of person",
+                                },
                                 "extra_info": {
                                     "properties": {
-                                        "school": {"type": "string", "description": "school of this person"},
+                                        "school": {
+                                            "type": "string",
+                                            "description": "school of this person",
+                                        },
                                         "job": {
                                             "type": "object",
                                             "description": "job of this person",
                                             "properties": {
-                                                "salary": {"type": "number", "description": "salary per month"},
-                                                "title": {"type": "string", "description": "position in company"},
-                                                "positions": {"type": "array", "items": {"type": "string"}},
+                                                "salary": {
+                                                    "type": "number",
+                                                    "description": "salary per month",
+                                                },
+                                                "title": {
+                                                    "type": "string",
+                                                    "description": "position in company",
+                                                },
+                                                "positions": {
+                                                    "type": "array",
+                                                    "items": {"type": "string"},
+                                                },
                                                 "full_time": {
                                                     "type": "boolean",
                                                     "description": "is this person full-time or not",
@@ -54,7 +94,10 @@ class TestSchemaGenerator(unittest.TestCase):
                                                 "ids": {
                                                     "type": "array",
                                                     "description": "ids of this job",
-                                                    "items": {"type": "number", "description": "ids for this job hehe"},
+                                                    "items": {
+                                                        "type": "number",
+                                                        "description": "ids for this job hehe",
+                                                    },
                                                 },
                                                 "params": {
                                                     "type": "array",
@@ -63,9 +106,18 @@ class TestSchemaGenerator(unittest.TestCase):
                                                         "items": {
                                                             "type": "object",
                                                             "properties": {
-                                                                "a1": {"type": "string", "description": "a1"},
-                                                                "a2": {"type": "string", "description": "a2"},
-                                                                "a3": {"type": "string", "description": "a3"},
+                                                                "a1": {
+                                                                    "type": "string",
+                                                                    "description": "a1",
+                                                                },
+                                                                "a2": {
+                                                                    "type": "string",
+                                                                    "description": "a2",
+                                                                },
+                                                                "a3": {
+                                                                    "type": "string",
+                                                                    "description": "a3",
+                                                                },
                                                             },
                                                         },
                                                     },
@@ -86,7 +138,10 @@ class TestSchemaGenerator(unittest.TestCase):
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "search": {"type": "string", "description": "this is search param"},
+                                    "search": {
+                                        "type": "string",
+                                        "description": "this is search param",
+                                    },
                                     "category": {"type": "string"},
                                 },
                             },
@@ -111,11 +166,20 @@ class TestSchemaGenerator(unittest.TestCase):
                                 ],
                             },
                         },
-                        "param13": {"type": "array", "items": {"type": "integer", "enum": [1, 2, 3, 4, 5]}},
+                        "param13": {
+                            "type": "array",
+                            "items": {"type": "integer", "enum": [1, 2, 3, 4, 5]},
+                        },
                         "param140": {"type": ["number", "null"]},
                         "param14": {
                             "type": "array",
-                            "items": {"type": "array", "items": {"type": "string", "description": "array of array"}},
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "description": "array of array",
+                                },
+                            },
                         },
                         "param15": {
                             "type": "array",
@@ -125,9 +189,92 @@ class TestSchemaGenerator(unittest.TestCase):
                                     "type": "object",
                                     "description": "array of array",
                                     "properties": {
-                                        "att1": {"type": "string", "description": "desc 1"},
-                                        "att2": {"type": "number", "description": "desc 2"},
+                                        "att1": {
+                                            "type": "string",
+                                            "description": "desc 1",
+                                        },
+                                        "att2": {
+                                            "type": "number",
+                                            "description": "desc 2",
+                                        },
                                     },
+                                },
+                            },
+                        },
+                        "param16": {
+                            "type": "string",
+                            "description": "description of param 16",
+                            "examples": ["eg1", "eg2"],
+                        },
+                        "param17": {
+                            "type": "object",
+                            "description": "description of param 17",
+                            "properties": {
+                                "attr1": {
+                                    "type": "string",
+                                    "description": "description of attr1",
+                                    "examples": ["eg1", "eg2", "eg3"],
+                                },
+                                "attr2": {
+                                    "properties": {
+                                        "subattr1": {
+                                            "type": "string",
+                                            "description": "description of subattr1",
+                                        },
+                                        "subattr2": {
+                                            "type": "object",
+                                            "description": "description of subattr2",
+                                            "properties": {
+                                                "nested1": {
+                                                    "type": "number",
+                                                    "description": "description of nested1",
+                                                    "examples": [23.5, 16.5],
+                                                },
+                                                "nested2": {
+                                                    "type": "array",
+                                                    "items": {"type": "string"},
+                                                    "examples": [
+                                                        ["123", "234"],
+                                                        ["345", "456", "567"],
+                                                    ],
+                                                },
+                                                "nested3": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "a1": {
+                                                            "type": "string",
+                                                            "description": "a1",
+                                                        },
+                                                        "a2": {
+                                                            "type": "string",
+                                                            "description": "a2",
+                                                            "nullable": False,
+                                                        },
+                                                        "a3": {
+                                                            "type": "string",
+                                                            "description": "a3",
+                                                            "nullable": True,
+                                                        },
+                                                    },
+                                                    "examples": [
+                                                        {
+                                                            "a1": "1",
+                                                            "a2": "2",
+                                                            "a3": "3\n3.3",
+                                                        }
+                                                    ],
+                                                },
+                                            },
+                                            "required": [
+                                                "nested1",
+                                                "nested2",
+                                                "nested3",
+                                            ],
+                                        },
+                                    },
+                                    "type": "object",
+                                    "description": "description of attr2",
+                                    "required": ["subattr2"],
                                 },
                             },
                         },
@@ -209,6 +356,47 @@ param15: {
         // desc 2.
         att2?: number,
     }[][],
+// description of param 16.
+// Example param16:
+// eg1
+// eg2
+param16?: string,
+// description of param 17.
+param17?: {
+    // description of attr1.
+    // Example attr1:
+    // eg1
+    // eg2
+    // eg3
+    attr1?: string,
+    // description of attr2.
+    attr2?: {
+        // description of subattr1.
+        subattr1?: string,
+        // description of subattr2.
+        subattr2: {
+            // description of nested1.
+            // Example nested1:
+            // 23.5
+            // 16.5
+            nested1: number,
+            // Example nested2:
+            // ["123", "234"]
+            // ["345", "456", "567"]
+            nested2: string[],
+            // Example nested3:
+            // {"a1": "1", "a2": "2", "a3": "3\\n3.3"}
+            nested3: {
+                // a1.
+                a1?: string,
+                // a2.
+                a2?: string,
+                // a3.
+                a3?: string | null,
+            },
+        },
+    },
+},
 }) => any;
 
 } // namespace functions"""

@@ -1,3 +1,4 @@
+import json
 import pdb
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
@@ -119,6 +120,7 @@ def append_new_param_info(
     info_list: List[str],
     param_declaration: str,
     comment_info: Optional[str],
+    examples_info: List,
     depth: int,
 ):
     """Append a new parameter with comment to the info_list
@@ -127,6 +129,7 @@ def append_new_param_info(
         info_lines (List[str]): current info_list
         param_declaration (str): param: type
         comment_info (Optional[str]): information of comment
+        examples_info (List): information of examples given
         depth (int): level of nested param
     """
     offset = ""
@@ -135,11 +138,35 @@ def append_new_param_info(
     if comment_info is not None:
         # if depth == 0:  # format: //comment\nparam: type
         info_list.append(f"{offset}{comment_info}")
+        if len(examples_info) > 0:
+            for example in examples_info:
+                info_list.append(f"{offset}{example}")
         info_list.append(f"{offset}{param_declaration}")
     # else:  # format: param: type  // comment
     #     info_list.append(f"{offset}{param_declaration}    {comment_info}")
     else:
         info_list.append(f"{offset}{param_declaration}")
+
+
+def get_examples_info(param_name: str, examples: List) -> List:
+    """get information about examples provided
+
+    Args:
+        param_name (str): _description_
+        examples (List): _description_
+
+    Returns:
+        List: _description_
+    """
+    examples_list = [f"// Example {param_name}:"]
+    for example in examples:
+        if isinstance(example, dict) or isinstance(example, list):
+            example_str = json.dumps(example, ensure_ascii=False).replace('\n', '\\n')
+        else:
+            example_str = str(example).replace('\n', '\\n')
+        examples_list.append(f"// {example_str}")
+
+    return examples_list
 
 
 def get_enum_option_str(enum_options: List) -> str:
@@ -234,6 +261,10 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
             continue
         # Param Description
         comment_info = get_param_info(param)
+        # Param Examples
+        examples_info = []
+        if "examples" in param:
+            examples_info = get_examples_info(param_name, param["examples"])
         # Param Name declaration
         param_declaration = f"{param_name}"
         if isinstance(required_params, list):
@@ -251,6 +282,9 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
             )
             if comment_info is not None:
                 tp_lines.append(f"{offset}{comment_info}")
+            if len(examples_info) > 0:
+                for example in examples_info:
+                    tp_lines.append(f"{offset}{example}")
 
             param_declaration += ": {"
             tp_lines.append(f"{offset}{param_declaration}")
@@ -261,7 +295,9 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
             item_info = param.get("items", {})
             if "type" not in item_info:  # don't know type of array
                 param_declaration += ": [],"
-                append_new_param_info(tp_lines, param_declaration, comment_info, depth)
+                append_new_param_info(
+                    tp_lines, param_declaration, comment_info, examples_info, depth
+                )
             else:
                 array_declaration = get_array_typescript(
                     param_declaration, param, depth
@@ -270,13 +306,20 @@ def get_parameter_typescript(properties, required_params, depth=0) -> List[str]:
                     array_declaration += ","
                 if comment_info is not None:
                     tp_lines.append(f"{offset}{comment_info}")
+                if len(examples_info) > 0:
+                    for example in examples_info:
+                        tp_lines.append(f"{offset}{example}")
                 tp_lines.append(array_declaration)
         else:
             if "enum" in param:
                 param_type = get_enum_option_str(param["enum"])
                 # param_type = " | ".join([f'"{v}"' for v in param["enum"]])
+            if "nullable" in param and param["nullable"] is True:
+                param_type += " | null"
             param_declaration += f": {param_type},"
-            append_new_param_info(tp_lines, param_declaration, comment_info, depth)
+            append_new_param_info(
+                tp_lines, param_declaration, comment_info, examples_info, depth
+            )
 
     return tp_lines
 
@@ -309,7 +352,9 @@ def generate_schema_from_functions(
             schema += " = (_: {\n"
             required_params = parameters.get("required", [])
             tp_lines = get_parameter_typescript(
-                parameters.get("properties"), required_params, 0
+                parameters.get("properties"),
+                required_params,
+                0,
             )
             schema += "\n".join(tp_lines)
             schema += "\n}) => any;\n\n"
