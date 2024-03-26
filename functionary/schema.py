@@ -161,10 +161,10 @@ def get_examples_info(param_name: str, examples: List) -> List:
     examples_list = [f"// Example {param_name}:"]
     for example in examples:
         if isinstance(example, dict) or isinstance(example, list):
-            example_str = json.dumps(example)
-            examples_list.append(f"// {example_str}")
+            example_str = json.dumps(example, ensure_ascii=False).replace('\n', '\\n')
         else:
-            examples_list.append(f"// {str(example)}")
+            example_str = str(example).replace('\n', '\\n')
+        examples_list.append(f"// {example_str}")
 
     return examples_list
 

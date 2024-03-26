@@ -248,17 +248,19 @@ class TestSchemaGenerator(unittest.TestCase):
                                                         "a2": {
                                                             "type": "string",
                                                             "description": "a2",
+                                                            "nullable": False,
                                                         },
                                                         "a3": {
                                                             "type": "string",
                                                             "description": "a3",
+                                                            "nullable": True,
                                                         },
                                                     },
                                                     "examples": [
                                                         {
                                                             "a1": "1",
                                                             "a2": "2",
-                                                            "a3": "3",
+                                                            "a3": "3\n3.3",
                                                         }
                                                     ],
                                                 },
@@ -383,14 +385,14 @@ param17?: {
             // ["345", "456", "567"]
             nested2: string[],
             // Example nested3:
-            // {"a1": "1", "a2": "2", "a3": "3"}
+            // {"a1": "1", "a2": "2", "a3": "3\\n3.3"}
             nested3: {
                 // a1.
                 a1?: string,
                 // a2.
                 a2?: string,
                 // a3.
-                a3?: string,
+                a3?: string | null,
             },
         },
     },
