@@ -515,7 +515,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--grammar-sampling",
         type=bool,
-        default=True,
+        default=False,
         help="enable/disable grammar sampling for function names",
     )
 
