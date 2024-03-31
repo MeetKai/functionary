@@ -513,10 +513,11 @@ if __name__ == "__main__":
         "the huggingface name.",
     )
     parser.add_argument(
-        "--grammar-sampling",
-        type=bool,
+        "--enable-grammar-sampling",
+        dest="grammar_sampling",
+        action="store_true",
         default=False,
-        help="enable/disable grammar sampling for function names",
+        help="enable grammar sampling for function names",
     )
 
     parser = AsyncEngineArgs.add_cli_args(parser)
