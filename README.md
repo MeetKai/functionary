@@ -4,11 +4,10 @@
   <img align="right" width="256" height="256" src="https://github.com/meetkai/functionary/assets/3749407/c7a1972d-6ad7-40dc-8000-dceabe6baabd">
 </a>
 
-Functionary is a language model that can interpret and execute functions/plugins. In the new model, we also support code interpreter.
+Functionary is a language model that can interpret and execute functions/plugins.
 
 The model determines when to execute functions, whether in parallel or serially, and can understand their outputs. It only triggers functions as needed. Function definitions are given as JSON Schema Objects, similar to OpenAI GPT function calls. 
 
-The code interpreter allows the Assistants to write Python code, perform data analysis, and process files with various data and formats.
 
 Documentation and more examples: [functionary.meetkai.com](https://functionary.meetkai.com/)
 
