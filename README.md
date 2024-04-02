@@ -164,7 +164,7 @@ from llama_cpp.llama_tokenizer import LlamaHFTokenizer
 # We should use HF AutoTokenizer instead of llama.cpp's tokenizer because we found that Llama.cpp's tokenizer doesn't give the same result as that from Huggingface. The reason might be in the training, we added new tokens to the tokenizer and Llama.cpp doesn't handle this successfully
 llm = Llama.from_pretrained(
     repo_id="meetkai/functionary-small-v2.4-GGUF",
-    filename="functionary-small-v2.4.q4_0.gguf",
+    filename="functionary-small-v2.4.Q4_0.gguf",
     chat_format="functionary-v2",
     tokenizer=LlamaHFTokenizer.from_pretrained("meetkai/functionary-small-v2.4-GGUF"),
     n_gpu_layers=-1
