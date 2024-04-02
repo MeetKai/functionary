@@ -4,9 +4,11 @@
   <img align="right" width="256" height="256" src="https://github.com/meetkai/functionary/assets/3749407/c7a1972d-6ad7-40dc-8000-dceabe6baabd">
 </a>
 
-Functionary is a language model that can interpret and execute functions/plugins.
+Functionary is a language model that can interpret and execute functions/plugins. In the new model, we also support code interpreter.
 
-The model determines when to execute functions, whether in parallel or serially, and can understand their outputs. It only triggers functions as needed. Function definitions are given as JSON Schema Objects, similar to OpenAI GPT function calls.
+The model determines when to execute functions, whether in parallel or serially, and can understand their outputs. It only triggers functions as needed. Function definitions are given as JSON Schema Objects, similar to OpenAI GPT function calls. 
+
+The code interpreter allows the Assistants to write Python code, perform data analysis, and process files with various data and formats.
 
 Documentation and more examples: [functionary.meetkai.com](https://functionary.meetkai.com/)
 
@@ -22,7 +24,7 @@ Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/ge
 [requirements](https://docs.vllm.ai/en/latest/getting_started/installation.html#requirements)
 
 ```shell
-python3 server_vllm.py --model "meetkai/functionary-small-v2.2" --host 0.0.0.0
+python3 server_vllm.py --model "meetkai/functionary-small-v2.4" --host 0.0.0.0
 ```
 
 If you're having trouble with dependencies, and you have [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#setting-up-nvidia-container-toolkit), 
@@ -40,7 +42,7 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 
 client.chat.completions.create(
-    model="meetkai/functionary-small-v2.2",
+    model="meetkai/functionary-small-v2.4",
     messages=[{"role": "user",
             "content": "What is the weather for Istanbul?"}
     ],
@@ -76,7 +78,7 @@ client.chat.completions.create(
 import requests
 
 data = {
-    'model': 'meetkai/functionary-small-v2.2', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
+    'model': 'meetkai/functionary-small-v2.4', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
     'messages': [
         {
             "role": "user",
@@ -119,8 +121,8 @@ print(response.text)
 ## Models Available
 | Model                                                                                | Description                                                                                                                         | Compute Requirements (for FP16 HF model weights) |
 |:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:------|
-| [functionary-small-v2.2](https://huggingface.co/meetkai/functionary-small-v2.2) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.2-GGUF) | 8k context | Any GPU with 24GB VRAM |
-| [functionary-medium-v2.2](https://huggingface.co/meetkai/functionary-medium-v2.2) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v2.2-GGUF) | 8k context, better accuracy | 2 x A100-80GB or equivalent |
+| [functionary-small-v2.4](https://huggingface.co/meetkai/functionary-small-v2.4) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.4-GGUF) | 8k context | Any GPU with 24GB VRAM |
+| [functionary-medium-v2.4](https://huggingface.co/meetkai/functionary-medium-v2.4) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v2.4-GGUF) | 8k context, better accuracy | 2 x A100-80GB or equivalent |
 | [functionary-7b-v2.1](https://huggingface.co/meetkai/functionary-7b-v2.1) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2.1-GGUF)            | 8k context | Any GPU with 24GB VRAM |
 | [functionary-7b-v2](https://huggingface.co/meetkai/functionary-7b-v2) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2-GGUF)                | Parallel function call support.   | Any GPU with 24GB VRAM |
 | [functionary-7b-v1.4](https://huggingface.co/meetkai/functionary-7b-v1.4) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF)            | 4k context, better accuracy (deprecated) | Any GPU with 24GB VRAM |
@@ -159,10 +161,10 @@ from llama_cpp.llama_tokenizer import LlamaHFTokenizer
 
 # We should use HF AutoTokenizer instead of llama.cpp's tokenizer because we found that Llama.cpp's tokenizer doesn't give the same result as that from Huggingface. The reason might be in the training, we added new tokens to the tokenizer and Llama.cpp doesn't handle this successfully
 llm = Llama.from_pretrained(
-    repo_id="meetkai/functionary-small-v2.2-GGUF",
-    filename="functionary-small-v2.2.q4_0.gguf",
+    repo_id="meetkai/functionary-small-v2.4-GGUF",
+    filename="functionary-small-v2.4.q4_0.gguf",
     chat_format="functionary-v2",
-    tokenizer=LlamaHFTokenizer.from_pretrained("meetkai/functionary-small-v2.2-GGUF"),
+    tokenizer=LlamaHFTokenizer.from_pretrained("meetkai/functionary-small-v2.4-GGUF"),
     n_gpu_layers=-1
 )
 
@@ -473,16 +475,16 @@ We don't change the logit probabilities to conform to a certain schema, but the 
 ## Evaluation
 
 ### Function Prediction Evaluation
-Evaluation function call prediction in our in-house dataset. The accuracy metric measures the overall correctness of predicted function calls, including function name prediction and arguments extraction.
+Evaluation function call prediction in SGD dataset. The accuracy metric measures the overall correctness of predicted function calls, including function name prediction and arguments extraction.
 
-<img align="left" width="800" src="assets/Functioncall_acc_chart.jpeg">
+<img align="left" width="800" src="assets/SGD_acc.png">
 
 | Dataset       | Model Name          | Function Calling  Accuracy (Name & Arguments) |
 | :-------------| :-------------------| ---------------------------: | 
-| In-house data | MeetKai-functionary-small-v2.2  |                       0.546|
-| In-house data | MeetKai-functionary-medium-v2.2  |                       **0.664**|
-| In-house data | OpenAI-gpt-3.5-turbo-1106  |                        0.531 |
-| In-house data | OpenAI-gpt-4-1106-preview  |                        **0.737** |
+| SGD | MeetKai-functionary-small-v2.4  |                       0.830|
+| SGD | MeetKai-functionary-medium-v2.4  |                       **0.881**|
+| SGD | OpenAI-gpt-3.5-turbo-0125  |                        0.716 |
+| SGD | OpenAI-gpt-4-turbo-0125  |                        0.762 |
 
 </details>
 
