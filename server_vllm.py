@@ -528,6 +528,7 @@ if __name__ == "__main__":
         args.grammar_sampling = False
 
     if args.grammar_sampling:
+        logger.info("Grammar sampling enabled.")
         from functionary.vllm_monkey_patch.async_llm_engine import AsyncLLMEngine
     else:
         from vllm.engine.async_llm_engine import AsyncLLMEngine
