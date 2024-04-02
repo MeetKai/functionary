@@ -153,7 +153,7 @@ The difference between OpenAI-python v0 and v1 you may refer to the official doc
 
 ## Llama.cpp Inference
 
-Make sure that [llama-cpp-python](https://github.com/abetlen/llama-cpp-python) is successully installed in your system. Functionary v2 is fully integrated into llama-cpp-python from v0.2.50 onwards. You can perform inference using Functionary's GGUF models either via normal chat completion or through llama-cpp-python's OpenAI-compatible server which behaves similarly to ours.
+Make sure that [llama-cpp-python](https://github.com/abetlen/llama-cpp-python) is successully installed in your system. Functionary v2 is fully integrated into llama-cpp-python from v0.2.18 onwards. You can perform inference using Functionary's GGUF models either via normal chat completion or through llama-cpp-python's OpenAI-compatible server which behaves similarly to ours.
 
 The following is the sample code using normal chat completion:
 
