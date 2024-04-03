@@ -22,9 +22,24 @@ pip install -r requirements.txt
 Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server.
 [requirements](https://docs.vllm.ai/en/latest/getting_started/installation.html#requirements)
 
+Small Model:
 ```shell
-python3 server_vllm.py --model "meetkai/functionary-small-v2.4" --host 0.0.0.0
+python3 server_vllm.py --model "meetkai/functionary-small-v2.4" --host 0.0.0.0 --max-model-len 8192
 ```
+
+<details>
+  <summary>Medium model: (click to expand)</summary>
+  
+  If you use multiple GPUs (medium models require: 4A6000 or 2A100 80GB to run), need to use: `tensor-parallel-size`
+  
+```shell
+python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len 8192 --tensor-parallel-size 2
+```
+  
+</details>
+
+
+
 
 If you're having trouble with dependencies, and you have [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#setting-up-nvidia-container-toolkit), 
 you can start your environment like this: 
