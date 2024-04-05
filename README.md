@@ -157,11 +157,11 @@ The difference between OpenAI-python v0 and v1 you may refer to the official doc
 |---|---|---|---|---|---|
 |Single Function Call | ✅ | ✅ | ✅ | ✅ | ✅ |
 |Parallel Function Calls | ✅ | ✅ | ✅ | ❌ | ✅ |
-|Nested Function Calls | ❌ | ✅ | ❌ | ❌ | ❌ |
 |Following Up on Missing Function Arguments | ✅ | ❌ | ❌ | ❌ | ✅ |
 |Multi-turn | ✅ | ❌ | ❌ | ✅ | ✅ |
 |Generate Model Responses Grounded in Tools Execution Results | ✅ | ❌ | ❌ | ❌ | ✅ |
 |Chit-Chat | ✅ | ❌ | ✅ | ✅ | ✅ |
+|Code Interpreter | ✅ | ❌ | ❌ | ❌ | ✅ |
 
 **You can find more details of the features in [here](features_desc.md)**
 
