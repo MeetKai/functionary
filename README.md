@@ -13,7 +13,7 @@ Documentation and more examples: [functionary.meetkai.com](https://functionary.m
 
 ### Setup
 
-Make sure you have [PyTorch](https://pytorch.org/get-started/locally/) installed. Then to install the required dependencies, run:
+Make sure you have [PyTorch](https://pytorch.org/get-started/locally/) installed (```2.1.2```). Then to install the required dependencies, run:
 
 ```shell
 pip install -r requirements.txt
