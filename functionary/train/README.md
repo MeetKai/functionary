@@ -44,7 +44,7 @@ accelerate launch --config_file "functionary/train/accelerate_configs/fsdp_confi
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
     --model_max_length 4096 \
-    --optim "paged_adamw_32bit" \
+    --optim "adamw_8bit" \
     --gradient_checkpointing True \
     --output_dir functionary-v1
 
@@ -120,7 +120,7 @@ accelerate launch --config_file "functionary/train/accelerate_configs/ds3_config
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
     --model_max_length 8192 \
-    --optim "paged_adamw_32bit" \
+    --optim "adamw_8bit" \
     --gradient_checkpointing True \
     --output_dir functionary-v2.1
 ```
