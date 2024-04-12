@@ -294,13 +294,21 @@ def train():
 
     assert data_args.train_data_path is not None, "Please provide a training data file."
 
-    train_dataset = read_dataset(data_args, training_args, tokenizer, "train")
+    train_dataset = read_dataset(
+        model_args.model_name_or_path, data_args, training_args, tokenizer, "train"
+    )
 
     if torch.distributed.get_rank() == 0:
         print(f"Training Data Loaded: #{len(train_dataset)}")
 
     if training_args.do_eval:
-        eval_dataset = read_dataset(data_args, training_args, tokenizer, "validation")
+        eval_dataset = read_dataset(
+            model_args.model_name_or_path,
+            data_args,
+            training_args,
+            tokenizer,
+            "validation",
+        )
 
         if torch.distributed.get_rank() == 0:
             print(f"Eval Data Loaded: #{len(eval_dataset)}")
@@ -371,8 +379,17 @@ def train():
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            compute_metrics=compute_metrics,
-            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+            # only compute_metrics for non-MoE models
+            compute_metrics=(
+                compute_metrics
+                if "mixtral" not in model_args.model_name_or_path.lower()
+                else None
+            ),
+            preprocess_logits_for_metrics=(
+                preprocess_logits_for_metrics
+                if "mixtral" not in model_args.model_name_or_path.lower()
+                else None
+            ),
         )
     else:
         trainer = Trainer(

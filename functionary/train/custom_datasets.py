@@ -13,6 +13,8 @@ from functionary.prompt_template import (
     PromptTemplate,
     get_prompt_template_from_tokenizer,
 )
+import string
+from pathlib import Path
 
 
 def get_batch_indices(size: int, batch_size: int) -> List[Tuple[int, int]]:
@@ -77,7 +79,24 @@ def get_matching_prefix(
     return None
 
 
-def read_dataset(data_args, training_args, tokenizer, ds_type):
+def get_cached_folder(data_path, model_path):
+    current_folder = os.path.dirname(os.path.abspath(__file__))
+    cached_folder = os.path.join(current_folder, "_data_cached")
+
+    # file name = concatenation of data_path and model_path exluding non-digits and non ascii_letters
+    cached_data_folder_name = "".join(
+        [
+            ch
+            for ch in data_path + model_path
+            if ch in string.digits + string.ascii_letters
+        ]
+    )
+    cached_data_folder = os.path.join(cached_folder, cached_data_folder_name)
+
+    return cached_data_folder
+
+
+def read_dataset(model_path, data_args, training_args, tokenizer, ds_type):
     """This function is used to read dataset for training
 
     Args:
@@ -116,10 +135,10 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
     local_rank = int(os.getenv("LOCAL_RANK", "0"))
     # The way we read dataset is:
     # Rank 0 will process the dataset and save the result to cached_folder, other ranks will read from the cached_folder
-    cached_folder = os.path.join(training_args.output_dir, f"{ds_type}_cached")
 
     pack_length = data_args.pack_length if data_args.pack_length > 0 else None
-    print("pack_length: ", pack_length)
+
+    cached_folder = get_cached_folder(data_path, model_path)
 
     if (
         training_args.local_rank > 0
@@ -129,10 +148,10 @@ def read_dataset(data_args, training_args, tokenizer, ds_type):
         )
         torch.distributed.barrier()
     else:  # rank 0 process the data and save to cached_folder
-        if not os.path.exists(training_args.output_dir):
-            os.mkdir(training_args.output_dir)
-        if not os.path.exists(cached_folder):
-            os.mkdir(cached_folder)
+
+        Path(cached_folder).mkdir(
+            parents=True, exist_ok=True
+        )  # create folder by process 0 if doesn't exist
 
         with open(data_path, "r") as file:
             raw_train_data = [json.loads(line) for line in file]
