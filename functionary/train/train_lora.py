@@ -220,15 +220,17 @@ def load_model_with_rope_scaling(
         device_map=get_device_map(training_args, lora_args),
         attn_implementation="flash_attention_2",  # use_flash_attention_2 is replaced by this from version: 4.36.0
         torch_dtype=compute_dtype,
-        quantization_config=BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-            attn_implementation="flash_attention_2",
-            bnb_4bit_compute_dtype=compute_dtype,
-        )
-        if lora_args.q_lora
-        else None,
+        quantization_config=(
+            BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+                attn_implementation="flash_attention_2",
+                bnb_4bit_compute_dtype=compute_dtype,
+            )
+            if lora_args.q_lora
+            else None
+        ),
     )
     return model
 
@@ -443,13 +445,17 @@ def train():
 
     assert data_args.train_data_path is not None, "Please provide a training data file."
 
-    train_dataset = read_dataset(data_args, training_args, tokenizer, "train")
+    train_dataset = read_dataset(
+        model_args.model_name_or_path, data_args, training_args, tokenizer, "train"
+    )
     print_rank0("****** Examples from train_dataset *****")
     print_some_examples(train_dataset, tokenizer)
     print_rank0("final train size: ", len(train_dataset))
 
     if training_args.do_eval:
-        eval_dataset = read_dataset(data_args, training_args, tokenizer, "eval")
+        eval_dataset = read_dataset(
+            model_args.model_name_or_path, data_args, training_args, tokenizer, "eval"
+        )
         print_rank0("final eval size: ", len(eval_dataset))
         print_rank0("****** Examples from eval_dataset *****")
         print_some_examples(eval_dataset, tokenizer)
