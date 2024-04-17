@@ -1,4 +1,4 @@
-transformers==4.37.2
+transformers==4.39.3
 accelerate~=0.21.0
 sentencepiece~=0.1.99
 fastapi~=0.104.0
@@ -11,4 +11,4 @@ PyYAML~=6.0.1
 typer==0.9.0
 protobuf==3.20.0
 tokenizers==0.15.0
-vllm==0.3.0; sys_platform != "darwin"
+git+https://github.com/vllm-project/vllm.git@8438e05; sys_platform != "darwin"
