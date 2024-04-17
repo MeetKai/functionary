@@ -38,6 +38,14 @@ python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len
   
 </details>
 
+<details>
+    <summary>Grammar Sampling: (click to expand)</summary>
+We also offer grammar sampling which ensures 100% accuracy in tool and parameter names in the assistant tool calls. To enable grammar sampling, run the vLLM server with the command-line argument <code>--enable-grammar-sampling</code>:
+
+```shell
+python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len 8192 --tensor-parallel-size 2 --enable-grammar-sampling
+```
+</details>
 
 
 

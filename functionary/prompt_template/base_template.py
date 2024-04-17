@@ -160,18 +160,9 @@ class PromptTemplate:
                 else:
                     gen_state["curr_text"], gen_state["curr_tokens"] = "", []
         elif gen_state["stage"] == "pre-parameter":
-            # Check if the new state is in "parameter" or "no-tool-call" or "code-interpreter" stage
-            if self.fn_param_sep_token.rstrip("{").rstrip() in gen_state["curr_text"]:
-                if gen_state["func_name"] in self.get_predefined_function_names(
-                    function_types=PredefinedFuncTypes.no_tool_call
-                ):
-                    gen_state["stage"] = "no-tool-call"
-                elif gen_state["func_name"] in self.get_predefined_function_names(
-                    function_types=PredefinedFuncTypes.code_interpreter
-                ):
-                    gen_state["stage"] = "code-interpreter"
-            # Either '{' or '{"' or '{}'
-            elif self.fn_param_sep_token in gen_state["curr_text"]:
+            # First, check if the new state is "parameter-name" (either '{' or '{"')
+            # or "no-tool-call" ('{}')
+            if self.fn_param_sep_token in gen_state["curr_text"]:
                 # Check if no arguments are called and go straight to "pre-function"
                 if "}" in gen_state["curr_text"]:
                     gen_state["stage"] = "pre-function"
@@ -182,6 +173,17 @@ class PromptTemplate:
                     else:
                         gen_state["curr_tokens"] = [new_token_id]
                         gen_state["curr_text"] = tokenizer.decode([new_token_id])
+            # Secondly, check if the new state is in "no-tool-call" or "code-interpreter" stage
+            elif self.fn_param_sep_token.rstrip("{").rstrip() in gen_state["curr_text"]:
+                if gen_state["func_name"] in self.get_predefined_function_names(
+                    function_types=PredefinedFuncTypes.no_tool_call
+                ):
+                    gen_state["stage"] = "no-tool-call"
+                elif gen_state["func_name"] in self.get_predefined_function_names(
+                    function_types=PredefinedFuncTypes.code_interpreter
+                ):
+                    gen_state["stage"] = "code-interpreter"
+
         elif gen_state["stage"] == "parameter-name":
             # Get the latest param
             latest_param_str = gen_state["curr_text"]
