@@ -237,9 +237,9 @@ class PromptTemplateV2(PromptTemplate):
                 "tool_calls": [
                     {
                         "index": current_state["func_index"],
-                        "id": current_state["call_id"]
-                        if first_call
-                        else None,  # only return call_id at the first time
+                        "id": (
+                            current_state["call_id"] if first_call else None
+                        ),  # only return call_id at the first time
                         "function": {
                             "arguments": delta_text,
                             "name": current_state["func_name"] if first_call else None,
@@ -343,6 +343,11 @@ class PromptTemplateV2(PromptTemplate):
                 "skip_until_reach": self.content_token,  # at first we will skip until reach <|content|>
                 "first_time": True,  # if first_time we return an tempty delta with role=assistant
             }
+        # check if previous token is <|content|>, there might be a space between this token and next token (ex, <|content|> Hello)
+        if current_state["current_text"].endswith(self.content_token):
+            if delta_text[0] == " ":
+                delta_text = delta_text[1:]
+
         current_state["current_text"] += delta_text
 
         if finish_reason is not None:
