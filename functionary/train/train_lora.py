@@ -510,8 +510,16 @@ def train():
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            compute_metrics=compute_metrics,
-            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+            compute_metrics=(
+                compute_metrics
+                if "mixtral" not in model_args.model_name_or_path.lower()
+                else None
+            ),
+            preprocess_logits_for_metrics=(
+                preprocess_logits_for_metrics
+                if "mixtral" not in model_args.model_name_or_path.lower()
+                else None
+            ),
         )
     else:
         trainer = Trainer(
