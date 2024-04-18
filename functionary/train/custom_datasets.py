@@ -168,6 +168,7 @@ def read_dataset(model_path, data_args, training_args, tokenizer, ds_type):
             keep_assistant_prefix=keep_assistant_prefix,
             use_flash_attention=True,
             pack_length=pack_length,
+            max_packed_size=data_args.max_packed_size,
         )
         print(f"process: {local_rank} finish processing data")
         world_size = int(os.environ.get("WORLD_SIZE", 1))
@@ -182,6 +183,7 @@ def read_dataset(model_path, data_args, training_args, tokenizer, ds_type):
         ignore_cached=False,
         use_flash_attention=True,
         pack_length=pack_length,
+        max_packed_size=data_args.max_packed_size,
     )
     if local_rank == 0:
         ds.stat()  #  print some statistics about the dataset

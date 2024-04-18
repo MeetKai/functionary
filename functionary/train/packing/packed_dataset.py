@@ -88,7 +88,7 @@ def pack_data_points_FA(
 
 
 class PackedDataset(Dataset):
-    def __init__(self, dataset: Dataset, tokenizer: Any, pack_length: int) -> None:
+    def __init__(self, dataset: Dataset, tokenizer: Any, pack_length: int, max_packed_size: int) -> None:
         super().__init__()
         self.pack_length = pack_length
         self.tokenizer = tokenizer
@@ -125,7 +125,7 @@ class PackedDataset(Dataset):
         assert self.pack_length >= max(
             self.lengths
         ), f"pack_length must be >= max(input lengths), found pack_length={self.pack_length}, max_input_length={max_input_length}"
-        self.groups = pack_data_points_by_length(self.lengths, self.pack_length)
+        self.groups = pack_data_points_by_length(self.lengths, self.pack_length, max_packed_size)
 
     def __len__(self) -> int:
         return len(self.groups)

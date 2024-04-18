@@ -88,6 +88,8 @@ def compute_loss_for_model_class(
 
     # In the training, we set use_cache=False, use_cache=True only takes effect at inference
     model.config.use_cache = False
+    
+    model.config.output_router_logits = True # force the model to compute loss
 
     if hasattr(model, "router_aux_loss_coef"):
         print("set au_coef=0")
@@ -133,6 +135,7 @@ def main(
     max_input_length: int = typer.Option(default=4096),
     pack_length: int = typer.Option(default=4096),
     masking_labels: bool = typer.Option(default=False),
+    max_packed_size: int = typer.Option(default=-1),
 ):
     """This function is used to assert that the loss of monkey-patched models on packed datasets == loss of original models on original datasets
         We will use 50 random data points from dataset: tatsu-lab/alpaca on Huggingface Hub for computing the loss.
@@ -185,7 +188,7 @@ def main(
     ex_ds.set_format("torch")
 
     # convert ex_ds --> packed dataset
-    packed_ds = PackedDataset(ex_ds, tokenizer, pack_length)
+    packed_ds = PackedDataset(ex_ds, tokenizer, pack_length, max_packed_size)
     packed_ds.stat()
 
     # first compute the average loss of the original model on normal dataset (without packing)

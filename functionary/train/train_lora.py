@@ -60,6 +60,18 @@ class DataArguments:
     packing: bool = field(
         default=False, metadata={"help": "Whether use packing or not"}
     )
+    pack_length: int = field(
+        default=0,
+        metadata={
+            "help": "pack_length used to pack data points, default = 0 --> = model_max_length"
+        },
+    )
+    max_packed_size: int = field(
+        default=-1,
+        metadata={
+            "help": "maximum number of data points can be merged. For example, max_packed_size=3, we can only merge 2 or 3 data points into a new one"
+        },
+    )
 
 
 @dataclass
