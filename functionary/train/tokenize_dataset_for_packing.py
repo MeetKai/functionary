@@ -18,6 +18,7 @@ def main(
     data_type: str,  # train/validation
     template_version: str = typer.Option(default="v2"),
     max_length: int = typer.Option(4096),
+    max_packed_size: int = typer.Option(-1),
 ):
     """Tokenize the dataset ahead for packing
 
@@ -63,6 +64,7 @@ def main(
         keep_assistant_prefix=keep_assistant_prefix,
         use_flash_attention=True,
         pack_length=max_length,
+        max_packed_size=max_packed_size,
     )
     ds.stat()
 

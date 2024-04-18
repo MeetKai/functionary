@@ -3,35 +3,41 @@ import torch
 from torch.utils.data import Dataset
 
 
-def pack_data_points_by_length(lengths: List[int], max_length: int) -> List[List[int]]:
-    """Pack data points into groups (each group is a new data point), will be used by PackedDataset, to reduce number of data points in training.
-    Given lengths of data points, we pack them into groups such that the sum of lengths
-    in each group is less than max_length. Each group will be considered as a data point (packed data point)
-    This is known as: https://en.wikipedia.org/wiki/Bin_packing_problem
-    There are many algorithms to implement this, but here we use the simple algorithm.
-    We will pack/merge a consecutive list of data points until reaching the max_length
+def pack_data_points_by_length(
+    lengths: List[int], max_length: int, max_size: int = -1
+) -> List[List[int]]:
+    """given lengths of data points, we merge consecutive data points into a new data point, as long as the concatenated length is less than max_length
     Args:
-        lengths (List[int]): _description_
-        max_length (int): _description_
+        lengths (List[int]): List of lengths of data points
+        max_length (int): the concatenated length must be less than or equal max_length
+        max_size: if != -1; the maximum number of consecutive items being merged; max_size: -1 --> no limit for number of items being merged
+
+    max_size: the maximum number of data points being merged
+    For example, lengths=[1, 3, 2, 2, 6, 4, 2, 6, 5]; max_length=10
+    if max_size=-1 --> [[0,1,2,3], [4, 5], [6,7], [8]]
+    if max_size=3 --> [[0,1,2], [3,4], [5, 6], [7], [8]]
 
     Returns:
         _type_: groups of indices: [[index1, index2, ...], [], ...]
     """
-    groups = []
-    current_packed_length = 0
-    current_group = []
+    result = []
+    current_concatenated_length = 0
+    current_list = []
     for i in range(len(lengths)):
         cur_length = lengths[i]
-        if cur_length + current_packed_length <= max_length:
-            current_packed_length += lengths[i]
-            current_group.append(i)
-        else:
-            groups.append(current_group)
-            current_group = [i]
-            current_packed_length = cur_length
-    if len(current_group) > 0:
-        groups.append(current_group)
-    return groups
+        if cur_length + current_concatenated_length <= max_length and (
+            max_size == -1 or len(current_list) < max_size
+        ):
+            current_concatenated_length += cur_length
+            current_list.append(i)
+        else:  # current_list is done, create a new one
+            result.append(current_list)
+            current_list = [i]
+            current_concatenated_length = cur_length
+
+    if len(current_list) > 0:
+        result.append(current_list)
+    return result
 
 
 def pack_data_points_FA(
