@@ -11,4 +11,4 @@ PyYAML~=6.0.1
 typer==0.9.0
 protobuf==3.20.0
 tokenizers==0.15.0
-git+https://github.com/vllm-project/vllm.git@8438e05; sys_platform != "darwin"
+git+https://github.com/vllm-project/vllm.git@533d2a1; sys_platform != "darwin"
