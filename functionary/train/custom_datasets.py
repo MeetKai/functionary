@@ -500,7 +500,7 @@ def map_raw_data_to_input_dic(
     return data_points
 
 
-def merge_data_points_by_length(
+def pack_data_points_by_length(
     lengths: List[int], max_length: int, max_size: int = -1
 ) -> List[List[int]]:
     """given lengths of data points, we merge consecutive data points into a new data point, as long as the concatenated length is less than max_length
@@ -528,12 +528,16 @@ def merge_data_points_by_length(
             current_concatenated_length += cur_length
             current_list.append(i)
         else:  # current_list is done, create a new one
-            result.append(current_list)
+            if len(current_list) > 0:
+                result.append(current_list)
             current_list = [i]
             current_concatenated_length = cur_length
 
     if len(current_list) > 0:
         result.append(current_list)
+
+    # assert to make sure no indices were missing
+    assert sum([len(indices) for indices in result]) == len(lengths)
     return result
 
 
@@ -623,9 +627,7 @@ def pack_data_points(data_points: List[Dict], tokenizer: Any, pack_length: int) 
     }
 
 
-def pack_data_points_FA(
-    data_points: List[Dict], tokenizer: Any, pack_length: int
-) -> Dict:
+def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
     """This method is used to pack multiple data_points into a single data point usable for Flash Attention
 
     For example, we want to pack 2 inputs with padding_size=right:
@@ -661,7 +663,9 @@ def pack_data_points_FA(
         lengths.append(len(item["input_ids"]))
         attention_mask += [index + 1 for _ in range(len(item["input_ids"]))]
 
-    pad_leng = pack_length - len(input_ids)  # padding to model_max_length
+    pad_leng = tokenizer.model_max_length - len(
+        input_ids
+    )  # padding to model_max_length
 
     if tokenizer.padding_side == "right":
         input_ids = input_ids + [tokenizer.pad_token_id for _ in range(pad_leng)]
@@ -672,7 +676,12 @@ def pack_data_points_FA(
         label_ids = [-100 for _ in range(pad_leng)] + label_ids
         attention_mask = [0 for _ in range(pad_leng)] + attention_mask
 
-    assert len(input_ids) == len(label_ids) == len(attention_mask) == pack_length
+    assert (
+        len(input_ids)
+        == len(label_ids)
+        == len(attention_mask)
+        == tokenizer.model_max_length
+    )
     return {
         "input_ids": torch.tensor(input_ids),
         "labels": torch.tensor(label_ids),
@@ -892,7 +901,7 @@ class PackedDataset(CachedDataset):
 
     def update_packing_info(self):
         self.lengths = [len(item["input_ids"]) for item in self.data_points]
-        self.groups = merge_data_points_by_length(
+        self.groups = pack_data_points_by_length(
             self.lengths, self.pack_length, self.max_packed_size
         )
 
@@ -904,7 +913,7 @@ class PackedDataset(CachedDataset):
         group_data_points = [self.data_points[index] for index in group]
         if not self.use_flash_attention:
             return pack_data_points(group_data_points, self.tokenizer, self.pack_length)
-        return pack_data_points_FA(group_data_points, self.tokenizer, self.pack_length)
+        return pack_data_points_FA(group_data_points, self.tokenizer)
 
     def stat(self):
         print(
