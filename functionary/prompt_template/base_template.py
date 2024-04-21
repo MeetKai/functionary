@@ -129,7 +129,7 @@ class PromptTemplate:
                 suffix = curr_text[len(tool_name) :]
                 gen_state["func_name"] = tool_name
                 gen_state["curr_text"] = suffix
-                gen_state["curr_tokens"] = [new_token_id]
+                gen_state["curr_tokens"] = [new_token_id] if suffix != "" else []
                 gen_state["stage"] = "pre-parameter"
 
         elif gen_state["stage"] == "pre-parameter":
@@ -427,6 +427,7 @@ class PromptTemplate:
         current_state: Dict[str, Any],
         delta_text: str,
         finish_reason: Optional[str],
+        tool_choice: Any,
     ) -> Tuple[Dict[str, Any], Union[None, Dict, List[Dict]]]:
         """This function is used for streaming
 

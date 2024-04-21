@@ -326,16 +326,26 @@ class PromptTemplateV2(PromptTemplate):
         current_state: Dict[str, Any],
         delta_text: str,
         finish_reason: Optional[str],
+        tool_choice: Any,
     ) -> Tuple[Dict[str, Any], Union[None, Dict, List[Dict]]]:
         if len(current_state) == 0:  # empty dict, at the first_time
+            if tool_choice == "auto":
+                response_type, skip_until_reach = None, self.content_token
+                func_name = None
+            elif tool_choice == "none":
+                response_type, skip_until_reach = "text", ""
+                func_name = self.predefined_func_names[PredefinedFuncTypes.no_tool_call]
+            else:
+                response_type, skip_until_reach = "function", ""
+                func_name = tool_choice.function.name
             current_state = {
                 "current_text": "",  # the concatenation of all tokens so far
-                "func_name": None,  # function_name of the current tool, if the response requires to use tool
-                "response_type": None,  # response_type=text(text response)/function (using tool)
+                "func_name": func_name,  # function_name of the current tool, if the response requires to use tool
+                "response_type": response_type,  # response_type=text(text response)/function (using tool)
                 "func_index": -1,  # index of the tool in tool_calls
                 "call_id": None,  # call_id of the current tool
                 # skip_until_reach we skip new tokens until we reach certain token. This is used when we hit special tokens
-                "skip_until_reach": self.content_token,  # at first we will skip until reach <|content|>
+                "skip_until_reach": skip_until_reach,  # at first we don't need to skip as we are generating function
                 "first_time": True,  # if first_time we return an tempty delta with role=assistant
             }
         # check if previous token is <|content|>, there might be a space between this token and next token (ex, <|content|> Hello)
@@ -373,21 +383,13 @@ class PromptTemplateV2(PromptTemplate):
                     current_state["call_id"] = get_random_tool_call_id()
                     current_state["func_index"] += 1
 
-                    responses = []
-                    if (
-                        first_time
-                    ):  # first chunk of function_call is a message where all fields are None, except role
-                        responses.append(
-                            self.get_text_delta_response(None, True, finish_reason)
-                        )
-                    responses.append(
-                        self.get_function_delta_response(
-                            current_state, "", True, False, finish_reason
-                        )
+                    return current_state, self.get_function_delta_response(
+                        current_state, "", True, False, finish_reason
                     )
-                    return current_state, responses
         else:
             assert current_state["response_type"] is not None
+
+            first_time = current_state["first_time"]
             if (
                 delta_text == self.from_token
             ):  # skip until reach <content> to check type of response
@@ -398,13 +400,38 @@ class PromptTemplateV2(PromptTemplate):
 
             else:
                 if current_state["response_type"] == "function":
-                    return current_state, self.get_function_delta_response(
-                        current_state, delta_text, False, False, finish_reason
-                    )
+                    if first_time:
+                        current_state["call_id"] = get_random_tool_call_id()
+                        current_state["func_index"] += 1
+                        responses = []
+                        responses.append(
+                            self.get_function_delta_response(
+                                current_state, "", first_time, False, finish_reason
+                            )
+                        )
+                        current_state["first_time"] = False
+                        responses.append(
+                            self.get_function_delta_response(
+                                current_state, delta_text, False, False, finish_reason
+                            )
+                        )
+                    else:
+                        responses = self.get_function_delta_response(
+                            current_state, delta_text, False, False, finish_reason
+                        )
+                    return current_state, responses
                 else:  # response_type=text
-                    return current_state, self.get_text_delta_response(
-                        delta_text, True, finish_reason
+                    responses = []
+                    if first_time:
+                        current_state["first_time"] = False
+                        responses.append(
+                            self.get_text_delta_response("", True, finish_reason)
+                        )
+                    responses.append(
+                        self.get_text_delta_response(delta_text, True, finish_reason)
                     )
+
+                    return current_state, responses
 
 
 def get_random_tool_call_id():

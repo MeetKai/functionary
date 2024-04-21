@@ -358,7 +358,7 @@ async def create_chat_completion(raw_request: Request):
     ) -> AsyncGenerator[str, None]:
         generator = wrap_vllm_generator(tool_choice=tool_choice)
         async for response in generate_openai_format_from_stream_async(
-            generator, prompt_template
+            generator, prompt_template, tool_choice
         ):
             # Convert v1 from function_call to tool_calls if tools are provided instead of functions
             if prompt_template.version == "v1" and (
