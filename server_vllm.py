@@ -347,15 +347,9 @@ async def create_chat_completion(raw_request: Request):
                         if tool_choice == "none":
                             yield prompt_template.get_predefined_function_names(
                                 function_types=PredefinedFuncTypes.no_tool_call
-                            )[
-                                0
-                            ] + prompt_template.get_stop_token_for_function_parameter(
-                                stage="function"
-                            ), finish_reason
+                            )[0] + prompt_template.fn_param_sep_token, finish_reason
                         elif isinstance(tool_choice, Tool):
-                            yield tool_choice.function.name + prompt_template.get_stop_token_for_function_parameter(
-                                stage="function"
-                            ), finish_reason
+                            yield tool_choice.function.name + prompt_template.fn_param_sep_token, finish_reason
                     yield delta_text, finish_reason
         yield "", "stop"
 

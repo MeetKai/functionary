@@ -17,7 +17,7 @@ class PromptTemplateV2(PromptTemplate):
     stop_token = "<|stop|>"
     version = "v2"
     # This token splits between function name and parameters
-    fn_param_sep_token = "\n<|content|> {"
+    fn_param_sep_token = "\n<|content|>"
     # This maps the predefined function type to its str name
     predefined_func_names = {
         PredefinedFuncTypes.no_tool_call: "all",
@@ -26,14 +26,6 @@ class PromptTemplateV2(PromptTemplate):
 
     def get_start_of_function_call_token(self) -> str:
         return self.recipient_token
-
-    def get_stop_token_for_function_parameter(
-        self, stage: Literal["function", "parameter"]
-    ) -> int:
-        if stage == "function":
-            return "\n"  # 13
-        else:
-            return '":'  # 1264
 
     def get_predefined_function_names(self, function_types: Any) -> List[str]:
         if function_types == "all":
@@ -51,9 +43,12 @@ class PromptTemplateV2(PromptTemplate):
     def initialize_grammar_sampling_gen_state(
         self, tool_choice: str, curr_text: str, curr_tokens: List[int]
     ) -> Dict:
-        if tool_choice != "":
+        if tool_choice == "none":
             add_predefined_fns = False
-            stage = "pre-parameter"
+            stage = "no-tool-call"
+        elif tool_choice != "":
+            add_predefined_fns = False
+            stage = "parameter"
         else:
             add_predefined_fns = True
             stage = "function"
@@ -130,14 +125,14 @@ class PromptTemplateV2(PromptTemplate):
         recipient_to_fill = ""
         if tool_choice is not None:
             if tool_choice == "none":
-                recipient_to_fill = self.get_predefined_function_names(
-                    function_types=PredefinedFuncTypes.no_tool_call
-                )[0] + self.get_stop_token_for_function_parameter(stage="function")
-            elif isinstance(tool_choice, Tool):
                 recipient_to_fill = (
-                    tool_choice.function.name
-                    + self.get_stop_token_for_function_parameter(stage="function")
+                    self.get_predefined_function_names(
+                        function_types=PredefinedFuncTypes.no_tool_call
+                    )[0]
+                    + self.fn_param_sep_token
                 )
+            elif isinstance(tool_choice, Tool):
+                recipient_to_fill = tool_choice.function.name + self.fn_param_sep_token
 
         llm_output = (
             f"{self.from_token}assistant\n{self.recipient_token}"

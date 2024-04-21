@@ -28,6 +28,10 @@ from vllm.sampling_params import SamplingParams
 from vllm.sequence import MultiModalData
 from vllm.usage.usage_lib import UsageContext
 
+from functionary.inference import (
+    get_lm_format_enforcer_vllm_logits_processor_from_tool_name,
+)
+
 logger = init_logger(__name__)
 ENGINE_ITERATION_TIMEOUT_S = int(
     os.environ.get("VLLM_ENGINE_ITERATION_TIMEOUT_S", "60")
@@ -233,6 +237,34 @@ class _AsyncLLMEngine(LLMEngine):
         """
         seq_group_metadata_list, scheduler_outputs = self.scheduler.schedule()
 
+        tokenizer = self.get_tokenizer()
+
+        # Loop through each request and turn on/off lm-format-enforcer logits
+        # processor before generating the next token
+        for i in range(len(seq_group_metadata_list)):
+            request_id = seq_group_metadata_list[i].request_id
+            gen_state = self.gen_states[request_id]
+            tools_or_functions = self.tools_or_functions[request_id]
+
+            # Check if the model just transitioned to "parameter" or "pre-function"
+            if (
+                gen_state["stage"] == "parameter"
+                and seq_group_metadata_list[i].sampling_params.logits_processors is None
+            ):
+                seq_group_metadata_list[i].sampling_params.logits_processors = [
+                    await get_lm_format_enforcer_vllm_logits_processor_from_tool_name(
+                        tool_name=gen_state["func_name"],
+                        tools_or_functions=tools_or_functions,
+                        tokenizer=tokenizer,
+                    )
+                ]
+            elif (
+                gen_state["stage"] == "pre-function"
+                and seq_group_metadata_list[i].sampling_params.logits_processors
+                is not None
+            ):
+                seq_group_metadata_list[i].sampling_params.logits_processors = None
+
         if not scheduler_outputs.is_empty():
             # Execute the model.
             output = await self.model_executor.execute_model_async(
@@ -252,11 +284,6 @@ class _AsyncLLMEngine(LLMEngine):
             prompt_template = self.prompt_templates[request_id]
             gen_state = self.gen_states[request_id]
             tools_or_functions = self.tools_or_functions[request_id]
-            # Check whether self.tokenizer is a TokenizerGroup class
-            if hasattr(self.tokenizer, "tokenizer"):
-                tokenizer = self.tokenizer.tokenizer
-            else:
-                tokenizer = self.tokenizer
 
             # Slot the first entry of logprobs into its original position
             # before getting delta_token_ids_by_logprobs
@@ -685,24 +712,16 @@ class AsyncLLMEngine:
         self.engine.prompt_templates[request_id] = prompt_template_cls
 
         # Initialize gen_state based on tool_choice
-        fn_stop_token = prompt_template_cls.get_stop_token_for_function_parameter(
-            stage="function"
-        )
         if tool_choice is not None:
             if tool_choice == "none":
                 tool_choice_name = tool_choice
-                curr_text = fn_stop_token
-                curr_tokens = self.engine.tokenizer.encode(curr_text)[-1:]
             elif tool_choice == "auto":
                 tool_choice_name = ""
-                curr_text, curr_tokens = "", []
             else:
                 tool_choice_name = tool_choice.function.name
-                curr_text = fn_stop_token
-                curr_tokens = self.engine.tokenizer.encode(curr_text)[-1:]
         else:
             tool_choice_name = ""
-            curr_text, curr_tokens = "", []
+        curr_text, curr_tokens = "", []
 
         # Initialize the request_id entry of self.gen_states
         self.engine.gen_states[request_id] = self.engine.prompt_templates[
