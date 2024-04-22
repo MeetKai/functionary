@@ -343,6 +343,7 @@ async def create_chat_completion(raw_request: Request):
                     if (
                         previous_texts == delta_text
                         and delta_text in prompt_template.fn_param_sep_token
+                        and prompt_template.version != "v1"
                     ):
                         if tool_choice == "none":
                             yield prompt_template.get_predefined_function_names(
