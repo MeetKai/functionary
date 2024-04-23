@@ -123,7 +123,7 @@ class PromptTemplate:
                 for option in options
             ]
             # Transition to "pre-parameter" when only 1 element in options_mask is True
-            if sum(options_mask) == 1:
+            if sum(options_mask) == 1 and curr_text == options[options_mask.index(True)]:
                 # Use the suffix from curr_text as the prefix in "pre-parameter"
                 tool_name = options[options_mask.index(True)]
                 suffix = curr_text[len(tool_name) :]
