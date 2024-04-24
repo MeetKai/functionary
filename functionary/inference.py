@@ -111,7 +111,8 @@ def enforce_tool_choice(
             tools = [
                 tool
                 for tool in tools
-                if tool.function.name == tool_choice.function.name
+                if tool.type == "function"
+                and tool.function.name == tool_choice.function.name
             ]
             assert (
                 len(tools) > 0
