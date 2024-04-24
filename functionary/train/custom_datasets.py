@@ -378,7 +378,6 @@ def prepare_training_inputs_batch(
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
     assistant_stop_token_ids = get_assistant_stop_token_ids(prompt_template, tokenizer)
     assistant_prefix_tokens = get_prefix_assistant_token_ids(prompt_template, tokenizer)
-
     prompt_str_list = []
     for messages in batch_messages:
         # old format: functions, new format: tools
