@@ -165,7 +165,7 @@ def read_dataset(model_path, data_args, training_args, tokenizer, ds_type):
             tokenizer,
             cached_folder=cached_folder,
             ignore_cached=False,
-            keep_assistant_prefix=keep_assistant_prefix,
+            keep_assistant_prefix=False,
             use_flash_attention=True,
             pack_length=pack_length,
         )
