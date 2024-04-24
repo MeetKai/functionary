@@ -118,7 +118,7 @@ pip install flash-attn==2.3.2 --no-build-isolation
 You can run the script to verify that the implementation of monkey-patch is correct:
 
 ```shell
-python assert_monkey_patch.py mistralai/Mixtral-8x7B-v0.1
+python assert_packing_loss.py mistralai/Mixtral-8x7B-v0.1
 ```
 
 The output would show:

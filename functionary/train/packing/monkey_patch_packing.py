@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 import transformers
 from typing import Optional
+from transformers import MixtralForCausalLM
 
 
 def get_max_seqlen_in_batch(attention_mask):
@@ -84,7 +85,7 @@ def load_balancing_loss_func(
     else:
         # ONLY ADD THIS LINE OF CODE, AND REPLACE attention_mask WITH new_attention_mask
         new_attention_mask = (attention_mask != 0).int().to(attention_mask.device)
-        batch_size, sequence_length = attention_mask.shape
+        batch_size, sequence_length = new_attention_mask.shape
         num_hidden_layers = concatenated_gate_logits.shape[0] // (
             batch_size * sequence_length
         )
@@ -92,8 +93,10 @@ def load_balancing_loss_func(
         # Compute the mask that masks all padding tokens as 0 with the same shape of expert_mask
         expert_attention_mask = (
             new_attention_mask[None, :, :, None, None]
-            .expand((num_hidden_layers, batch_size, sequence_length, 2, num_experts))
-            .reshape(-1, 2, num_experts)
+            .expand(
+                (num_hidden_layers, batch_size, sequence_length, top_k, num_experts)
+            )
+            .reshape(-1, top_k, num_experts)
             .to(compute_device)
         )
 

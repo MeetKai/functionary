@@ -18,6 +18,8 @@ def main(
     data_type: str,  # train/validation
     template_version: str = typer.Option(default="v2"),
     max_length: int = typer.Option(4096),
+    pack_length: int = typer.Option(-1),
+    max_packed_size: int = typer.Option(-1),
 ):
     """Tokenize the dataset ahead for packing
 
@@ -30,12 +32,17 @@ def main(
         max_length (int, optional): max_length for tokenizer
     """
     assert data_type in ["train", "validation"]
+    assert pack_length < max_length
+
     prompt_template = get_prompt_template_by_version(template_version)
     tokenizer = AutoTokenizer.from_pretrained(
         pretrained_path,
         model_max_length=max_length,
         legacy=True,
     )
+
+    if pack_length == -1:
+        pack_length = max_length
 
     tokenizer.pad_token = tokenizer.eos_token
     added_tokens = prompt_template.get_additional_tokens()
@@ -62,7 +69,8 @@ def main(
         ignore_cached=False,
         keep_assistant_prefix=keep_assistant_prefix,
         use_flash_attention=True,
-        pack_length=max_length,
+        pack_length=pack_length,
+        max_packed_size=max_packed_size,
     )
     ds.stat()
 
