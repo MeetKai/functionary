@@ -234,6 +234,8 @@ For more details, please refer to the [Function Calling section](https://github.
 
 </details>
 
+
+
 ## Call Real Python Function
 
 To call the real python function, get the result and extract the result to respond, you can use [chatlab](https://github.com/rgbkrk/chatlab). The following example uses chatlab==0.16.0:
@@ -287,6 +289,47 @@ FUNCTION: {'price': {'price': '$20000'}}
 ASSISTANT: The price of the car named Tang is $20,000.
 ```
 
+## Inference and Deployment using Modal.com
+
+   Edit **modal_server_vllm.py** for your preferred Functionary Model and GPU Configuration and follow these steps:
+
+   1. **Create dev environment**
+    
+    ```shell Python
+    modal environment create dev
+    ```
+
+    > ℹ️ If you have a dev environment created already no need to create another one. Just configure to it in the next step.
+
+   2. **Configure dev environment**
+
+    ```shell Python
+    modal config set-environment dev
+    ``` 
+    > ⚠️ We are using our Dev environment right now. Switch to **main** when deploying to production.
+
+
+   3. **Configure secret keys**
+
+        - **HuggingFace Token**:
+          Create a Modal secret group with your Hugging Face token. Replace `<your huggingface token>` with the actual token.
+          ```shell Python
+          modal secret create huggingface HUGGINGFACE_TOKEN=<your huggingface token>
+          ```
+   
+    
+   4. **Serve Functionary Model**
+     
+      ```shell Python
+      modal serve modal_server_vllm
+      ```
+
+  7. **Deploy Runner**
+
+      ```shell Python
+      modal deploy modal_server_vllm
+      ```
+  
 # Use Cases
 
 Here are a few examples of how you can use this function calling system:
