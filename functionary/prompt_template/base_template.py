@@ -533,7 +533,9 @@ class PromptTemplate:
         full_text = ""
         for message in messages_clone:
             full_text += self.convert_message_to_prompt(message)
-        return full_text.strip()
+        return (
+            full_text  # Do not strip because llama3-instruct uses: \n\n before content
+        )
 
     def get_end_token_to_token_id(self, tokenizer: Any) -> Dict[str, int]:
         """return a dictionary mapping from end_token --> token_id
