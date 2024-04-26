@@ -406,11 +406,11 @@ async def chat_endpoint(raw_request: Request):
     if error_check_ret is not None:
         return error_check_ret
 
-    if request.logit_bias is not None:
+    #if request.logit_bias is not None:
         # TODO: support logit_bias in vLLM engine.
-        return create_error_response(
-            HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
-        )
+    #    return create_error_response(
+    #       HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
+    #    )
 
     model = Model()
 
