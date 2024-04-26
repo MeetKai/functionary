@@ -13,7 +13,7 @@ Documentation and more examples: [functionary.meetkai.com](https://functionary.m
 
 ### Setup
 
-Make sure you have [PyTorch](https://pytorch.org/get-started/locally/) installed (```2.1.2```). Then to install the required dependencies, run:
+To install the required dependencies, run:
 
 ```shell
 pip install -r requirements.txt
@@ -22,7 +22,7 @@ pip install -r requirements.txt
 Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server.
 [requirements](https://docs.vllm.ai/en/latest/getting_started/installation.html#requirements)
 
-Small Model:
+**Small Model:**
 ```shell
 python3 server_vllm.py --model "meetkai/functionary-small-v2.4" --host 0.0.0.0 --max-model-len 8192
 ```
@@ -38,9 +38,9 @@ python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len
   
 </details>
 
-<details>
-    <summary>Grammar Sampling: (click to expand)</summary>
-We also offer grammar sampling which ensures 100% accuracy in tool and parameter names in the assistant tool calls. To enable grammar sampling, run the vLLM server with the command-line argument <code>--enable-grammar-sampling</code>:
+**Grammar Sampling**
+
+We also offer our own function-calling grammar sampling feature which constrains the LLM's generation to always follow the prompt template, and ensures 100% accuracy for function name. The parameters are generated using the efficient [lm-format-enforcer](https://github.com/noamgat/lm-format-enforcer), which ensures that the parameters follow the schema of the tool called. To enable grammar sampling, run the vLLM server with the command-line argument <code>--enable-grammar-sampling</code>:
 
 ```shell
 python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len 8192 --tensor-parallel-size 2 --enable-grammar-sampling
@@ -48,6 +48,7 @@ python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len
 </details>
 
 
+**Docker**
 
 If you're having trouble with dependencies, and you have [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#setting-up-nvidia-container-toolkit), 
 you can start your environment like this: 
@@ -175,7 +176,7 @@ The difference between OpenAI-python v0 and v1 you may refer to the official doc
 
 ## Llama.cpp Inference
 
-Make sure that [llama-cpp-python](https://github.com/abetlen/llama-cpp-python) is successully installed in your system. Functionary v2 is fully integrated into llama-cpp-python from v0.2.18 onwards. You can perform inference using Functionary's GGUF models either via normal chat completion or through llama-cpp-python's OpenAI-compatible server which behaves similarly to ours.
+Make sure that the latest version of [llama-cpp-python](https://github.com/abetlen/llama-cpp-python) is successully installed in your system. Functionary v2 is fully integrated into llama-cpp-python. You can perform inference using Functionary's GGUF models either via normal chat completion or through llama-cpp-python's OpenAI-compatible server which behaves similarly to ours.
 
 The following is the sample code using normal chat completion:
 
@@ -230,7 +231,9 @@ The output would be:
 
 For more details, please refer to the [Function Calling section](https://github.com/abetlen/llama-cpp-python?tab=readme-ov-file#function-calling) in llama-cpp-python. To use our Functionary GGUF models using llama-cpp-python's OpenAI-compatible server, please refer to [here](https://llama-cpp-python.readthedocs.io/en/latest/server/#function-calling) for more details and documentation.
 
-**Note:** llama-cpp-python's OpenAI-compatible server does not support streaming for Functionary models yet as of v0.2.50.
+**Note:**
+- For Functionary in llama-cpp-python, the default system messages are added automatically during the API call. Therefore, there is no need to provide the default system messages in `messages`.
+- llama-cpp-python's OpenAI-compatible server does not support streaming for Functionary models yet.
 
 </details>
 
