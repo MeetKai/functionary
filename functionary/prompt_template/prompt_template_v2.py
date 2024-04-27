@@ -43,12 +43,15 @@ class PromptTemplateV2(PromptTemplate):
     def initialize_grammar_sampling_gen_state(
         self, tool_choice: str, curr_text: str, curr_tokens: List[int]
     ) -> Dict:
+        # To force a text response ("tool_choice"="none")
         if tool_choice == "none":
             add_predefined_fns = False
             stage = "no-tool-call"
+        # To force a function call (tool_choice={"type": "function", "function": {...}})
         elif tool_choice != "":
             add_predefined_fns = False
             stage = "parameter"
+        # Normal generation (function name first) (tool_choice="auto")
         else:
             add_predefined_fns = True
             stage = "function"
