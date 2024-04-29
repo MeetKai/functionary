@@ -236,7 +236,7 @@ async def create_chat_completion(raw_request: Request):
     if error_check_ret is not None:
         return error_check_ret
 
-    if request.logit_bias is not None:
+    if request.logit_bias is not None and not request.logit_bias:
         # TODO: support logit_bias in vLLM engine.
         return create_error_response(
             HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
