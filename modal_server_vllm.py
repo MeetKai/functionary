@@ -14,91 +14,11 @@ from functionary.openai_types import (
     Function,
     Tool,
 )
-
-
+from model_server_config import MAX_MODEL_LENGTH, MODEL,GPU_CONFIG, GRAMMAR_SAMPLING, MODEL_DIR
+from fastapi_dtos import UsageInfo, ChatCompletionRequest, ChatCompletionResponse, ChatCompletionResponseChoice
 
 app = modal.App("functionary_vllm")
 fast_api_app = FastAPI(title="Functionary API")
-
-#MODEL = "meetkai/functionary-small-v2.4"
-MODEL = "meetkai/functionary-medium-v2.4"
-MAX_MODEL_LENGTH = 8196
-LOADIN8BIT = False
-#GPU_CONFIG = modal.gpu.L4(count=1)
-GPU_CONFIG = modal.gpu.A100(memory=80, count=2)
-MODEL_DIR = "/model2"
-GRAMMAR_SAMPLING = False
-
-class ChatCompletionRequest(BaseModel):
-    model: str
-    messages: List[ChatMessage]
-    functions: Optional[List[Function]] = None
-    tools: Optional[List[Tool]] = None
-    tool_choice: Optional[Union[str, Tool]] = Field(default = None, validate_default=True)
-    temperature: Optional[float] = 0.7
-    top_p: Optional[float] = 1.0
-    n: Optional[int] = 1
-    max_tokens: Optional[int] = 512
-    stop: Optional[Union[str, List[str]]] = Field(default_factory=list)
-    stream: Optional[bool] = False
-    presence_penalty: Optional[float] = 0.0
-    frequency_penalty: Optional[float] = 0.0
-    logit_bias: Optional[Dict[str, float]] = None
-    user: Optional[str] = None
-    # Additional parameters supported by vLLM
-    best_of: Optional[int] = None
-    top_k: Optional[int] = -1
-    ignore_eos: Optional[bool] = False
-    use_beam_search: Optional[bool] = False
-
-    @field_validator("tool_choice")
-    def validate_tool_choice(cls, value, values):
-        if value is None:
-            if values["tools"] is None and values["functions"] is None:
-                return "none"
-            else:
-                return "auto"
-        return value
-
-
-class ChatCompletionResponseChoice(BaseModel):
-    index: int
-    message: ChatMessage
-    finish_reason: Optional[
-        Literal["stop", "length", "function_call", "tool_calls"]
-    ] = None
-
-class UsageInfo(BaseModel):
-    prompt_tokens: Optional[int]
-    completion_tokens: Optional[int]
-    total_tokens:Optional[int]
-
-class ChatCompletionResponse(BaseModel):
-    id: str = Field(default_factory=lambda: f"chatcmpl-{uuid.uuid4()}")
-    object: str = "chat.completion"
-    created: int = Field(default_factory=lambda: int(time.time()))
-    model: str
-    choices: List[ChatCompletionResponseChoice]
-    usage:UsageInfo
-
-class DeltaMessage(BaseModel):
-    role: Optional[str] = None
-    content: Optional[str] = None
-
-
-class ChatCompletionResponseStreamChoice(BaseModel):
-    index: int
-    delta: DeltaMessage
-    finish_reason: Optional[Literal["stop", "length", "function_call"]] = None
-
-
-class ChatCompletionStreamResponse(BaseModel):
-    id: str = Field(default_factory=lambda: f"chatcmpl-{uuid.uuid4()}")
-    object: str = "chat.completion.chunk"
-    created: int = Field(default_factory=lambda: int(time.time()))
-    model: str
-    choices: List[ChatCompletionResponseStreamChoice]
-
 
 def download_model_to_image(model_dir, model_name):
     from huggingface_hub import snapshot_download
@@ -140,37 +60,19 @@ def get_model():
     return engine, tokenizer, engine_model_config
 
 
-def download_model():
-    get_model()
-
-
 image = (
     modal.Image.debian_slim()
-    .pip_install(
-        "transformers==4.37.2",
-        "accelerate~=0.21.0",
-        "sentencepiece~=0.1.99",
-        "fastapi~=0.104.0",
-        "uvicorn~=0.23.1",
-        "pydantic~=2.6.0",
-        "scipy~=1.11.1",
-        "jsonref~=1.1.0",
-        "requests~=2.31.0",
-        "PyYAML~=6.0.1",
-        "typer==0.9.0",
-        "protobuf==3.20.0",
-        "tokenizers==0.15.0",
-        "vllm==0.3.0",
+    .pip_install_from_requirements(
+        "requirements.txt"        
+    ).pip_install(
         "hf-transfer==0.1.6",
-        "huggingface_hub==0.22.2",
-    )
+        "huggingface_hub==0.22.2")
     .run_function(download_model_to_image,
         timeout=60 * 20,
         kwargs={
             "model_dir": MODEL_DIR,
             "model_name": MODEL
-        },
-        secrets=[modal.Secret.from_name("huggingface")])
+        })
 )
 def create_error_response(status_code: HTTPStatus, message: str) -> JSONResponse:
     from vllm.entrypoints.openai.protocol import (ErrorResponse)   
@@ -242,12 +144,7 @@ class Model:
         else:
             tools = None
             tools_or_functions = []
-        # Remove any code_interpreter tools remaining
-        if tools:
-            tools = [tool for tool in tools if tool.type != "code_interpreter"]
-            tools_or_functions = [
-                tool for tool in tools_or_functions if tool["type"] != "code_interpreter"
-            ]
+       
         prompt_token_ids = prepare_messages_for_inference(
                         tokenizer=self.tokenizer,
                         messages=request.messages,
@@ -255,6 +152,13 @@ class Model:
                         tools=tools,
                         tool_choice=request.tool_choice,
                     ).tolist()[0]
+        
+        # Remove any code_interpreter tools remaining
+        if tools:
+            tools = [tool for tool in tools if tool.type != "code_interpreter"]
+            tools_or_functions = [
+                tool for tool in tools_or_functions if tool["type"] != "code_interpreter"
+            ]
         error_check_ret = await check_length(request, prompt_token_ids, self.engine_model_config)
         if error_check_ret is not None:
             return error_check_ret
@@ -302,11 +206,12 @@ class Model:
                 tool_choice=request.tool_choice,
             )
         else:
+            assert request.stream == False
             result_generator = self.model.generate(
                 prompt=None,
                 sampling_params=sampling_params,
                 request_id=request_id,
-                prompt_token_ids=prompt_token_ids,
+                prompt_token_ids=prompt_token_ids
             )
         
         # Non-streaming response
@@ -390,7 +295,7 @@ async def check_model(request) -> Optional[JSONResponse]:
     )
     return ret
 
-@fast_api_app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
+@fast_api_app.post("/v1/chat/completions")
 async def chat_endpoint(raw_request: Request):
     """Completion API similar to OpenAI's API.
     See  https://platform.openai.com/docs/api-reference/chat/create
@@ -406,11 +311,16 @@ async def chat_endpoint(raw_request: Request):
     if error_check_ret is not None:
         return error_check_ret
 
-    #if request.logit_bias is not None:
-        # TODO: support logit_bias in vLLM engine.
-    #    return create_error_response(
-    #       HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
-    #    )
+    if request.logit_bias is not None and request.logit_bias:
+       #TODO: support logit_bias in vLLM engine.
+       return create_error_response(
+          HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
+       )
+    if request.stream:
+       #TODO: support streaming.
+       return create_error_response(
+          HTTPStatus.BAD_REQUEST, "streaming is not currently supported"
+       )
 
     model = Model()
 

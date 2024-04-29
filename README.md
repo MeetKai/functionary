@@ -309,22 +309,13 @@ ASSISTANT: The price of the car named Tang is $20,000.
     > ⚠️ We are using our Dev environment right now. Switch to **main** when deploying to production.
 
 
-   3. **Configure secret keys**
-
-        - **HuggingFace Token**:
-          Create a Modal secret group with your Hugging Face token. Replace `<your huggingface token>` with the actual token.
-          ```shell Python
-          modal secret create huggingface HUGGINGFACE_TOKEN=<your huggingface token>
-          ```
-   
-    
-   4. **Serve Functionary Model**
+   3. **Serve Functionary Model**
      
       ```shell Python
       modal serve modal_server_vllm
       ```
 
-  7. **Deploy Runner**
+   4. **Deploy Runner**
 
       ```shell Python
       modal deploy modal_server_vllm

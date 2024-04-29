@@ -24,20 +24,19 @@ from http import HTTPStatus
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
 
 import fastapi
+from fastapi_dtos import ChatCompletionRequest, ChatCompletionResponse, ChatCompletionResponseChoice, UsageInfo
 import uvicorn
 from fastapi import BackgroundTasks, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, validator
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.entrypoints.openai.protocol import (
     ErrorResponse,
     LogProbs,
     ModelCard,
     ModelList,
-    ModelPermission,
-    UsageInfo,
+    ModelPermission
 )
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
@@ -67,75 +66,6 @@ TIMEOUT_KEEP_ALIVE = 5  # seconds
 logger = init_logger(__name__)
 served_model = None
 app = fastapi.FastAPI()
-
-
-class ChatCompletionRequest(BaseModel):
-    model: str
-    messages: List[ChatMessage]
-    functions: Optional[List[Function]] = None
-    tools: Optional[List[Tool]] = None
-    tool_choice: Optional[Union[str, Tool]] = None
-    temperature: Optional[float] = 0.7
-    top_p: Optional[float] = 1.0
-    n: Optional[int] = 1
-    max_tokens: Optional[int] = 512
-    stop: Optional[Union[str, List[str]]] = Field(default_factory=list)
-    stream: Optional[bool] = False
-    presence_penalty: Optional[float] = 0.0
-    frequency_penalty: Optional[float] = 0.0
-    logit_bias: Optional[Dict[str, float]] = None
-    user: Optional[str] = None
-    # Additional parameters supported by vLLM
-    best_of: Optional[int] = None
-    top_k: Optional[int] = -1
-    ignore_eos: Optional[bool] = False
-    use_beam_search: Optional[bool] = False
-
-    @validator("tool_choice", always=True)
-    def validate_tool_choice(cls, value, values):
-        if value is None:
-            if values["tools"] is None and values["functions"] is None:
-                return "none"
-            else:
-                return "auto"
-        return value
-
-
-class ChatCompletionResponseChoice(BaseModel):
-    index: int
-    message: ChatMessage
-    finish_reason: Optional[
-        Literal["stop", "length", "function_call", "tool_calls"]
-    ] = None
-
-
-class ChatCompletionResponse(BaseModel):
-    id: str = Field(default_factory=lambda: f"chatcmpl-{random_uuid()}")
-    object: str = "chat.completion"
-    created: int = Field(default_factory=lambda: int(time.time()))
-    model: str
-    choices: List[ChatCompletionResponseChoice]
-    usage: UsageInfo
-
-
-class DeltaMessage(BaseModel):
-    role: Optional[str] = None
-    content: Optional[str] = None
-
-
-class ChatCompletionResponseStreamChoice(BaseModel):
-    index: int
-    delta: DeltaMessage
-    finish_reason: Optional[Literal["stop", "length", "function_call"]] = None
-
-
-class ChatCompletionStreamResponse(BaseModel):
-    id: str = Field(default_factory=lambda: f"chatcmpl-{random_uuid()}")
-    object: str = "chat.completion.chunk"
-    created: int = Field(default_factory=lambda: int(time.time()))
-    model: str
-    choices: List[ChatCompletionResponseStreamChoice]
-
 
 def create_error_response(status_code: HTTPStatus, message: str) -> JSONResponse:
     return JSONResponse(
@@ -236,7 +166,7 @@ async def create_chat_completion(raw_request: Request):
     if error_check_ret is not None:
         return error_check_ret
 
-    if request.logit_bias is not None and not request.logit_bias:
+    if request.logit_bias is not None and request.logit_bias:
         # TODO: support logit_bias in vLLM engine.
         return create_error_response(
             HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
