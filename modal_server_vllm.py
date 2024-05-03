@@ -59,6 +59,7 @@ def get_model():
         max_model_len=settings.max_model_length,
     )
 
+
     # A separate tokenizer to map token IDs to strings.
     tokenizer = get_tokenizer(
         engine_args.tokenizer, tokenizer_mode=engine_args.tokenizer_mode
@@ -190,6 +191,7 @@ class Model:
         error_check_ret = await check_length(
             request, prompt_token_ids, self.engine_model_config
         )
+
         if error_check_ret is not None:
             return error_check_ret
 

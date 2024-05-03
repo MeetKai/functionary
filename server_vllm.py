@@ -43,6 +43,12 @@ from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
+from fastapi_dtos import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatCompletionResponseChoice,
+    UsageInfo,
+)
 from functionary.inference import enforce_tool_choice, prepare_messages_for_inference
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
