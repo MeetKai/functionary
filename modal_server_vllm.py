@@ -16,7 +16,7 @@ from functionary.openai_types import (
     ChatMessage,
     UsageInfo,
 )
-from model_server_config import Settings
+from modal_server_config import Settings
 
 app = modal.App("functionary_vllm")
 fast_api_app = FastAPI(title="Functionary API")
