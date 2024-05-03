@@ -53,11 +53,15 @@ from functionary.inference import enforce_tool_choice, prepare_messages_for_infe
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
     ChatCompletionChunk,
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatCompletionResponseChoice,
     ChatMessage,
     Function,
     FunctionCall,
     StreamChoice,
     Tool,
+    UsageInfo,
 )
 from functionary.prompt_template import (
     PredefinedFuncTypes,
