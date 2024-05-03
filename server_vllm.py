@@ -24,7 +24,6 @@ from http import HTTPStatus
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
 
 import fastapi
-from fastapi_dtos import ChatCompletionRequest, ChatCompletionResponse, ChatCompletionResponseChoice, UsageInfo
 import uvicorn
 from fastapi import BackgroundTasks, Request
 from fastapi.exceptions import RequestValidationError
@@ -36,7 +35,7 @@ from vllm.entrypoints.openai.protocol import (
     LogProbs,
     ModelCard,
     ModelList,
-    ModelPermission
+    ModelPermission,
 )
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
@@ -48,11 +47,15 @@ from functionary.inference import enforce_tool_choice, prepare_messages_for_infe
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
     ChatCompletionChunk,
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatCompletionResponseChoice,
     ChatMessage,
     Function,
     FunctionCall,
     StreamChoice,
     Tool,
+    UsageInfo,
 )
 from functionary.prompt_template import (
     PredefinedFuncTypes,
@@ -66,6 +69,7 @@ TIMEOUT_KEEP_ALIVE = 5  # seconds
 logger = init_logger(__name__)
 served_model = None
 app = fastapi.FastAPI()
+
 
 def create_error_response(status_code: HTTPStatus, message: str) -> JSONResponse:
     return JSONResponse(
