@@ -1,7 +1,7 @@
 from typing import Any
 
 import modal
-from pydantic import validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 gpu_config_mapping = {
@@ -24,13 +24,13 @@ class Settings(BaseSettings):
     execution_timeout: int = 1200  # Generation timeout in seconds
     container_idle_timeout: int = 1200  # In seconds
     batch_size_per_container: int = 10
-    enable_grammar_sampling: bool = True
+    enable_grammar_sampling: bool = False
 
     model_config = SettingsConfigDict(env_prefix="modal_")
 
-    @validator("gpu_config", pre=True, always=True)
+    @field_validator("gpu_config")
     def set_gpu_config(cls, v, values):
-        model = values.get("model")
+        model = values.data.get("model")
         if model not in gpu_config_mapping:
             raise ValueError(f"GPU configuration for model {model} not found")
         return gpu_config_mapping[model]

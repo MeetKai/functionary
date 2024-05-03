@@ -58,13 +58,18 @@ def get_model():
         disable_log_requests=True,
         max_model_len=settings.max_model_length,
     )
-    engine = AsyncLLMEngine.from_engine_args(engine_args)
-    engine_model_config = asyncio.run(engine.get_model_config())
 
     # A separate tokenizer to map token IDs to strings.
     tokenizer = get_tokenizer(
         engine_args.tokenizer, tokenizer_mode=engine_args.tokenizer_mode
     )
+
+    # Overwrite vLLM's default ModelConfig.max_logprobs of 5
+    engine_args.max_logprobs = len(tokenizer.vocab.keys())
+
+    engine = AsyncLLMEngine.from_engine_args(engine_args)
+    engine_model_config = asyncio.run(engine.get_model_config())
+
     return engine, tokenizer, engine_model_config
 
 
