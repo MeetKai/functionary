@@ -24,7 +24,6 @@ from http import HTTPStatus
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
 
 import fastapi
-from fastapi_dtos import ChatCompletionRequest, ChatCompletionResponse, ChatCompletionResponseChoice, UsageInfo
 import uvicorn
 from fastapi import BackgroundTasks, Request
 from fastapi.exceptions import RequestValidationError
@@ -36,7 +35,7 @@ from vllm.entrypoints.openai.protocol import (
     LogProbs,
     ModelCard,
     ModelList,
-    ModelPermission
+    ModelPermission,
 )
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
@@ -44,6 +43,12 @@ from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
+from fastapi_dtos import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatCompletionResponseChoice,
+    UsageInfo,
+)
 from functionary.inference import enforce_tool_choice, prepare_messages_for_inference
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
