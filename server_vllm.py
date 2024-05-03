@@ -277,19 +277,14 @@ async def create_chat_completion(raw_request: Request):
                     if (
                         previous_texts == delta_text
                         and delta_text in prompt_template.fn_param_sep_token
+                        and prompt_template.version != "v1"
                     ):
                         if tool_choice == "none":
                             yield prompt_template.get_predefined_function_names(
                                 function_types=PredefinedFuncTypes.no_tool_call
-                            )[
-                                0
-                            ] + prompt_template.get_stop_token_for_function_parameter(
-                                stage="function"
-                            ), finish_reason
+                            )[0] + prompt_template.fn_param_sep_token, finish_reason
                         elif isinstance(tool_choice, Tool):
-                            yield tool_choice.function.name + prompt_template.get_stop_token_for_function_parameter(
-                                stage="function"
-                            ), finish_reason
+                            yield tool_choice.function.name + prompt_template.fn_param_sep_token, finish_reason
                     yield delta_text, finish_reason
         yield "", "stop"
 
@@ -298,7 +293,7 @@ async def create_chat_completion(raw_request: Request):
     ) -> AsyncGenerator[str, None]:
         generator = wrap_vllm_generator(tool_choice=tool_choice)
         async for response in generate_openai_format_from_stream_async(
-            generator, prompt_template
+            generator, prompt_template, tool_choice
         ):
             # Convert v1 from function_call to tool_calls if tools are provided instead of functions
             if prompt_template.version == "v1" and (
@@ -483,13 +478,15 @@ if __name__ == "__main__":
         served_model = args.model
 
     engine_args = AsyncEngineArgs.from_cli_args(args)
-    engine = AsyncLLMEngine.from_engine_args(engine_args)
-    engine_model_config = asyncio.run(engine.get_model_config())
-
     # A separate tokenizer to map token IDs to strings.
     tokenizer = get_tokenizer(
         engine_args.tokenizer, tokenizer_mode=engine_args.tokenizer_mode
     )
+    # Overwrite vLLM's default ModelConfig.max_logprobs of 5
+    engine_args.max_logprobs = len(tokenizer.vocab.keys())
+
+    engine = AsyncLLMEngine.from_engine_args(engine_args)
+    engine_model_config = asyncio.run(engine.get_model_config())
 
     uvicorn.run(
         app,
