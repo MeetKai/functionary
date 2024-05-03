@@ -28,20 +28,6 @@ class PromptTemplate:
         """
         raise NotImplementedError
 
-    @abstractmethod
-    def get_stop_token_for_function_parameter(
-        self, stage: Literal["function", "parameter"]
-    ) -> str:
-        """returns a str token which stops function/parameter name generation
-        e.g.: `"get_current_weather` with v1 prompt template -> returns id = 28747 (':' token)
-        so the generation gets forced towards `"get_current_weather:\n{...`
-        Args:
-            stage (str): Whether to get function name or parameter name stopping token
-        Returns:
-            str: str token
-        """
-        raise NotImplementedError
-
     def get_predefined_function_names(self, function_types: Any) -> List[str]:
         """returns a list of predefined function names. Some prompt template versions may
         require a default/predefined function name to indicate for example, no function called.
@@ -66,8 +52,7 @@ class PromptTemplate:
               - pre-function: the generation prior to function name generation
               - function: when the model is generating a function name
               - pre-parameter: when the model is generating the part between function name and parameter
-              - parameter-name: when the model is generating a parameter name
-              - parameter-value: when the model is generating a parameter value
+              - parameter: when the model is generating parameters
               - no-tool-call: when the model is generating content
             - curr_tokens: all the tokens for the current stage being generated
             - curr_text: curr_tokens but in string text form
@@ -85,7 +70,7 @@ class PromptTemplate:
     ) -> Dict:
         """Receives a generation state, updates and returns it. This is only used when
         grammar sampling is enabled in inference. This functions parses the generated
-        tokens and identifies the stage of generation (pre-function, function, parameter-name,
+        tokens and identifies the stage of generation (pre-function, function, parameter,
         etc.)
         Args:
             gen_state (Dict): The current generation state. It contains the following:
@@ -93,8 +78,7 @@ class PromptTemplate:
               - pre-function: the generation prior to function name generation
               - function: when the model is generating a function name
               - pre-parameter: when the model is generating the part between function name and parameter
-              - parameter-name: when the model is generating a parameter name
-              - parameter-value: when the model is generating a parameter value
+              - parameter: when the model is generating parameters
               - no-tool-call: when the model is generating content
               - code-interpreter: when the model is generating code
             - curr_tokens: all the tokens for the current stage being generated
@@ -125,56 +109,33 @@ class PromptTemplate:
                     "add_predefined_fns": gen_state["add_predefined_fns"],
                 }
                 gen_state["stage"] = "function"
-        elif gen_state["stage"] == "function":
-            # Remove all unnecessary suffixes by checking whether stop token is in curr_text
-            if (
-                self.get_stop_token_for_function_parameter(stage="function")
-                in gen_state["curr_text"]
-            ):
-                curr_text = gen_state["curr_text"].rstrip()
-                while True:
-                    if any([curr_text == option for option in options]):
-                        break
-                    curr_text = curr_text[:-1]
-                gen_state["func_name"] = curr_text
-            else:
-                gen_state["func_name"] = gen_state["curr_text"].rstrip()
 
-            # Check if the new state is in "pre-parameter" stage
-            if (
-                sum([gen_state["func_name"] == option for option in options]) == 1
-                and sum(
-                    [option.startswith(gen_state["func_name"]) for option in options]
+        elif gen_state["stage"] == "function":
+            curr_text = gen_state["curr_text"]
+            # Generate options_mask
+            options_mask = [
+                (
+                    True
+                    if option.startswith(curr_text.lstrip(" "))
+                    or curr_text.lstrip(" ").startswith(option)
+                    else False
                 )
-                == 1
-            ):
+                for option in options
+            ]
+            # Transition to "pre-parameter" when only 1 element in options_mask is True
+            if sum(options_mask) == 1 and curr_text == options[options_mask.index(True)]:
+                # Use the suffix from curr_text as the prefix in "pre-parameter"
+                tool_name = options[options_mask.index(True)]
+                suffix = curr_text[len(tool_name) :]
+                gen_state["func_name"] = tool_name
+                gen_state["curr_text"] = suffix
+                gen_state["curr_tokens"] = [new_token_id] if suffix != "" else []
                 gen_state["stage"] = "pre-parameter"
 
-                # Update curr_text and curr_tokens
-                if (
-                    self.get_stop_token_for_function_parameter(stage="function")
-                    in gen_state["curr_text"]
-                ):
-                    gen_state["curr_text"] = tokenizer.decode([new_token_id])
-                    gen_state["curr_tokens"] = [new_token_id]
-                else:
-                    gen_state["curr_text"], gen_state["curr_tokens"] = "", []
         elif gen_state["stage"] == "pre-parameter":
-            # First, check if the new state is "parameter-name" (either '{' or '{"')
-            # or "no-tool-call" ('{}')
             if self.fn_param_sep_token in gen_state["curr_text"]:
-                # Check if no arguments are called and go straight to "pre-function"
-                if "}" in gen_state["curr_text"]:
-                    gen_state["stage"] = "pre-function"
-                elif '"' in gen_state["curr_text"]:
-                    gen_state["stage"] = "parameter-name"
-                    if gen_state["curr_text"].endswith('"'):
-                        gen_state["curr_text"], gen_state["curr_tokens"] = "", []
-                    else:
-                        gen_state["curr_tokens"] = [new_token_id]
-                        gen_state["curr_text"] = tokenizer.decode([new_token_id])
-            # Secondly, check if the new state is in "no-tool-call" or "code-interpreter" stage
-            elif self.fn_param_sep_token.rstrip("{").rstrip() in gen_state["curr_text"]:
+                gen_state["curr_text"], gen_state["curr_tokens"] = "", []
+                # Check if the new state is "no-tool-call" or "code-interpreter" or "parameter"
                 if gen_state["func_name"] in self.get_predefined_function_names(
                     function_types=PredefinedFuncTypes.no_tool_call
                 ):
@@ -183,71 +144,18 @@ class PromptTemplate:
                     function_types=PredefinedFuncTypes.code_interpreter
                 ):
                     gen_state["stage"] = "code-interpreter"
+                else:
+                    gen_state["stage"] = "parameter"
 
-        elif gen_state["stage"] == "parameter-name":
+        elif gen_state["stage"] == "parameter":
             # Get the latest param
             latest_param_str = gen_state["curr_text"]
-
-            # Remove unneccesary prefixes before the parameter-name part
-            if len(gen_state["curr_tokens"]) > 0 and '"' in tokenizer.decode(
-                [gen_state["curr_tokens"][0]]
-            ):
-                latest_param_str = latest_param_str[latest_param_str.find('"') + 1 :]
-
-            # Check if the new state is in "parameter-value" stage
-            stop_token = self.get_stop_token_for_function_parameter(stage="parameter")
-            if stop_token in latest_param_str:
-                pattern = stop_token + r".*$"
-                match_res = re.search(pattern, latest_param_str, re.DOTALL)
-                if bool(match_res):
-                    gen_state["param_names"].append(
-                        gen_state["curr_text"].removesuffix(match_res.group(0))
-                    )
-                    gen_state["stage"] = "parameter-value"
-                    gen_state["curr_text"] = match_res.group(0)
-                    new_tokens = []
-                    for token in gen_state["curr_tokens"][::-1]:
-                        new_tokens = [token] + new_tokens
-                        next_text = tokenizer.decode(new_tokens)
-                        if next_text.endswith(match_res.group(0)):
-                            gen_state["curr_tokens"] = new_tokens
-                            break
-        elif gen_state["stage"] == "parameter-value":
-            latest_param_val = gen_state["curr_text"]
-            stop_token = self.get_stop_token_for_function_parameter(stage="parameter")
-
-            # Remove unnecessary prefixes in latest_param_val
-            if not latest_param_val.startswith(stop_token):
-                latest_param_val = latest_param_val[latest_param_val.find(stop_token) :]
-
             # Check if the new state is in "pre-function" stage
             try:
-                _ = json.loads('{"' + gen_state["param_names"][-1] + latest_param_val)
+                _ = json.loads(latest_param_str)
                 gen_state["stage"] = "pre-function"
             except:
                 pass
-
-            # Check if the current state can be converted to json, it means the
-            # new state is back to "parameter-name" stage
-            pattern = r',[\s]*"'
-            match_res = re.findall(pattern, latest_param_val, re.DOTALL)
-            if '"' in tokenizer.decode(new_token_id) and len(match_res) > 0:
-                latest_match = match_res[-1]
-                try:
-                    _ = json.loads(
-                        '{"'
-                        + gen_state["param_names"][-1]
-                        + latest_param_val[: latest_param_val.rfind(latest_match)]
-                        + "}"
-                    )
-                    gen_state["stage"] = "parameter-name"
-                    if latest_param_val.endswith('"'):
-                        gen_state["curr_text"], gen_state["curr_tokens"] = "", []
-                    else:
-                        gen_state["curr_tokens"] = [new_token_id]
-                        gen_state["curr_text"] = tokenizer.decode([new_token_id])
-                except:
-                    pass
         elif gen_state["stage"] in ["no-tool-call", "code-interpreter"]:
             # probability of stop token is not 100% at the end of no-tool-call
             # We still need to check if the stage will go to "function" by checking
@@ -275,11 +183,14 @@ class PromptTemplate:
         """Applies grammar-sampling to the token generation and returns a
         newly sampled token.
 
-        This function checks whether the model-sampled token helps towards
-        forming one of the function names or parameter names. It loops through
-        a list of token ids sorted in descending order by the log probabilities.
-        It replaces the output token if the grammar-sampled token is different
-        from the model-sampled token
+        For function name, the list of token ids sorted in descending order by
+        log probabilities will be looped through until the token that fits the
+        function names is reached. The grammar-sampled token replaces the
+        output token if it is different from the model-sampled token.
+
+        For parameter name, the lm-format-enforcer package is used to generate
+        the parameters in JSON format, obeying the schema of the tool.
+
         Args:
             gen_state (Dict): The current generation state
             options (List): The list of available function/parameter names depending on gen_state["stage"]
@@ -291,35 +202,27 @@ class PromptTemplate:
         """
         grammar_sampled_token_id, grammar_sampled_token = None, None
 
-        # Form the functions/parameters options
+        # Form the functions options
         options = []
-        if gen_state["stage"] in ["pre-function", "function"]:
+        if gen_state["stage"] == "function":
             options = [tool_or_func["name"] for tool_or_func in tools_or_functions]
-        elif gen_state["stage"] == "pre-parameter":
-            options = [self.fn_param_sep_token]
-        else:
-            func_name = gen_state["func_name"]
-            for tool_or_func in tools_or_functions:
-                if tool_or_func["name"] == func_name:
-                    options = list(tool_or_func["parameters"]["properties"].keys())
-                    break
-        # Assume prompt template versions > 1 have "all" in function options
-        # Subjected to changes in future versions
-        # Concatenate the list of predefined function names in the respective prompt
-        # template version. For e.g., v2 returns ["all"]
-        if gen_state["stage"] == "function" and gen_state["add_predefined_fns"] is True:
-            options += self.get_predefined_function_names(function_types="all")
+            # Assume prompt template versions > 1 have "all" in function options
+            # Subjected to changes in future versions
+            # Concatenate the list of predefined function names in the respective prompt
+            # template version. For e.g., v2 returns ["all"]
+            if gen_state["add_predefined_fns"] is True:
+                options += self.get_predefined_function_names(function_types="all")
 
-        # No grammar sampling needed if gen_state not in "function" or "pre-parameter"
-        # or "parameter-name" stages. Just return the model_sampled_token_id
-        if gen_state["stage"] not in ["function", "pre-parameter", "parameter-name"]:
+        # No grammar sampling needed if gen_state not in "function" or
+        # "pre-parameter" stages. Just return the model_sampled_token_id
+        if gen_state["stage"] not in ["function", "pre-parameter"]:
             grammar_sampled_token_id = model_sampled_token_id
             grammar_sampled_token = tokenizer.decode([model_sampled_token_id])
 
-        # Loop through the list of token ids sorted in descending order. Form a mask made
-        # up of booleans where the index of the mask == index of function/parameter name
-        # in function/parameter options. The element is True if the sampled_token
-        # helps in forming the function/parameter name. Else, False.
+        # Loop through the list of token ids sorted in descending order. For "function"
+        # stage, form a mask made up of booleans where the index of the mask == index
+        # of function name in function options. The element is True if the sampled_token
+        # helps in forming the function. Else, False.
         if grammar_sampled_token_id is None:
             for i, sampled_token_ind in enumerate(delta_token_ids):
                 sampled_token = tokenizer.decode(
@@ -349,63 +252,10 @@ class PromptTemplate:
                         grammar_sampled_token_id = sampled_token_ind
                         grammar_sampled_token = sampled_token
                         break
+                # "pre-parameter" stage
                 elif gen_state["stage"] == "pre-parameter":
-                    # Get the suffix after fn_param_sep_token and check if crit_char is in it
-                    if self.fn_param_sep_token in new_curr_tokens:
-                        suffix = new_curr_tokens[
-                            new_curr_tokens.index(self.fn_param_sep_token)
-                            + len(self.fn_param_sep_token) :
-                        ]
-                    else:
-                        suffix = new_curr_tokens
-                    crit_bool = any([crit_char in suffix for crit_char in ['"', "}"]])
-
-                    options_mask = []
-                    for option in options:
-                        if option.startswith(new_curr_tokens.lstrip(" ")) or crit_bool:
-                            options_mask.append(True)
-                        else:
-                            options_mask.append(False)
-
-                    # We just need to check if the option (fn_param_sep_token) is True
-                    # or fn_param_sep_token + one of ['}', '"'] is present
-                    if any(options_mask) and sampled_token.strip(" ") != "":
-                        grammar_sampled_token_id = sampled_token_ind
-                        grammar_sampled_token = sampled_token
-                        break
-                else:
-                    # Mask away those wellformed parameter names while creating options_mask
-                    wellformed_params = gen_state["param_names"]
-
-                    # Remove unneccesary prefixes before the parameter-name part
-                    if len(gen_state["curr_tokens"]) > 0 and '"' in tokenizer.decode(
-                        [gen_state["curr_tokens"][0]]
-                    ):
-                        new_curr_tokens = new_curr_tokens[
-                            new_curr_tokens.find('"') + 1 :
-                        ]
-
-                    options_mask = []
-                    for option in options:
-                        if option not in wellformed_params and option.startswith(
-                            new_curr_tokens
-                        ):
-                            options_mask.append(True)
-                        else:
-                            options_mask.append(False)
-
-                    # Same logic as function name, except that we check whether the token
-                    # is a stopping token for parameter name generation.
-                    if (
-                        (
-                            self.get_stop_token_for_function_parameter(
-                                stage="parameter"
-                            )
-                            in new_curr_tokens
-                        )
-                        or any(options_mask)
-                        and sampled_token.strip(" ") != ""
-                    ):
+                    # Check if new_curr_tokens is a prefix of fn_param_sep_token
+                    if self.fn_param_sep_token.startswith(new_curr_tokens):
                         grammar_sampled_token_id = sampled_token_ind
                         grammar_sampled_token = sampled_token
                         break
@@ -577,6 +427,7 @@ class PromptTemplate:
         current_state: Dict[str, Any],
         delta_text: str,
         finish_reason: Optional[str],
+        tool_choice: Any,
     ) -> Tuple[Dict[str, Any], Union[None, Dict, List[Dict]]]:
         """This function is used for streaming
 
