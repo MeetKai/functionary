@@ -18,7 +18,7 @@ from functionary.train.custom_datasets import prepare_training_inputs
 
 def extract_unmasked_chunks(labels: List[int]) -> List[List[int]]:
     """This function is used to extract unmasked chunks of integer
-    For example, labels = [-100, -100, 1, 2, 3, -100, -100, 4, 5] --> chunks = [[1,2,3], [4,5]]
+    For example,  labels = [-100, -100, 1, 2, 3, -100, -100, 4, 5] --> chunks = [[1,2,3], [4,5]]
     Args:
         labels (List[int]): list of integer containing token_id and -100
 
