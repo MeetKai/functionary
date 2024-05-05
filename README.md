@@ -45,7 +45,8 @@ We also offer our own function-calling grammar sampling feature which constrains
 ```shell
 python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len 8192 --tensor-parallel-size 2 --enable-grammar-sampling
 ```
-</details>
+
+Note: Our vLLM server supports the `tool_choice="required"` feature in OpenAI Chat Completion API exclusively **only when grammar sampling is enabled**.
 
 
 **Docker**
@@ -233,7 +234,7 @@ For more details, please refer to the [Function Calling section](https://github.
 
 **Note:**
 - For Functionary in llama-cpp-python, the default system messages are added automatically during the API call. Therefore, there is no need to provide the default system messages in `messages`.
-- llama-cpp-python's OpenAI-compatible server does not support streaming for Functionary models yet.
+- Streaming feature for Functionary models in both the normal chat completion and in llama-cpp-python's OpenAI-compatible server is officially supported from v0.2.70 onwards.
 
 </details>
 
@@ -292,37 +293,35 @@ FUNCTION: {'price': {'price': '$20000'}}
 ASSISTANT: The price of the car named Tang is $20,000.
 ```
 
-## Inference and Deployment using Modal.com
+## Serverless Deployment using Modal.com
 
-   Edit **modal_server_vllm.py** for your preferred Functionary Model and GPU Configuration and follow these steps:
+Serverless deployment of Functionary models is supported via the *modal_server_vllm.py* script. After signing up and installing Modal, follow these steps to deploy our vLLM server on Modal:
 
-   1. **Create dev environment**
+1. **Create dev environment**
+
+```shell Python
+modal environment create dev
+```
+If you have a dev environment created already, there is no need to create another one. Just configure to it in the next step.
+
+2. **Configure dev environment**
+
+```shell Python
+modal config set-environment dev
+``` 
+
+
+3. **Serve Functionary Model**
     
-    ```shell Python
-    modal environment create dev
-    ```
+```shell Python
+modal serve modal_server_vllm
+```
 
-    > ℹ️ If you have a dev environment created already no need to create another one. Just configure to it in the next step.
+4. **Deploy Runner**
 
-   2. **Configure dev environment**
-
-    ```shell Python
-    modal config set-environment dev
-    ``` 
-    > ⚠️ We are using our Dev environment right now. Switch to **main** when deploying to production.
-
-
-   3. **Serve Functionary Model**
-     
-      ```shell Python
-      modal serve modal_server_vllm
-      ```
-
-   4. **Deploy Runner**
-
-      ```shell Python
-      modal deploy modal_server_vllm
-      ```
+```shell Python
+modal deploy modal_server_vllm
+```
   
 # Use Cases
 
