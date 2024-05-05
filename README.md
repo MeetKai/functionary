@@ -46,7 +46,9 @@ We also offer our own function-calling grammar sampling feature which constrains
 python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len 8192 --tensor-parallel-size 2 --enable-grammar-sampling
 ```
 
-Note: Our vLLM server supports the `tool_choice="required"` feature in OpenAI Chat Completion API exclusively **only when grammar sampling is enabled**.
+Note:
+- Grammar Sampling support is applicable only for the V2 models. There is no such support for V1 models.
+- Our vLLM server supports the `tool_choice="required"` feature in OpenAI Chat Completion API exclusively **only when grammar sampling is enabled**.
 
 
 **Docker**
