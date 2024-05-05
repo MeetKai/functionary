@@ -713,7 +713,7 @@ class AsyncLLMEngine:
 
         # Initialize gen_state based on tool_choice
         if tool_choice is not None:
-            if tool_choice == "none":
+            if tool_choice in ["none", "required"]:
                 tool_choice_name = tool_choice
             elif tool_choice == "auto":
                 tool_choice_name = ""

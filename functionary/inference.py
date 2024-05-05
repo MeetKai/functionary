@@ -74,7 +74,7 @@ def prepare_messages_for_inference(
     if (
         prompt_template.version != "v1"
         and tool_choice is not None
-        and tool_choice != "auto"
+        and tool_choice not in ["auto", "required"]
     ):
         if tool_choice == "none":
             final_prompt += prompt_template.get_predefined_function_names(

@@ -47,6 +47,10 @@ class PromptTemplateV2(PromptTemplate):
         if tool_choice == "none":
             add_predefined_fns = False
             stage = "no-tool-call"
+        # Normal generation (function name first without "all") (tool_choice="returned")
+        elif tool_choice == "required":
+            add_predefined_fns = False
+            stage = "function"
         # To force a function call (tool_choice={"type": "function", "function": {...}})
         elif tool_choice != "":
             add_predefined_fns = False
