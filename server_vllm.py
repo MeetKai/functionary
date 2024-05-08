@@ -218,6 +218,14 @@ async def create_chat_completion(raw_request: Request):
         tok_ids = tokenizer.encode(stop_tok, add_special_tokens=False)
         stop_token_ids.append(tok_ids[-1])
 
+    # In vLLM==0.4.1, SamplingParams.logprobs has a proportional effect on latency
+    # We need to limit the size of SamplingParams.logprobs as a temporary fix first
+    # while investigating this problem in vLLM
+    if args.grammar_sampling is False:
+        logprobs = None
+    else:
+        logprobs = 200
+
     try:
         sampling_params = SamplingParams(
             n=request.n,
@@ -233,7 +241,7 @@ async def create_chat_completion(raw_request: Request):
             ignore_eos=request.ignore_eos,
             use_beam_search=request.use_beam_search,
             skip_special_tokens=False,
-            logprobs=len(tokenizer.vocab.keys()),
+            logprobs=logprobs,
         )
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
