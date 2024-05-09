@@ -60,7 +60,7 @@ from functionary.prompt_template import (
     PromptTemplate,
     get_prompt_template_from_tokenizer,
 )
-from functionary.prompt_template.prompt_template_v2 import get_random_tool_call_id
+from functionary.prompt_template.prompt_utils import get_random_tool_call_id
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 

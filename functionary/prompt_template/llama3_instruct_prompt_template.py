@@ -26,7 +26,8 @@ def convert_to_llama3_messages(messages: List[Dict]) -> List[Dict]:
 class Llam3InstructTemplate(PromptTemplate):
     function_separator = "<|reserved_special_token_249|>"
     version = "v2.llama3_instruct"
-
+    fn_param_sep_token = "\n"
+    
     def get_additional_tokens(self) -> List[str]:
         return []
 
