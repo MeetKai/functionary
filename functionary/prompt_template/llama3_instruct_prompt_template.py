@@ -123,9 +123,6 @@ class Llam3InstructTemplate(PromptTemplate):
     def pre_process_messages_before_inference(self, messages: List[Dict]) -> List[Dict]:
         return prompt_utils.reorder_tool_messages_by_tool_call_ids(messages)
 
-    def get_chat_template_jinja(self):
-        return "{% set loop_messages = messages %}{% for message in loop_messages %}{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'] | trim + '<|eot_id|>' %}{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{% endif %}"
-
     def update_state_for_function(self, current_state):
         current_state["response_type"] = "function"
         current_state["skip_until_reach"] = "\n"
@@ -221,32 +218,26 @@ class Llam3InstructTemplate(PromptTemplate):
                         current_state, delta_text, False, False, finish_reason
                     )
 
-    def get_chat_template_jinja2(self) -> str:
+    def get_chat_template_jinja(self) -> str:
         chat_template = """{% for message in messages %}
         {% if message['role'] == 'user' or message['role'] == 'system' %}
-            {{ '<|from|>' + message['role'] + '\n<|recipient|>all\n<|content|>' + message['content'] + '\n' }}<br>
+            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}<br>
         {% elif message['role'] == 'tool' %}
-            {{ '<|from|>' + message['name'] + '\n<|recipient|>all\n<|content|>' + message['content'] + '\n' }}<br>
+            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + 'name=' + message['name'] + '\n' + message['content'] + '<|eot_id|>' }}<br>
         {% else %}
-            {% set contain_content='no'%}
+            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'}}<br>
             {% if message['content'] is not none %}
-                {{ '<|from|>assistant\n<|recipient|>all\n<|content|>' + message['content'] }}<br>
-                {% set contain_content='yes'%}
+                {{ message['content'] }}<br>
             {% endif %}
             {% if 'tool_calls' in message and message['tool_calls'] is not none %}
                 {% for tool_call in message['tool_calls'] %}
-                    {% set prompt='<|from|>assistant\n<|recipient|>' + tool_call['function']['name'] + '\n<|content|>' + tool_call['function']['arguments'] %}
-                    {% if loop.index == 1 and contain_content == "no" %}
-                        {{ prompt }}<br>
-                    {% else %}
-                        {{ '\n' + prompt}}<br>
-                    {% endif %}
+                    {{ '<|reserved_special_token_249|>' + tool_call['function']['name'] + '\n' + tool_call['function']['arguments'] }}<br>
                 {% endfor %}
             {% endif %}
-            {{ '<|stop|>\n' }}<br>
+            {{ '<|eot_id|>' }}<br>
         {% endif %}
         {% endfor %}
-        {% if add_generation_prompt %}{{ '<|from|>assistant\n<|recipient|>' }}{% endif %}
+        {% if add_generation_prompt %}{{ '<|start_header_id|>{role}<|end_header_id|>\n\n' }}{% endif %}
         """
         chat_template = chat_template.replace("    ", "")
         chat_template = chat_template.replace("<br>\n", "")
