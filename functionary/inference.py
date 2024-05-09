@@ -81,7 +81,9 @@ def prepare_messages_for_inference(
                 function_types=PredefinedFuncTypes.no_tool_call
             )[0]
         else:
-            final_prompt += prompt_template.get_force_function_call_prefix(tool_choice.function.name)
+            final_prompt += prompt_template.get_force_function_call_prefix(
+                tool_choice.function.name
+            )
 
     input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
     input_ids = input_ids.to(device)

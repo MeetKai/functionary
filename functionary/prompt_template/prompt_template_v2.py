@@ -269,10 +269,10 @@ class PromptTemplateV2(PromptTemplate):
                 delta_text = delta_text[1:]
 
         current_state["current_text"] += delta_text
-
         if finish_reason is not None:
             if current_state["response_type"] == "function":
                 finish_reason = "tool_calls"
+
             return current_state, prompt_utils.get_text_delta_response(
                 None, False, finish_reason
             )
@@ -316,7 +316,9 @@ class PromptTemplateV2(PromptTemplate):
             else:
                 if current_state["response_type"] == "function":
                     if first_time:
-                        current_state["call_id"] = prompt_utils.get_random_tool_call_id()
+                        current_state["call_id"] = (
+                            prompt_utils.get_random_tool_call_id()
+                        )
                         current_state["func_index"] += 1
                         responses = []
                         responses.append(
@@ -340,10 +342,14 @@ class PromptTemplateV2(PromptTemplate):
                     if first_time:
                         current_state["first_time"] = False
                         responses.append(
-                            prompt_utils.get_text_delta_response("", True, finish_reason)
+                            prompt_utils.get_text_delta_response(
+                                "", True, finish_reason
+                            )
                         )
                     responses.append(
-                        prompt_utils.get_text_delta_response(delta_text, True, finish_reason)
+                        prompt_utils.get_text_delta_response(
+                            delta_text, True, finish_reason
+                        )
                     )
 
                     return current_state, responses

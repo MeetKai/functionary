@@ -445,10 +445,10 @@ class PromptTemplate:
             Tuple[Dict[str, Any], Optional[Dict]]: updated state, response: can be None, a dictionary: {} or a list of dictionary: [{}, ..., {}]
         """
         raise NotImplementedError
-    
+
     @abstractmethod
     def get_force_function_call_prefix(self, function_name: str):
-        """This function will be used for force-function call 
+        """This function will be used for force-function call
 
         Args:
             function_name (str): _description_

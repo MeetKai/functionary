@@ -27,7 +27,7 @@ class Llam3InstructTemplate(PromptTemplate):
     function_separator = "<|reserved_special_token_249|>"
     version = "v2.llama3_instruct"
     fn_param_sep_token = "\n"
-    
+
     def get_additional_tokens(self) -> List[str]:
         return []
 
@@ -45,10 +45,13 @@ class Llam3InstructTemplate(PromptTemplate):
         for stop in self.get_stop_tokens_for_generation():
             if llm_output.endswith(stop):
                 llm_output = llm_output[: -len(stop)]
-        
+
         # add forced-function from tool_choice if exists
         if type(tool_choice) is not str:
-            llm_output = self.get_force_function_call_prefix(tool_choice.function.name) + llm_output
+            llm_output = (
+                self.get_force_function_call_prefix(tool_choice.function.name)
+                + llm_output
+            )
 
         chunks = llm_output.split(self.function_separator)
         chunks = [chunk.strip() for chunk in chunks if len(chunk.strip()) > 0]
@@ -164,24 +167,32 @@ class Llam3InstructTemplate(PromptTemplate):
                 "skip_until_reach": None,  # at first we will skip until reach <|content|>
                 "first_time": True,  # if first_time we return an tempty delta with role=assistant
             }
-            
+
             if tool_choice == "none":
                 current_state["response_type"] = "text"
-                
+
             elif type(tool_choice) is not str:
                 self.update_state_for_function(current_state)
                 current_state["func_name"] = tool_choice.function.name
-                current_state["skip_until_reach"] = None # function is already defined, no need to wait for new tokens to define
+                current_state["skip_until_reach"] = (
+                    None  # function is already defined, no need to wait for new tokens to define
+                )
                 current_state["current_text"] += delta_text
-                
+
                 # first return a delta with function_name only
-                responses = [prompt_utils.get_function_delta_response(current_state, "", True, False, finish_reason)]
+                responses = [
+                    prompt_utils.get_function_delta_response(
+                        current_state, "", True, False, finish_reason
+                    )
+                ]
                 # next return the first chunk of params
-                responses.append(prompt_utils.get_function_delta_response(
+                responses.append(
+                    prompt_utils.get_function_delta_response(
                         current_state, delta_text, False, False, finish_reason
-                    ))
+                    )
+                )
                 return current_state, responses
-            
+
         current_state["current_text"] += delta_text
 
         if finish_reason is not None:  # handle if finish
