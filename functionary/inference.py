@@ -72,7 +72,7 @@ def prepare_messages_for_inference(
     )
 
     if (
-        prompt_template.version != "v1"
+        prompt_template.version == "v2"
         and tool_choice is not None
         and tool_choice not in ["auto", "required"]
     ):
@@ -84,6 +84,7 @@ def prepare_messages_for_inference(
             final_prompt += prompt_template.get_force_function_call_prefix(
                 tool_choice.function.name
             )
+    breakpoint()
 
     input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
     input_ids = input_ids.to(device)
