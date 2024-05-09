@@ -8,6 +8,7 @@ from functionary.prompt_template.base_template import (
     PredefinedFuncTypes,
     PromptTemplate,
 )
+from functionary.prompt_template import prompt_utils
 
 
 class PromptTemplateV2(PromptTemplate):
@@ -166,7 +167,7 @@ class PromptTemplateV2(PromptTemplate):
                 tool_calls.append(
                     {
                         "function": {"name": recipient, "arguments": content},
-                        "id": get_random_tool_call_id(),
+                        "id": prompt_utils.get_random_tool_call_id(),
                         "type": "function",
                     }
                 )
@@ -181,100 +182,7 @@ class PromptTemplateV2(PromptTemplate):
         Returns:
             List[Dict]: _description_
         """
-        result = []
-        index = 0
-        while index < len(messages):
-            message = messages[index]
-            tool_calls = message.get("tool_calls", None)
-
-            result.append(message)
-            if message["role"] == "assistant" and tool_calls:
-                num_calls = len(tool_calls)
-                if (
-                    tool_calls[0].get("id", None) is not None
-                ):  # if tool_call contains "id" for mapping
-                    tool_call_ids = [item["id"] for item in tool_calls]
-
-                    tool_messages = [messages[index + 1 + j] for j in range(num_calls)]
-                    id_2_tool_messages = {
-                        item["tool_call_id"]: item for item in tool_messages
-                    }
-                    new_messages = [id_2_tool_messages[cid] for cid in tool_call_ids]
-
-                    result.extend(new_messages)
-                    index += num_calls + 1
-                else:
-                    index += 1
-            else:
-                index += 1
-        return result
-
-    def get_function_delta_response(
-        self,
-        current_state: Dict,
-        delta_text: str,
-        first_call: bool,
-        return_role: bool,
-        finish_reason: Optional[str],
-    ) -> Dict:
-        """Return delta for tool_call in streaming
-
-        Args:
-            current_state (Dict): _description_
-            delta_text (str): _description_
-            first_call (bool): _description_
-            return_role (bool): _description_
-            finish_reason (Optional[str]): _description_
-
-        Returns:
-            Dict: _description_
-        """
-        return {
-            "delta": {
-                "content": None,
-                "function_call": None,
-                "role": None if not return_role else "assistant",
-                "tool_calls": [
-                    {
-                        "index": current_state["func_index"],
-                        "id": (
-                            current_state["call_id"] if first_call else None
-                        ),  # only return call_id at the first time
-                        "function": {
-                            "arguments": delta_text,
-                            "name": current_state["func_name"] if first_call else None,
-                        },
-                        "type": "function" if first_call else None,
-                    }
-                ],
-            },
-            "finish_reason": finish_reason,
-            "index": 0,
-        }
-
-    def get_text_delta_response(
-        self, delta_text: Optional[str], return_role: bool, finish_reason: Optional[str]
-    ) -> Dict:
-        """Return delta for text_response in streaming
-
-        Args:
-            delta_text (Optional[str]): _description_
-            return_role (bool): _description_
-            finish_reason (Optional[str]): _description_
-
-        Returns:
-            Dict: _description_
-        """
-        return {
-            "delta": {
-                "content": delta_text,
-                "function_call": None,
-                "role": None if not return_role else "assistant",
-                "tool_calls": None,
-            },
-            "finish_reason": finish_reason,
-            "index": 0,
-        }
+        return prompt_utils.reorder_tool_messages_by_tool_call_ids(messages)
 
     def get_recipient(self, current_text: str) -> str:
         """Get recipient from the llm_output
@@ -353,7 +261,7 @@ class PromptTemplateV2(PromptTemplate):
         if finish_reason is not None:
             if current_state["response_type"] == "function":
                 finish_reason = "tool_calls"
-            return current_state, self.get_text_delta_response(
+            return current_state, prompt_utils.get_text_delta_response(
                 None, False, finish_reason
             )
 
@@ -369,13 +277,13 @@ class PromptTemplateV2(PromptTemplate):
 
                 if recipient == "all":
                     current_state["response_type"] = "text"
-                    return current_state, self.get_text_delta_response(
+                    return current_state, prompt_utils.get_text_delta_response(
                         "", True, finish_reason
                     )
                 else:
                     current_state["response_type"] = "function"
                     current_state["func_name"] = recipient
-                    current_state["call_id"] = get_random_tool_call_id()
+                    current_state["call_id"] = prompt_utils.get_random_tool_call_id()
                     current_state["func_index"] += 1
 
                     responses = []
@@ -383,10 +291,12 @@ class PromptTemplateV2(PromptTemplate):
                         first_time
                     ):  # first chunk of function_call is a message where all fields are None, except role
                         responses.append(
-                            self.get_text_delta_response(None, True, finish_reason)
+                            prompt_utils.get_text_delta_response(
+                                None, True, finish_reason
+                            )
                         )
                     responses.append(
-                        self.get_function_delta_response(
+                        prompt_utils.get_function_delta_response(
                             current_state, "", True, False, finish_reason
                         )
                     )
@@ -403,16 +313,10 @@ class PromptTemplateV2(PromptTemplate):
 
             else:
                 if current_state["response_type"] == "function":
-                    return current_state, self.get_function_delta_response(
+                    return current_state, prompt_utils.get_function_delta_response(
                         current_state, delta_text, False, False, finish_reason
                     )
                 else:  # response_type=text
-                    return current_state, self.get_text_delta_response(
+                    return current_state, prompt_utils.get_text_delta_response(
                         delta_text, True, finish_reason
                     )
-
-
-def get_random_tool_call_id():
-    return "call_" + "".join(
-        [random.choice(string.ascii_letters + string.digits) for _ in range(24)]
-    )
