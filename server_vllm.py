@@ -29,7 +29,6 @@ from fastapi import BackgroundTasks, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, validator
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.entrypoints.openai.protocol import (
     ErrorResponse,
@@ -37,7 +36,6 @@ from vllm.entrypoints.openai.protocol import (
     ModelCard,
     ModelList,
     ModelPermission,
-    UsageInfo,
 )
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
@@ -49,11 +47,15 @@ from functionary.inference import enforce_tool_choice, prepare_messages_for_infe
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
     ChatCompletionChunk,
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatCompletionResponseChoice,
     ChatMessage,
     Function,
     FunctionCall,
     StreamChoice,
     Tool,
+    UsageInfo,
 )
 from functionary.prompt_template import (
     PredefinedFuncTypes,
@@ -67,74 +69,6 @@ TIMEOUT_KEEP_ALIVE = 5  # seconds
 logger = init_logger(__name__)
 served_model = None
 app = fastapi.FastAPI()
-
-
-class ChatCompletionRequest(BaseModel):
-    model: str
-    messages: List[ChatMessage]
-    functions: Optional[List[Function]] = None
-    tools: Optional[List[Tool]] = None
-    tool_choice: Optional[Union[str, Tool]] = None
-    temperature: Optional[float] = 0.7
-    top_p: Optional[float] = 1.0
-    n: Optional[int] = 1
-    max_tokens: Optional[int] = 512
-    stop: Optional[Union[str, List[str]]] = Field(default_factory=list)
-    stream: Optional[bool] = False
-    presence_penalty: Optional[float] = 0.0
-    frequency_penalty: Optional[float] = 0.0
-    logit_bias: Optional[Dict[str, float]] = None
-    user: Optional[str] = None
-    # Additional parameters supported by vLLM
-    best_of: Optional[int] = None
-    top_k: Optional[int] = -1
-    ignore_eos: Optional[bool] = False
-    use_beam_search: Optional[bool] = False
-
-    @validator("tool_choice", always=True)
-    def validate_tool_choice(cls, value, values):
-        if value is None:
-            if values["tools"] is None and values["functions"] is None:
-                return "none"
-            else:
-                return "auto"
-        return value
-
-
-class ChatCompletionResponseChoice(BaseModel):
-    index: int
-    message: ChatMessage
-    finish_reason: Optional[
-        Literal["stop", "length", "function_call", "tool_calls"]
-    ] = None
-
-
-class ChatCompletionResponse(BaseModel):
-    id: str = Field(default_factory=lambda: f"chatcmpl-{random_uuid()}")
-    object: str = "chat.completion"
-    created: int = Field(default_factory=lambda: int(time.time()))
-    model: str
-    choices: List[ChatCompletionResponseChoice]
-    usage: UsageInfo
-
-
-class DeltaMessage(BaseModel):
-    role: Optional[str] = None
-    content: Optional[str] = None
-
-
-class ChatCompletionResponseStreamChoice(BaseModel):
-    index: int
-    delta: DeltaMessage
-    finish_reason: Optional[Literal["stop", "length", "function_call"]] = None
-
-
-class ChatCompletionStreamResponse(BaseModel):
-    id: str = Field(default_factory=lambda: f"chatcmpl-{random_uuid()}")
-    object: str = "chat.completion.chunk"
-    created: int = Field(default_factory=lambda: int(time.time()))
-    model: str
-    choices: List[ChatCompletionResponseStreamChoice]
 
 
 def create_error_response(status_code: HTTPStatus, message: str) -> JSONResponse:
@@ -236,7 +170,7 @@ async def create_chat_completion(raw_request: Request):
     if error_check_ret is not None:
         return error_check_ret
 
-    if request.logit_bias is not None:
+    if request.logit_bias is not None and request.logit_bias:
         # TODO: support logit_bias in vLLM engine.
         return create_error_response(
             HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
@@ -284,6 +218,14 @@ async def create_chat_completion(raw_request: Request):
         tok_ids = tokenizer.encode(stop_tok, add_special_tokens=False)
         stop_token_ids.append(tok_ids[-1])
 
+    # In vLLM==0.4.1, SamplingParams.logprobs has a proportional effect on latency
+    # We need to limit the size of SamplingParams.logprobs as a temporary fix first
+    # while investigating this problem in vLLM
+    if args.grammar_sampling is False:
+        logprobs = None
+    else:
+        logprobs = 200
+
     try:
         sampling_params = SamplingParams(
             n=request.n,
@@ -299,7 +241,7 @@ async def create_chat_completion(raw_request: Request):
             ignore_eos=request.ignore_eos,
             use_beam_search=request.use_beam_search,
             skip_special_tokens=False,
-            logprobs=len(tokenizer.vocab.keys()),
+            logprobs=logprobs,
         )
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
@@ -343,19 +285,14 @@ async def create_chat_completion(raw_request: Request):
                     if (
                         previous_texts == delta_text
                         and delta_text in prompt_template.fn_param_sep_token
+                        and prompt_template.version != "v1"
                     ):
                         if tool_choice == "none":
                             yield prompt_template.get_predefined_function_names(
                                 function_types=PredefinedFuncTypes.no_tool_call
-                            )[
-                                0
-                            ] + prompt_template.get_stop_token_for_function_parameter(
-                                stage="function"
-                            ), finish_reason
+                            )[0] + prompt_template.fn_param_sep_token, finish_reason
                         elif isinstance(tool_choice, Tool):
-                            yield tool_choice.function.name + prompt_template.get_stop_token_for_function_parameter(
-                                stage="function"
-                            ), finish_reason
+                            yield tool_choice.function.name + prompt_template.fn_param_sep_token, finish_reason
                     yield delta_text, finish_reason
         yield "", "stop"
 
@@ -364,7 +301,7 @@ async def create_chat_completion(raw_request: Request):
     ) -> AsyncGenerator[str, None]:
         generator = wrap_vllm_generator(tool_choice=tool_choice)
         async for response in generate_openai_format_from_stream_async(
-            generator, prompt_template
+            generator, prompt_template, tool_choice
         ):
             # Convert v1 from function_call to tool_calls if tools are provided instead of functions
             if prompt_template.version == "v1" and (
@@ -549,13 +486,15 @@ if __name__ == "__main__":
         served_model = args.model
 
     engine_args = AsyncEngineArgs.from_cli_args(args)
-    engine = AsyncLLMEngine.from_engine_args(engine_args)
-    engine_model_config = asyncio.run(engine.get_model_config())
-
     # A separate tokenizer to map token IDs to strings.
     tokenizer = get_tokenizer(
         engine_args.tokenizer, tokenizer_mode=engine_args.tokenizer_mode
     )
+    # Overwrite vLLM's default ModelConfig.max_logprobs of 5
+    engine_args.max_logprobs = len(tokenizer.vocab.keys())
+
+    engine = AsyncLLMEngine.from_engine_args(engine_args)
+    engine_model_config = asyncio.run(engine.get_model_config())
 
     uvicorn.run(
         app,

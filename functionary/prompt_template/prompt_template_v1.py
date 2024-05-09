@@ -43,14 +43,6 @@ class PromptTemplateV1(PromptTemplate):
     def get_start_of_function_call_token(self) -> str:
         return self.start_function
 
-    def get_stop_token_for_function_parameter(
-        self, stage: Literal["function", "parameter"]
-    ) -> int:
-        if stage == "function":
-            return ":"  # 28747
-        else:
-            return '":'  # 1264
-
     def initialize_grammar_sampling_gen_state(self) -> Dict:
         return {
             "stage": "pre-function",
@@ -160,6 +152,7 @@ class PromptTemplateV1(PromptTemplate):
         current_state: Dict[str, Any],
         delta_text: str,
         finish_reason: Optional[str],
+        tool_choice: Any,
     ) -> Tuple[Dict[str, Any], Optional[Dict]]:
         if len(current_state) == 0:
             current_state = {

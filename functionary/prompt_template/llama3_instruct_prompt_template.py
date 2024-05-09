@@ -45,6 +45,10 @@ class Llam3InstructTemplate(PromptTemplate):
         for stop in self.get_stop_tokens_for_generation():
             if llm_output.endswith(stop):
                 llm_output = llm_output[: -len(stop)]
+        
+        # add forced-function from tool_choice if exists
+        if type(tool_choice) is not str:
+            llm_output = self.get_force_function_call_prefix(tool_choice.function.name) + llm_output
 
         chunks = llm_output.split(self.function_separator)
         chunks = [chunk.strip() for chunk in chunks if len(chunk.strip()) > 0]
@@ -137,6 +141,7 @@ class Llam3InstructTemplate(PromptTemplate):
         current_state: Dict[str, Any],
         delta_text: str,
         finish_reason: Optional[str],
+        tool_choice: Any,
     ) -> Tuple[Dict[str, Any], Union[None, Dict, List[Dict]]]:
         """This function is used for streaming
 
@@ -159,7 +164,24 @@ class Llam3InstructTemplate(PromptTemplate):
                 "skip_until_reach": None,  # at first we will skip until reach <|content|>
                 "first_time": True,  # if first_time we return an tempty delta with role=assistant
             }
-
+            
+            if tool_choice == "none":
+                current_state["response_type"] = "text"
+                
+            elif type(tool_choice) is not str:
+                self.update_state_for_function(current_state)
+                current_state["func_name"] = tool_choice.function.name
+                current_state["skip_until_reach"] = None # function is already defined, no need to wait for new tokens to define
+                current_state["current_text"] += delta_text
+                
+                # first return a delta with function_name only
+                responses = [prompt_utils.get_function_delta_response(current_state, "", True, False, finish_reason)]
+                # next return the first chunk of params
+                responses.append(prompt_utils.get_function_delta_response(
+                        current_state, delta_text, False, False, finish_reason
+                    ))
+                return current_state, responses
+            
         current_state["current_text"] += delta_text
 
         if finish_reason is not None:  # handle if finish
@@ -244,3 +266,6 @@ class Llam3InstructTemplate(PromptTemplate):
         chat_template = chat_template.replace("<br>\n", "")
         chat_template = chat_template.strip()
         return chat_template
+
+    def get_force_function_call_prefix(self, function_name: str):
+        return f"{self.function_separator}{function_name}\n"

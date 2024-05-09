@@ -5,13 +5,19 @@ from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Tuple
 import torch
 from transformers import LlamaForCausalLM, LlamaTokenizer
 from transformers.generation.logits_process import (
-    LogitsProcessorList, RepetitionPenaltyLogitsProcessor,
-    TemperatureLogitsWarper, TopKLogitsWarper, TopPLogitsWarper)
+    LogitsProcessorList,
+    RepetitionPenaltyLogitsProcessor,
+    TemperatureLogitsWarper,
+    TopKLogitsWarper,
+    TopPLogitsWarper,
+)
 
 from functionary.inference import prepare_messages_for_inference
 from functionary.openai_types import ChatMessage, Function, Tool
-from functionary.prompt_template import (PromptTemplate,
-                                         get_prompt_template_from_tokenizer)
+from functionary.prompt_template import (
+    PromptTemplate,
+    get_prompt_template_from_tokenizer,
+)
 
 
 def prepare_logits_processor(
@@ -135,9 +141,7 @@ def generate_with_check_stop(
     stop_list: List[List[int]],
 ) -> Generator[Tuple[str, Optional[str]], Any, Any]:
     max_leng = max([len(stop) for stop in stop_list])
-    temp_list: List[
-        Tuple[int, str, Optional[str]]
-    ] = (
+    temp_list: List[Tuple[int, str, Optional[str]]] = (
         []
     )  # buffer of tokens; len(temp_list) <= max_leng, will yield a token if len(temp_list) == max_leng + 1
 
@@ -226,12 +230,16 @@ def generate_stream(
 async def generate_openai_format_from_stream_async(
     generator: AsyncGenerator[Tuple[str, Optional[str]], None],
     prompt_template: PromptTemplate,
+    tool_choice: Any,
 ) -> AsyncGenerator[Dict, None]:
     state = {}  # # = function if it is function call; = text if it is chit-chat
     async for delta_text, finish_reason in generator:
         # ""print(f"delta_text:{delta_text}, finish_reason: {finish_reason}; response_type:{response_type}")
         state, response = prompt_template.update_response_state_from_delta_text(
-            current_state=state, delta_text=delta_text, finish_reason=finish_reason
+            current_state=state,
+            delta_text=delta_text,
+            finish_reason=finish_reason,
+            tool_choice=tool_choice,
         )
         if response is not None:
             if type(response) is list:

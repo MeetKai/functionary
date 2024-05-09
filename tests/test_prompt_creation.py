@@ -4,9 +4,10 @@ import re
 import unittest
 from typing import List
 
+from transformers import AutoTokenizer
+
 from functionary.prompt_template import get_prompt_template_by_version
 from functionary.train.custom_datasets import prepare_training_inputs
-from transformers import AutoTokenizer
 
 
 def extract_unmasked_chunks(labels: List[int]) -> List[List[int]]:
@@ -70,7 +71,7 @@ class TestInsertingEndToken(unittest.TestCase):
         print("start testing normal tokenizer")
         for keep_assistant_prefix in [False]:
             self.run_prepare_training_inputs(
-                pretrained="mistralai/Mistral-7B-v0.1",
+                pretrained="meetkai/functionary-small-v2.4",
                 keep_assistant_prefix=keep_assistant_prefix,
             )
 
@@ -83,12 +84,6 @@ class TestInsertingEndToken(unittest.TestCase):
         tokenizer.pad_token = tokenizer.eos_token
         # first we add stop_tokens to the tokenizer
         prompt_template = self.prompt_template
-        length_before = len(tokenizer)
-        added_tokens = prompt_template.get_additional_tokens()
-        tokenizer.add_special_tokens({"additional_special_tokens": added_tokens})
-        length_after = len(tokenizer)
-        # check if tokenizer added new stop tokens successfully
-        self.assertEqual(length_before + len(added_tokens), length_after)
 
         inputs = prepare_training_inputs(
             messages=self.test_case,

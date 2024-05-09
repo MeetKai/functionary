@@ -18,7 +18,7 @@ class PromptTemplateV2(PromptTemplate):
     stop_token = "<|stop|>"
     version = "v2"
     # This token splits between function name and parameters
-    fn_param_sep_token = "\n<|content|> {"
+    fn_param_sep_token = "\n<|content|>"
     # This maps the predefined function type to its str name
     predefined_func_names = {
         PredefinedFuncTypes.no_tool_call: "all",
@@ -27,14 +27,6 @@ class PromptTemplateV2(PromptTemplate):
 
     def get_start_of_function_call_token(self) -> str:
         return self.recipient_token
-
-    def get_stop_token_for_function_parameter(
-        self, stage: Literal["function", "parameter"]
-    ) -> int:
-        if stage == "function":
-            return "\n"  # 13
-        else:
-            return '":'  # 1264
 
     def get_predefined_function_names(self, function_types: Any) -> List[str]:
         if function_types == "all":
@@ -52,9 +44,19 @@ class PromptTemplateV2(PromptTemplate):
     def initialize_grammar_sampling_gen_state(
         self, tool_choice: str, curr_text: str, curr_tokens: List[int]
     ) -> Dict:
-        if tool_choice != "":
+        # To force a text response ("tool_choice"="none")
+        if tool_choice == "none":
             add_predefined_fns = False
-            stage = "pre-parameter"
+            stage = "no-tool-call"
+        # Normal generation (function name first without "all") (tool_choice="returned")
+        elif tool_choice == "required":
+            add_predefined_fns = False
+            stage = "function"
+        # To force a function call (tool_choice={"type": "function", "function": {...}})
+        elif tool_choice != "":
+            add_predefined_fns = False
+            stage = "parameter"
+        # Normal generation (function name first) (tool_choice="auto")
         else:
             add_predefined_fns = True
             stage = "function"
@@ -131,14 +133,14 @@ class PromptTemplateV2(PromptTemplate):
         recipient_to_fill = ""
         if tool_choice is not None:
             if tool_choice == "none":
-                recipient_to_fill = self.get_predefined_function_names(
-                    function_types=PredefinedFuncTypes.no_tool_call
-                )[0] + self.get_stop_token_for_function_parameter(stage="function")
-            elif isinstance(tool_choice, Tool):
                 recipient_to_fill = (
-                    tool_choice.function.name
-                    + self.get_stop_token_for_function_parameter(stage="function")
+                    self.get_predefined_function_names(
+                        function_types=PredefinedFuncTypes.no_tool_call
+                    )[0]
+                    + self.fn_param_sep_token
                 )
+            elif isinstance(tool_choice, Tool):
+                recipient_to_fill = tool_choice.function.name + self.fn_param_sep_token
 
         llm_output = (
             f"{self.from_token}assistant\n{self.recipient_token}"
@@ -239,16 +241,26 @@ class PromptTemplateV2(PromptTemplate):
         current_state: Dict[str, Any],
         delta_text: str,
         finish_reason: Optional[str],
+        tool_choice: Any,
     ) -> Tuple[Dict[str, Any], Union[None, Dict, List[Dict]]]:
         if len(current_state) == 0:  # empty dict, at the first_time
+            if tool_choice == "auto":
+                response_type, skip_until_reach = None, self.content_token
+                func_name = None
+            elif tool_choice == "none":
+                response_type, skip_until_reach = "text", ""
+                func_name = self.predefined_func_names[PredefinedFuncTypes.no_tool_call]
+            else:
+                response_type, skip_until_reach = "function", ""
+                func_name = tool_choice.function.name
             current_state = {
                 "current_text": "",  # the concatenation of all tokens so far
-                "func_name": None,  # function_name of the current tool, if the response requires to use tool
-                "response_type": None,  # response_type=text(text response)/function (using tool)
+                "func_name": func_name,  # function_name of the current tool, if the response requires to use tool
+                "response_type": response_type,  # response_type=text(text response)/function (using tool)
                 "func_index": -1,  # index of the tool in tool_calls
                 "call_id": None,  # call_id of the current tool
                 # skip_until_reach we skip new tokens until we reach certain token. This is used when we hit special tokens
-                "skip_until_reach": self.content_token,  # at first we will skip until reach <|content|>
+                "skip_until_reach": skip_until_reach,  # at first we don't need to skip as we are generating function
                 "first_time": True,  # if first_time we return an tempty delta with role=assistant
             }
         # check if previous token is <|content|>, there might be a space between this token and next token (ex, <|content|> Hello)
@@ -286,23 +298,13 @@ class PromptTemplateV2(PromptTemplate):
                     current_state["call_id"] = prompt_utils.get_random_tool_call_id()
                     current_state["func_index"] += 1
 
-                    responses = []
-                    if (
-                        first_time
-                    ):  # first chunk of function_call is a message where all fields are None, except role
-                        responses.append(
-                            prompt_utils.get_text_delta_response(
-                                None, True, finish_reason
-                            )
-                        )
-                    responses.append(
-                        prompt_utils.get_function_delta_response(
-                            current_state, "", True, False, finish_reason
-                        )
+                    return current_state, prompt_utils.get_function_delta_response(
+                        current_state, "", True, False, finish_reason
                     )
-                    return current_state, responses
         else:
             assert current_state["response_type"] is not None
+
+            first_time = current_state["first_time"]
             if (
                 delta_text == self.from_token
             ):  # skip until reach <content> to check type of response
@@ -313,10 +315,38 @@ class PromptTemplateV2(PromptTemplate):
 
             else:
                 if current_state["response_type"] == "function":
-                    return current_state, prompt_utils.get_function_delta_response(
-                        current_state, delta_text, False, False, finish_reason
-                    )
+                    if first_time:
+                        current_state["call_id"] = prompt_utils.get_random_tool_call_id()
+                        current_state["func_index"] += 1
+                        responses = []
+                        responses.append(
+                            prompt_utils.get_function_delta_response(
+                                current_state, "", first_time, False, finish_reason
+                            )
+                        )
+                        current_state["first_time"] = False
+                        responses.append(
+                            prompt_utils.get_function_delta_response(
+                                current_state, delta_text, False, False, finish_reason
+                            )
+                        )
+                    else:
+                        responses = prompt_utils.get_function_delta_response(
+                            current_state, delta_text, False, False, finish_reason
+                        )
+                    return current_state, responses
                 else:  # response_type=text
-                    return current_state, prompt_utils.get_text_delta_response(
-                        delta_text, True, finish_reason
+                    responses = []
+                    if first_time:
+                        current_state["first_time"] = False
+                        responses.append(
+                            prompt_utils.get_text_delta_response("", True, finish_reason)
+                        )
+                    responses.append(
+                        prompt_utils.get_text_delta_response(delta_text, True, finish_reason)
                     )
+
+                    return current_state, responses
+
+    def get_force_function_call_prefix(self, function_name: str):
+        return f"{function_name}{self.fn_param_sep_token}"
