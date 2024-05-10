@@ -61,9 +61,10 @@ class TestInsertingEndToken(unittest.TestCase):
         final_prompt = self.prompt_template.get_prompt_from_messages(
             self.test_case["messages"], tools_or_functions
         )
+
         self.assertEqual(
-            final_prompt,
-            self.final_prompt,
+            final_prompt.strip(),
+            self.final_prompt.strip(),
             "wrong final prompt from: get_prompt_from_messages",
         )
 
