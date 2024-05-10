@@ -462,7 +462,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     pattern = r"v1.*$"
-    if re.search(pattern, args.model):
+    if re.search(pattern, args.model) or "llama" in args.model:
         args.grammar_sampling = False
 
     if args.grammar_sampling:
