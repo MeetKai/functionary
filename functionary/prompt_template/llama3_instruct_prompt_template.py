@@ -52,6 +52,8 @@ class Llam3InstructTemplate(PromptTemplate):
                 self.get_force_function_call_prefix(tool_choice.function.name)
                 + llm_output
             )
+        elif tool_choice == "required":
+            llm_output = self.function_separator + llm_output
 
         chunks = llm_output.split(self.function_separator)
         chunks = [chunk.strip() for chunk in chunks if len(chunk.strip()) > 0]
