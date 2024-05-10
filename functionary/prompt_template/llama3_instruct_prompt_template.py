@@ -39,7 +39,7 @@ class Llam3InstructTemplate(PromptTemplate):
         return ["<|eot_id|>", "<|end_of_text|>"]
 
     def parse_assistant_response(
-        self, llm_output: str, tool_choice: Any | None
+        self, llm_output: str, tool_choice: Any = None
     ) -> Dict:
         # first remove stop tokens if there exists
         for stop in self.get_stop_tokens_for_generation():
