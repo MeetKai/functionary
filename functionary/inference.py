@@ -72,19 +72,19 @@ def prepare_messages_for_inference(
     )
 
     if (
-        prompt_template.version == "v2"
+        prompt_template.version != "v1"
         and tool_choice is not None
         and tool_choice not in ["auto", "required"]
     ):
         if tool_choice == "none":
-            final_prompt += prompt_template.get_predefined_function_names(
-                function_types=PredefinedFuncTypes.no_tool_call
-            )[0]
+            if prompt_template.version == "v2":
+                final_prompt += prompt_template.get_predefined_function_names(
+                    function_types=PredefinedFuncTypes.no_tool_call
+                )[0]
         else:
             final_prompt += prompt_template.get_force_function_call_prefix(
                 tool_choice.function.name
             )
-    breakpoint()
 
     input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
     input_ids = input_ids.to(device)
