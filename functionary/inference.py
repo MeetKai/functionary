@@ -88,7 +88,7 @@ def prepare_messages_for_inference(
             final_prompt += prompt_template.get_force_function_call_prefix(
                 tool_choice.function.name
             )
-    # some prompt template supports call a function directly such as: v2.llama_instruct
+    # some prompt template supports call a function directly such as: v2.llama3
     if tool_choice == "required":
         if hasattr(prompt_template, "function_separator"):
             final_prompt += getattr(prompt_template, "function_separator")
