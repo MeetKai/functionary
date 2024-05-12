@@ -47,7 +47,7 @@ class Llam3InstructTemplate(PromptTemplate):
                 llm_output = llm_output[: -len(stop)]
 
         # add forced-function from tool_choice if exists
-        if type(tool_choice) is not str:
+        if type(tool_choice) is not str and tool_choice is not None:
             llm_output = (
                 self.get_force_function_call_prefix(tool_choice.function.name)
                 + llm_output
@@ -129,9 +129,22 @@ class Llam3InstructTemplate(PromptTemplate):
         return prompt_template.format(text=total_content)
 
     def pre_process_messages_before_inference(self, messages: List[Dict]) -> List[Dict]:
+        """Order the tool results by the order of tool call ids
+
+        Args:
+            messages (List[Dict]): List of messages
+
+        Returns:
+            List[Dict]: List of messages
+        """
         return prompt_utils.reorder_tool_messages_by_tool_call_ids(messages)
 
     def update_state_for_function(self, current_state):
+        """update the state when a function is going to be called
+
+        Args:
+            current_state (_type_): _description_
+        """
         current_state["response_type"] = "function"
         current_state["skip_until_reach"] = "\n"
         current_state["current_text"] = ""
@@ -171,7 +184,7 @@ class Llam3InstructTemplate(PromptTemplate):
             if tool_choice == "none":
                 current_state["response_type"] = "text"
 
-            elif type(tool_choice) is not str:
+            elif type(tool_choice) is not str and tool_choice is not None:
                 self.update_state_for_function(current_state)
                 current_state["func_name"] = tool_choice.function.name
                 current_state["skip_until_reach"] = (

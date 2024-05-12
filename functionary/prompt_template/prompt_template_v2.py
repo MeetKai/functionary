@@ -244,15 +244,17 @@ class PromptTemplateV2(PromptTemplate):
         tool_choice: Any,
     ) -> Tuple[Dict[str, Any], Union[None, Dict, List[Dict]]]:
         if len(current_state) == 0:  # empty dict, at the first_time
-            if tool_choice == "auto":
-                response_type, skip_until_reach = None, self.content_token
-                func_name = None
-            elif tool_choice == "none":
+            response_type, skip_until_reach, func_name = None, self.content_token, None
+
+            if tool_choice == "none":
                 response_type, skip_until_reach = "text", ""
                 func_name = self.predefined_func_names[PredefinedFuncTypes.no_tool_call]
-            else:
+            elif (
+                tool_choice is not str and tool_choice is not None
+            ):  # tool_choice is a specific tool
                 response_type, skip_until_reach = "function", ""
                 func_name = tool_choice.function.name
+
             current_state = {
                 "current_text": "",  # the concatenation of all tokens so far
                 "func_name": func_name,  # function_name of the current tool, if the response requires to use tool
