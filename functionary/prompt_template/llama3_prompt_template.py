@@ -23,9 +23,9 @@ def convert_to_llama3_messages(messages: List[Dict]) -> List[Dict]:
                     messages
 
 
-class Llam3InstructTemplate(PromptTemplate):
+class Llama3Template(PromptTemplate):
     function_separator = "<|reserved_special_token_249|>"
-    version = "v2.llama3_instruct"
+    version = "v2.llama3"
     fn_param_sep_token = "\n"
 
     def get_additional_tokens(self) -> List[str]:
@@ -52,6 +52,8 @@ class Llam3InstructTemplate(PromptTemplate):
                 self.get_force_function_call_prefix(tool_choice.function.name)
                 + llm_output
             )
+        elif tool_choice == "required":
+            llm_output = self.function_separator + llm_output
 
         chunks = llm_output.split(self.function_separator)
         chunks = [chunk.strip() for chunk in chunks if len(chunk.strip()) > 0]
@@ -184,6 +186,9 @@ class Llam3InstructTemplate(PromptTemplate):
             if tool_choice == "none":
                 current_state["response_type"] = "text"
 
+            elif tool_choice == "required":
+                self.update_state_for_function(current_state)
+
             elif type(tool_choice) is not str and tool_choice is not None:
                 self.update_state_for_function(current_state)
                 current_state["func_name"] = tool_choice.function.name
@@ -205,6 +210,8 @@ class Llam3InstructTemplate(PromptTemplate):
                     )
                 )
                 return current_state, responses
+        else:
+            current_state["first_time"] = False
 
         current_state["current_text"] += delta_text
 
@@ -248,7 +255,7 @@ class Llam3InstructTemplate(PromptTemplate):
                     delta_text, True, finish_reason
                 )
                 return current_state, [empty_response, first_chunk]
-        else:  # not the first time
+        else:  # already knew the curent type
             if (
                 delta_text == self.function_separator
             ):  # end of current text_response or function
@@ -257,9 +264,21 @@ class Llam3InstructTemplate(PromptTemplate):
                 return current_state, None
             else:  # not starting to call a function
                 if current_state["response_type"] == "text":
-                    return current_state, prompt_utils.get_text_delta_response(
-                        delta_text, True, finish_reason
+                    responses = []
+                    if current_state[
+                        "first_time"
+                    ]:  # if tool_choice=none, we still need to send an empty delta first
+                        empty_response = prompt_utils.get_text_delta_response(
+                            "", True, finish_reason
+                        )
+                        responses.append(empty_response)
+
+                    responses.append(
+                        prompt_utils.get_text_delta_response(
+                            delta_text, True, finish_reason
+                        )
                     )
+                    return current_state, responses
                 else:  # response_type = function
                     return current_state, prompt_utils.get_function_delta_response(
                         current_state, delta_text, False, False, finish_reason

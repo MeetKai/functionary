@@ -243,6 +243,10 @@ class PromptTemplateV2(PromptTemplate):
         finish_reason: Optional[str],
         tool_choice: Any,
     ) -> Tuple[Dict[str, Any], Union[None, Dict, List[Dict]]]:
+        func_name = None
+        response_type = None
+        skip_until_reach = ""
+
         if len(current_state) == 0:  # empty dict, at the first_time
             response_type, skip_until_reach, func_name = None, self.content_token, None
 

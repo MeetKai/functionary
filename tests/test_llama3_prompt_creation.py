@@ -4,9 +4,10 @@ import re
 import unittest
 from typing import List
 
+from transformers import AutoTokenizer
+
 from functionary.prompt_template import get_prompt_template_by_version
 from functionary.train.custom_datasets import prepare_training_inputs
-from transformers import AutoTokenizer
 
 
 def extract_unmasked_chunks(labels: List[int]) -> List[List[int]]:
@@ -32,11 +33,11 @@ def extract_unmasked_chunks(labels: List[int]) -> List[List[int]]:
     return chunks
 
 
-class TestLLama3InstructTemplate(unittest.TestCase):
+class TestLlama3Template(unittest.TestCase):
     def __init__(self, *args, **kwargs):
-        super(TestLLama3InstructTemplate, self).__init__(*args, **kwargs)
+        super(TestLlama3Template, self).__init__(*args, **kwargs)
 
-        self.template_version = "v2.llama3_instruct"
+        self.template_version = "v2.llama3"
         self.prompt_template = get_prompt_template_by_version(self.template_version)
 
         current_folder = os.path.dirname(os.path.abspath(__file__))
