@@ -38,6 +38,34 @@ class Llama3Template(PromptTemplate):
     def get_stop_tokens_for_generation(self) -> List[str]:
         return ["<|eot_id|>", "<|end_of_text|>"]
 
+    def get_start_of_function_call_token(self) -> str:
+        pass
+
+    def initialize_grammar_sampling_gen_state(
+        self, tool_choice: str, curr_text: str, curr_tokens: List[int]
+    ) -> Dict:
+        # To force a text response ("tool_choice"="none")
+        if tool_choice == "none":
+            stage = "text-gen"
+        # Normal generation (function name first) (tool_choice="required")
+        elif tool_choice == "required":
+            stage = "function"
+        # To force a function call (tool_choice={"type": "function", "function": {...}})
+        elif tool_choice != "":
+            stage = "parameter"
+        # Normal generation (either <|reserved_token_249|> or text) (tool_choice="auto")
+        else:
+            stage = "pre-function"
+
+        return {
+            "stage": stage,
+            "curr_tokens": curr_tokens,
+            "curr_text": curr_text,
+            "func_name": tool_choice,
+            "param_names": [],
+            "add_predefined_fns": False,
+        }
+
     def parse_assistant_response(
         self, llm_output: str, tool_choice: Any = None
     ) -> Dict:
