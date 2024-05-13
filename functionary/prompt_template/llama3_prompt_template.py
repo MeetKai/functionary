@@ -66,6 +66,69 @@ class Llama3Template(PromptTemplate):
             "add_predefined_fns": False,
         }
 
+    def grammar_sample(
+        self,
+        gen_state: Dict,
+        tools_or_functions: List,
+        delta_token_ids: List,
+        model_sampled_token_id: int,
+        tokenizer: Any,
+    ) -> Tuple[int, str]:
+        """Applies grammar-sampling to the token generation and returns a
+        newly sampled token.
+
+        For function name, the list of token ids sorted in descending order by
+        log probabilities will be looped through until the token that fits the
+        function names is reached. The grammar-sampled token replaces the
+        output token if it is different from the model-sampled token.
+
+        For parameter name, the lm-format-enforcer package is used to generate
+        the parameters in JSON format, obeying the schema of the tool.
+
+        Args:
+            gen_state (Dict): The current generation state
+            options (List): The list of available function/parameter names depending on gen_state["stage"]
+            delta_token_ids (List): The list of delta token ids sorted in descending order by log probabilities
+            model_sampled_token_id (int): The token id of the token sampled by model
+            tokenizer (Any): The tokenizer object passed in from Transformers, vLLM, etc.
+        Returns:
+            Tuple[int, str]: Tuple of grammar-sampled token id and grammar-sampled token in str format
+        """
+        grammar_sampled_token_id, grammar_sampled_token = None, None
+
+        # No grammar sampling needed for "text-gen" and "code-interpreter" stages
+        if gen_state["stage"] in ["text-gen", "code-interpreter"]:
+            grammar_sampled_token_id = model_sampled_token_id
+            grammar_sampled_token = tokenizer.decode([model_sampled_token_id])
+
+        # Loop through the list of token ids sorted in descending order. For "function"
+        # stage, form a mask made up of booleans where the index of the mask == index
+        # of function name in function options. The element is True if the sampled_token
+        # helps in forming the function. Else, False.
+        if grammar_sampled_token_id is None:
+            for i, sampled_token_ind in enumerate(delta_token_ids):
+                sampled_token = tokenizer.decode(
+                    [sampled_token_ind], add_special_tokens=False
+                )
+                # Form the function name with the current sampled token id
+                new_curr_tokens_id = gen_state["curr_tokens"] + [sampled_token_ind]
+                new_curr_tokens = tokenizer.decode(new_curr_tokens_id)
+
+                # Decide between <|reserved_token_249|> and text token for pre-function
+                breakpoint()
+
+        # Update gen_state
+        return (
+            grammar_sampled_token_id,
+            grammar_sampled_token,
+            self.update_grammar_sampling_gen_state(
+                gen_state=gen_state,
+                new_token_id=grammar_sampled_token_id,
+                options=options,
+                tokenizer=tokenizer,
+            ),
+        )
+
     def parse_assistant_response(
         self, llm_output: str, tool_choice: Any = None
     ) -> Dict:
@@ -339,4 +402,5 @@ class Llama3Template(PromptTemplate):
         return chat_template
 
     def get_force_function_call_prefix(self, function_name: str):
+        return f"{self.function_separator}{function_name}\n"
         return f"{self.function_separator}{function_name}\n"

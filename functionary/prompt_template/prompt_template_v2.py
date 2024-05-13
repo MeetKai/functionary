@@ -4,11 +4,11 @@ import string
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.openai_types import Tool
+from functionary.prompt_template import prompt_utils
 from functionary.prompt_template.base_template import (
     PredefinedFuncTypes,
     PromptTemplate,
 )
-from functionary.prompt_template import prompt_utils
 
 
 class PromptTemplateV2(PromptTemplate):
@@ -69,6 +69,106 @@ class PromptTemplateV2(PromptTemplate):
             "param_names": [],
             "add_predefined_fns": add_predefined_fns,
         }
+
+    def grammar_sample(
+        self,
+        gen_state: Dict,
+        tools_or_functions: List,
+        delta_token_ids: List,
+        model_sampled_token_id: int,
+        tokenizer: Any,
+    ) -> Tuple[int, str]:
+        """Applies grammar-sampling to the token generation and returns a
+        newly sampled token.
+
+        For function name, the list of token ids sorted in descending order by
+        log probabilities will be looped through until the token that fits the
+        function names is reached. The grammar-sampled token replaces the
+        output token if it is different from the model-sampled token.
+
+        For parameter name, the lm-format-enforcer package is used to generate
+        the parameters in JSON format, obeying the schema of the tool.
+
+        Args:
+            gen_state (Dict): The current generation state
+            options (List): The list of available function/parameter names depending on gen_state["stage"]
+            delta_token_ids (List): The list of delta token ids sorted in descending order by log probabilities
+            model_sampled_token_id (int): The token id of the token sampled by model
+            tokenizer (Any): The tokenizer object passed in from Transformers, vLLM, etc.
+        Returns:
+            Tuple[int, str]: Tuple of grammar-sampled token id and grammar-sampled token in str format
+        """
+        grammar_sampled_token_id, grammar_sampled_token = None, None
+
+        # Form the functions options
+        options = []
+        if gen_state["stage"] == "function":
+            options = [tool_or_func["name"] for tool_or_func in tools_or_functions]
+            # Assume prompt template versions > 1 have "all" in function options
+            # Subjected to changes in future versions
+            # Concatenate the list of predefined function names in the respective prompt
+            # template version. For e.g., v2 returns ["all"]
+            if gen_state["add_predefined_fns"] is True:
+                options += self.get_predefined_function_names(function_types="all")
+
+        # No grammar sampling needed if gen_state not in "function" or
+        # "pre-parameter" stages. Just return the model_sampled_token_id
+        if gen_state["stage"] not in ["function", "pre-parameter"]:
+            grammar_sampled_token_id = model_sampled_token_id
+            grammar_sampled_token = tokenizer.decode([model_sampled_token_id])
+
+        # Loop through the list of token ids sorted in descending order. For "function"
+        # stage, form a mask made up of booleans where the index of the mask == index
+        # of function name in function options. The element is True if the sampled_token
+        # helps in forming the function. Else, False.
+        if grammar_sampled_token_id is None:
+            for i, sampled_token_ind in enumerate(delta_token_ids):
+                sampled_token = tokenizer.decode(
+                    [sampled_token_ind], add_special_tokens=False
+                )
+                # Form the function name with the current sampled token id
+                new_curr_tokens_id = gen_state["curr_tokens"] + [sampled_token_ind]
+                new_curr_tokens = tokenizer.decode(new_curr_tokens_id)
+
+                if gen_state["stage"] == "function":
+                    options_mask = [
+                        (
+                            True
+                            if option.startswith(new_curr_tokens.lstrip(" "))
+                            or new_curr_tokens.lstrip(" ").startswith(option)
+                            else False
+                        )
+                        for option in options
+                    ]
+
+                    # - In case of two fns having common prefixes (e.g.: get_weather and
+                    # get_weather_and_time), we need to iterate until parts of the
+                    # fn_param_sep_token is present in new_curr_tokens to know if the
+                    # shorter or longer function name is preferred by the model.
+                    # - Reject the whitespace (" ") and empty ("") tokens
+                    if any(options_mask) and sampled_token.strip(" ") != "":
+                        grammar_sampled_token_id = sampled_token_ind
+                        grammar_sampled_token = sampled_token
+                        break
+                # "pre-parameter" stage
+                elif gen_state["stage"] == "pre-parameter":
+                    # Check if new_curr_tokens is a prefix of fn_param_sep_token
+                    if self.fn_param_sep_token.startswith(new_curr_tokens):
+                        grammar_sampled_token_id = sampled_token_ind
+                        grammar_sampled_token = sampled_token
+                        break
+
+        # Update gen_state
+        return (
+            grammar_sampled_token_id,
+            grammar_sampled_token,
+            self.update_grammar_sampling_gen_state(
+                gen_state=gen_state,
+                new_token_id=grammar_sampled_token_id,
+                options=options,
+                tokenizer=tokenizer,
+            ),
+        )
 
     def get_additional_tokens(self) -> List[str]:
         return [
