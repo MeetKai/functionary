@@ -32,7 +32,6 @@ class Llama3Template(PromptTemplate):
         return []
 
     def get_assistant_prefixes(self) -> List[str]:
-        # return [f"{self.from_token}assistant\n{self.recipient_token}"]
         return ["<|start_header_id|>assistant<|end_header_id|>\n\n"]
 
     def get_stop_tokens_for_generation(self) -> List[str]:
@@ -48,6 +47,16 @@ class Llama3Template(PromptTemplate):
         curr_tokens: List[int],
         add_code_interpreter: bool,
     ) -> Dict:
+        """Initializes grammar-sampling state
+
+        Args:
+            tool_choice (str): tool_choice provided by user
+            curr_text (str): Text to initialize in gen_state
+            curr_tokens (List[int]): Corresponding tokens of curr_text
+            add_code_interpreter (bool): Flag indicating whether to add "python" tool in options in "function" stage.
+        Returns:
+            Dict: generation state
+        """
         # To force a text response ("tool_choice"="none")
         if tool_choice == "none":
             stage = "text-gen"
@@ -66,7 +75,7 @@ class Llama3Template(PromptTemplate):
             "curr_tokens": curr_tokens,
             "curr_text": curr_text,
             "func_name": tool_choice,
-            "add_predefined_fns": add_code_interpreter,
+            "add_code_interpreter": add_code_interpreter,
         }
 
     def grammar_sample(
@@ -116,7 +125,7 @@ class Llama3Template(PromptTemplate):
         # Form the functions options for grammar sampling
         elif gen_state["stage"] == "function":
             options = [tool_or_func["name"] for tool_or_func in tools_or_functions]
-            if gen_state["add_predefined_fns"]:
+            if gen_state["add_code_interpreter"]:
                 options.append("python")
 
         # Loop through the list of token ids sorted in descending order. For "function"
@@ -185,7 +194,7 @@ class Llama3Template(PromptTemplate):
               - function: when the model is generating a function name
               - pre-parameter: when the model is generating the part between function name and parameter
               - parameter: when the model is generating parameters
-              - no-tool-call: when the model is generating content
+              - text-gen: when the model is generating content
               - code-interpreter: when the model is generating code
             - curr_tokens: all the tokens for the current stage being generated
             - curr_text: curr_tokens but in string text form
@@ -208,7 +217,7 @@ class Llama3Template(PromptTemplate):
                     "curr_tokens": [],
                     "curr_text": "",
                     "func_name": "",
-                    "add_predefined_fns": gen_state["add_predefined_fns"],
+                    "add_code_interpreter": gen_state["add_code_interpreter"],
                 }
             # Check if the new state is in "text-gen" stage
             elif gen_state["curr_text"] not in self.get_stop_tokens_for_generation():
