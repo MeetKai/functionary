@@ -196,13 +196,6 @@ async def create_chat_completion(raw_request: Request):
         tool_choice=request.tool_choice,
     ).tolist()[0]
 
-    # Remove any code_interpreter tools remaining
-    if tools:
-        tools = [tool for tool in tools if tool.type != "code_interpreter"]
-        tools_or_functions = [
-            tool for tool in tools_or_functions if tool["type"] != "code_interpreter"
-        ]
-
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     if error_check_ret is not None:
         return error_check_ret
