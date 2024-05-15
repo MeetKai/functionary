@@ -737,7 +737,8 @@ class AsyncLLMEngine:
                 True
                 if any(
                     [
-                        tool_or_func["type"] == "code_interpreter"
+                        "type" in tool_or_func
+                        and tool_or_func["type"] == "code_interpreter"
                         for tool_or_func in tools_or_functions
                     ]
                 )

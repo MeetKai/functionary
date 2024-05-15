@@ -46,8 +46,7 @@ def prepare_messages_for_inference(
     *,
     tokenizer: LlamaTokenizer,
     messages: List[ChatMessage],
-    functions: Optional[List[Function]] = None,
-    tools: Optional[List[Tool]] = None,
+    tools_or_functions: List[Dict],
     tool_choice: Optional[Union[str, Tool]] = None,
     device="cuda:0",
 ) -> torch.Tensor:
@@ -55,12 +54,6 @@ def prepare_messages_for_inference(
 
     dic_messages = [mess.dict() for mess in messages]
     dic_messages.append({"role": "assistant"})
-
-    tools_or_functions = []
-    if functions:
-        tools_or_functions = [item.dict() for item in functions]
-    elif tools:
-        tools_or_functions = [item.dict() for item in tools]
 
     dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)
 
@@ -93,37 +86,42 @@ def prepare_messages_for_inference(
 
 
 def enforce_tool_choice(
-    tool_choice: Union[str, Tool], tools: Optional[List[Tool]]
+    choice: Union[str, Tool, Function],
+    tools_or_functions: Optional[List[Union[Tool, Function]]],
 ) -> Optional[List[Tool]]:
     """This function is used to enforce tool_choice in the list of tools if it is provided by the user
 
     Args:
-        tool_choice: (Union[str, Tool]): either "auto", "none" or Tool object
-        tools (Optional[List[Tool]]): the existing list of tools passed in from user
+        choice: (Union[str, Tool]): either "auto", "none" or Tool/Function object
+        tools_or_functions (Optional[List[Tool, Function]]): the existing list of tools passed in from user
 
     Returns:
-        List[Tool]: the modified tools_or_functions based on tool_choice
+        List[Tool, Function]: the modified tools_or_functions based on tool_choice
     """
-    if tool_choice == "none":
+    if choice == "none":
         return []
-    elif isinstance(tool_choice, Tool):
-        if (
-            tool_choice.function.description == ""
-            and tool_choice.function.parameters is None
-        ):
-            tools = [
+    elif isinstance(choice, Tool):
+        if choice.function.description == "" and choice.function.parameters is None:
+            tools_or_functions = [
                 tool
-                for tool in tools
+                for tool in tools_or_functions
                 if tool.type == "function"
-                and tool.function.name == tool_choice.function.name
+                and tool.function.name == choice.function.name
             ]
             assert (
-                len(tools) > 0
-            ), f"Invalid value for 'tool_choice': no function named {tool_choice.function.name} was specified in the 'tools' parameter"
+                len(tools_or_functions) > 0
+            ), f"Invalid value for 'tool_choice': no function named {choice.function.name} was specified in the 'tools' parameter"
         else:
-            tools = [tool_choice]
+            tools_or_functions = [choice]
+    elif isinstance(choice, Function):
+        tools_or_functions = [
+            function for function in tools_or_functions if function.name == choice.name
+        ]
+        assert (
+            len(tools_or_functions) > 0
+        ), f"Invalid value for 'function_call': no function named {choice.name} was specified in the 'functions' parameter"
 
-    return tools
+    return tools_or_functions
 
 
 def remove_stop_tokens_from_end(
