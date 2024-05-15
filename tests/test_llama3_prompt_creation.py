@@ -72,7 +72,7 @@ class TestLlama3Template(unittest.TestCase):
     def test_prepare_training_inputs_normal_tokenizer(self):
         """this function is used to test function: prepare_training_inputs"""
         tokenizer = AutoTokenizer.from_pretrained(
-            "gradientai/Llama-3-8B-Instruct-Gradient-1048k", legacy=True
+            "meta-llama/Meta-Llama-3-8B-Instruct", legacy=True
         )
         tokenizer.pad_token = tokenizer.eos_token
         # first we add stop_tokens to the tokenizer
@@ -140,7 +140,7 @@ class TestLlama3Template(unittest.TestCase):
 
     def test_against_original_llama3_chat_template(self):
         tokenizer = AutoTokenizer.from_pretrained(
-            "gradientai/Llama-3-8B-Instruct-Gradient-1048k", legacy=True
+            "meta-llama/Meta-Llama-3-8B-Instruct", legacy=True
         )
         tokenizer.pad_token = tokenizer.eos_token
         messages = [
