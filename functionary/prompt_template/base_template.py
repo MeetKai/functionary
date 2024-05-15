@@ -386,7 +386,7 @@ class PromptTemplate:
         full_text = ""
         for message in messages_clone:
             full_text += self.convert_message_to_prompt(message)
-        return full_text.strip()
+        return full_text  # Do not strip because llama3 uses: \n\n before content
 
     def get_end_token_to_token_id(self, tokenizer: Any) -> Dict[str, int]:
         """return a dictionary mapping from end_token --> token_id
@@ -441,6 +441,18 @@ class PromptTemplate:
 
         Returns:
             Tuple[Dict[str, Any], Optional[Dict]]: updated state, response: can be None, a dictionary: {} or a list of dictionary: [{}, ..., {}]
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_force_function_call_prefix(self, function_name: str):
+        """This function will be used for force-function call
+
+        Args:
+            function_name (str): _description_
+
+        Raises:
+            NotImplementedError: _description_
         """
         raise NotImplementedError
 

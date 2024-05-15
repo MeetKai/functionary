@@ -20,11 +20,11 @@
     "messages": [
         {
             "role": "user",
-            "content": "who is the president of US"
+            "content": "who is the CEO of Meetkai"
         },
         {
             "role": "assistant",
-            "content": "Biden is the president of US"
+            "content": "James Kaplan is the Co-Founder and CEO of MeetKai Inc."
         },
         {
             "role": "user",

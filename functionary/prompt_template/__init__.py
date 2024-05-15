@@ -5,6 +5,7 @@ from functionary.prompt_template.base_template import (
     PredefinedFuncTypes,
     PromptTemplate,
 )
+from functionary.prompt_template.llama3_prompt_template import Llama3Template
 from functionary.prompt_template.prompt_template_v1 import PromptTemplateV1
 from functionary.prompt_template.prompt_template_v2 import PromptTemplateV2
 
@@ -19,6 +20,9 @@ def get_default_prompt_template() -> PromptTemplate:
 
 
 def get_prompt_template_by_version(version: str) -> PromptTemplate:
+    if version == "v2.llama3":
+        return Llama3Template.get_prompt_template()
+
     if version == "v1":
         return PromptTemplateV1.get_prompt_template()
     return PromptTemplateV2.get_prompt_template()
@@ -36,6 +40,11 @@ def get_prompt_template_from_tokenizer(tokenizer: Any) -> PromptTemplate:
     """
     p1 = PromptTemplateV1.get_prompt_template()
     p2 = PromptTemplateV2.get_prompt_template()
+    p3 = Llama3Template.get_prompt_template()
+    token_ids = tokenizer.encode(p3.function_separator, add_special_tokens=False)
+    if len(token_ids) == 1:
+        return p3
+
     token_ids = tokenizer.encode(p1.start_function, add_special_tokens=False)
     if token_ids[0] in [29871, 28705]:
         token_ids = token_ids[1:]

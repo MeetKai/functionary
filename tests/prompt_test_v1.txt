@@ -12,9 +12,9 @@ car_name?: string,
 system:
 A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary<|END_OF_SYSTEM|>
 user:
-who is the president of US<|END_OF_USER|>
+who is the CEO of Meetkai<|END_OF_USER|>
 assistant:
-Biden is the president of US<|END_OF_ASSISTANT|>
+James Kaplan is the Co-Founder and CEO of MeetKai Inc.<|END_OF_ASSISTANT|>
 user:
 is the car Song more expensive than car Tang?<|END_OF_USER|>
 assistant:

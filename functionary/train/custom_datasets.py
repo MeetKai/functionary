@@ -165,9 +165,10 @@ def read_dataset(model_path, data_args, training_args, tokenizer, ds_type):
             tokenizer,
             cached_folder=cached_folder,
             ignore_cached=False,
-            keep_assistant_prefix=keep_assistant_prefix,
+            keep_assistant_prefix=False,
             use_flash_attention=True,
             pack_length=pack_length,
+            max_packed_size=data_args.max_packed_size,
         )
         print(f"process: {local_rank} finish processing data")
         world_size = int(os.environ.get("WORLD_SIZE", 1))
@@ -182,6 +183,7 @@ def read_dataset(model_path, data_args, training_args, tokenizer, ds_type):
         ignore_cached=False,
         use_flash_attention=True,
         pack_length=pack_length,
+        max_packed_size=data_args.max_packed_size,
     )
     if local_rank == 0:
         ds.stat()  #  print some statistics about the dataset
@@ -378,7 +380,6 @@ def prepare_training_inputs_batch(
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
     assistant_stop_token_ids = get_assistant_stop_token_ids(prompt_template, tokenizer)
     assistant_prefix_tokens = get_prefix_assistant_token_ids(prompt_template, tokenizer)
-
     prompt_str_list = []
     for messages in batch_messages:
         # old format: functions, new format: tools
@@ -498,39 +499,44 @@ def map_raw_data_to_input_dic(
     return data_points
 
 
-def merge_data_points_by_length(lengths: List[int], max_length: int) -> List[List[int]]:
-    """given lengths of data points, we merge them into groups such that the sum of lengths
-    in each group is less than max_length. This is known as: https://en.wikipedia.org/wiki/Bin_packing_problem
-    Here is the greedy algorithm
+def pack_data_points_by_length(
+    lengths: List[int], max_length: int, max_size: int = -1
+) -> List[List[int]]:
+    """given lengths of data points, we merge consecutive data points into a new data point, as long as the concatenated length is less than max_length
     Args:
-        lengths (List[int]): _description_
-        max_length (int): _description_
+        lengths (List[int]): List of lengths of data points
+        max_length (int): the concatenated length must be less than or equal max_length
+        max_size: if != -1; the maximum number of consecutive items being merged; max_size: -1 --> no limit for number of items being merged
+
+    max_size: the maximum number of data points being merged
+    For example, lengths=[1, 3, 2, 2, 6, 4, 2, 6, 5]; max_length=10
+    if max_size=-1 --> [[0,1,2,3], [4, 5], [6,7], [8]]
+    if max_size=3 --> [[0,1,2], [3,4], [5, 6], [7], [8]]
 
     Returns:
         _type_: groups of indices: [[index1, index2, ...], [], ...]
     """
-    items = [{"length": length, "index": i} for i, length in enumerate(lengths)]
-    items = sorted(items, key=lambda x: x["index"])
-    merges = []
-    current_sum = 0
+    result = []
+    current_concatenated_length = 0
     current_list = []
-    for i in range(len(items)):
-        cur_length = items[i]["length"]
-        if cur_length + current_sum <= max_length:
-            current_sum += items[i]["length"]
+    for i in range(len(lengths)):
+        cur_length = lengths[i]
+        if cur_length + current_concatenated_length <= max_length and (
+            max_size == -1 or len(current_list) < max_size
+        ):
+            current_concatenated_length += cur_length
             current_list.append(i)
-        else:
-            merges.append(current_list)
+        else:  # current_list is done, create a new one
+            if len(current_list) > 0:
+                result.append(current_list)
             current_list = [i]
-            current_sum = cur_length
+            current_concatenated_length = cur_length
 
     if len(current_list) > 0:
-        merges.append(current_list)
+        result.append(current_list)
 
-    result = []
-    for merge in merges:
-        sub_items = [items[index]["index"] for index in merge]
-        result.append(sub_items)
+    # assert to make sure no indices were missing
+    assert sum([len(indices) for indices in result]) == len(lengths)
     return result
 
 
@@ -620,9 +626,7 @@ def pack_data_points(data_points: List[Dict], tokenizer: Any, pack_length: int) 
     }
 
 
-def pack_data_points_FA(
-    data_points: List[Dict], tokenizer: Any, pack_length: int
-) -> Dict:
+def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
     """This method is used to pack multiple data_points into a single data point usable for Flash Attention
 
     For example, we want to pack 2 inputs with padding_size=right:
@@ -658,7 +662,9 @@ def pack_data_points_FA(
         lengths.append(len(item["input_ids"]))
         attention_mask += [index + 1 for _ in range(len(item["input_ids"]))]
 
-    pad_leng = pack_length - len(input_ids)  # padding to model_max_length
+    pad_leng = tokenizer.model_max_length - len(
+        input_ids
+    )  # padding to model_max_length
 
     if tokenizer.padding_side == "right":
         input_ids = input_ids + [tokenizer.pad_token_id for _ in range(pad_leng)]
@@ -669,7 +675,12 @@ def pack_data_points_FA(
         label_ids = [-100 for _ in range(pad_leng)] + label_ids
         attention_mask = [0 for _ in range(pad_leng)] + attention_mask
 
-    assert len(input_ids) == len(label_ids) == len(attention_mask) == pack_length
+    assert (
+        len(input_ids)
+        == len(label_ids)
+        == len(attention_mask)
+        == tokenizer.model_max_length
+    )
     return {
         "input_ids": torch.tensor(input_ids),
         "labels": torch.tensor(label_ids),
@@ -865,10 +876,12 @@ class PackedDataset(CachedDataset):
         keep_assistant_prefix: bool = False,
         use_flash_attention: bool = True,
         pack_length: Optional[int] = None,
+        max_packed_size: Optional[int] = -1,
     ):
         super().__init__(tokenizer, cached_folder, ignore_cached)
         self.use_flash_attention = use_flash_attention
         self.pack_length = pack_length if pack_length else tokenizer.model_max_length
+        self.max_packed_size = max_packed_size
         print("self.pack_length: ", self.pack_length)
         if not self.load_from_cache:
             self.data_points = map_raw_data_to_input_dic(
@@ -887,7 +900,9 @@ class PackedDataset(CachedDataset):
 
     def update_packing_info(self):
         self.lengths = [len(item["input_ids"]) for item in self.data_points]
-        self.groups = merge_data_points_by_length(self.lengths, self.pack_length)
+        self.groups = pack_data_points_by_length(
+            self.lengths, self.pack_length, self.max_packed_size
+        )
 
     def __len__(self):
         return len(self.groups)
@@ -897,7 +912,7 @@ class PackedDataset(CachedDataset):
         group_data_points = [self.data_points[index] for index in group]
         if not self.use_flash_attention:
             return pack_data_points(group_data_points, self.tokenizer, self.pack_length)
-        return pack_data_points_FA(group_data_points, self.tokenizer, self.pack_length)
+        return pack_data_points_FA(group_data_points, self.tokenizer)
 
     def stat(self):
         print(
@@ -912,3 +927,16 @@ class PackedDataset(CachedDataset):
         print(
             f"original avg length: {original_avg_length}; avg packed length: {avg_packed_length}"
         )
+
+    def length_statistics(self):
+        count_dic = {}
+        for length in self.lengths:
+            count_dic[length] = count_dic.get(length, 0) + 1
+
+        thresholds = [2048 * i for i in [1, 2, 4, 8, 16, 32]]
+        for threshold in thresholds:
+            greater_count = 0
+            for key in count_dic:
+                if key >= threshold:
+                    greater_count += count_dic[key]
+            print(f"number of data points > {threshold}: {greater_count}")

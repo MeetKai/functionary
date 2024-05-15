@@ -89,6 +89,8 @@ def compute_loss_for_model_class(
     # In the training, we set use_cache=False, use_cache=True only takes effect at inference
     model.config.use_cache = False
 
+    model.config.output_router_logits = True  # force the model to compute loss
+
     if hasattr(model, "router_aux_loss_coef"):
         print("set au_coef=0")
         model.router_aux_loss_coef = (
@@ -131,22 +133,27 @@ def create_labels_from_input_ids(input_ids: List[int], tokenizer: Any) -> List[i
 def main(
     pretrained_path: str,
     max_input_length: int = typer.Option(default=4096),
-    pack_length: int = typer.Option(default=4096),
+    pack_length: int = typer.Option(default=-1),
     masking_labels: bool = typer.Option(default=False),
+    max_packed_size: int = typer.Option(default=-1),
 ):
     """This function is used to assert that the loss of monkey-patched models on packed datasets == loss of original models on original datasets
         We will use 50 random data points from dataset: tatsu-lab/alpaca on Huggingface Hub for computing the loss.
     Args:
         pretrained_path (str): model_path
         max_input_length (int, optional): max_length at tokenizing data. Defaults to 4096.
-        pack_length (int, optional): the length used for packing. Defaults to 6000.
+        pack_length (int, optional): The maximum length of packed data points, if = 1 --> value = max_input_length. Defaults to -1.
         masking_labels: whether we mask labels such that only Output tokens are used for computing loss:
             + masking_labels = True: masking prompt tokens as -100, and keep the output tokens --> only output tokens are used for computing loss
             + masking_labels = False: no masking, all tokens are used for computing loss
+        max_packed_size (int, optional): Maximum number of data points that can be packed. If value = -1, there is no limit for this, as long as the length of packed data point < pack_length. Defaults to -1.
     Returns:
         _type_: _description_
     """
+    if pack_length == -1:
+        pack_length = max_input_length
 
+    assert pack_length <= max_input_length
     tokenizer = AutoTokenizer.from_pretrained(pretrained_path, legacy=True)
     tokenizer.pad_token = tokenizer.eos_token
 
@@ -185,7 +192,9 @@ def main(
     ex_ds.set_format("torch")
 
     # convert ex_ds --> packed dataset
-    packed_ds = PackedDataset(ex_ds, tokenizer, pack_length)
+    packed_ds = PackedDataset(
+        ex_ds, tokenizer, max_input_length, pack_length, max_packed_size
+    )
     packed_ds.stat()
 
     # first compute the average loss of the original model on normal dataset (without packing)

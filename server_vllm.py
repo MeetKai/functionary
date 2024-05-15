@@ -62,7 +62,7 @@ from functionary.prompt_template import (
     PromptTemplate,
     get_prompt_template_from_tokenizer,
 )
-from functionary.prompt_template.prompt_template_v2 import get_random_tool_call_id
+from functionary.prompt_template.prompt_utils import get_random_tool_call_id
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -294,7 +294,7 @@ async def create_chat_completion(raw_request: Request):
                         elif isinstance(tool_choice, Tool):
                             yield tool_choice.function.name + prompt_template.fn_param_sep_token, finish_reason
                     yield delta_text, finish_reason
-        yield "", "stop"
+        # yield "", "stop"
 
     async def completion_stream_generator(
         tool_choice, functions
@@ -358,9 +358,10 @@ async def create_chat_completion(raw_request: Request):
         )  # parse_generated_content(text_response)
 
         # Postprocess finish reason
-        if "function_call" in chat_mess and chat_mess["function_call"] is not None:
+        if "function_call" in chat_mess and chat_mess["function_call"]:
             output.finish_reason = "function_call"
-        if "tool_calls" in chat_mess and chat_mess["tool_calls"] is not None:
+
+        if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
             output.finish_reason = "tool_calls"
 
         # Convert v1 from function_call to tool_calls if tools are provided instead of functions
@@ -461,7 +462,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     pattern = r"v1.*$"
-    if re.search(pattern, args.model):
+    if re.search(pattern, args.model) or "llama" in args.model:
         args.grammar_sampling = False
 
     if args.grammar_sampling:

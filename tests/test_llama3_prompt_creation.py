@@ -33,11 +33,11 @@ def extract_unmasked_chunks(labels: List[int]) -> List[List[int]]:
     return chunks
 
 
-class TestInsertingEndToken(unittest.TestCase):
+class TestLlama3Template(unittest.TestCase):
     def __init__(self, *args, **kwargs):
-        super(TestInsertingEndToken, self).__init__(*args, **kwargs)
+        super(TestLlama3Template, self).__init__(*args, **kwargs)
 
-        self.template_version = "v2"
+        self.template_version = "v2.llama3"
         self.prompt_template = get_prompt_template_by_version(self.template_version)
 
         current_folder = os.path.dirname(os.path.abspath(__file__))
@@ -49,8 +49,7 @@ class TestInsertingEndToken(unittest.TestCase):
         with open(
             os.path.join(current_folder, f"prompt_test_{self.template_version}.txt")
         ) as f:
-            self.final_prompt = f.read()
-            self.final_prompt = self.final_prompt.replace("\n\n<|from|>", "\n<|from|>")
+            self.final_prompt = f.read().strip()
 
     def test_final_prompt_generation(self):
         tools_or_functions = (
@@ -61,30 +60,26 @@ class TestInsertingEndToken(unittest.TestCase):
         final_prompt = self.prompt_template.get_prompt_from_messages(
             self.test_case["messages"], tools_or_functions
         )
-
+        # print("--------------PROMPT-------")
+        # print(final_prompt)
+        # print("-------------")
         self.assertEqual(
-            final_prompt.strip(),
-            self.final_prompt.strip(),
+            final_prompt,
+            self.final_prompt,
             "wrong final prompt from: get_prompt_from_messages",
         )
 
     def test_prepare_training_inputs_normal_tokenizer(self):
-        print("start testing normal tokenizer")
-        for keep_assistant_prefix in [False]:
-            self.run_prepare_training_inputs(
-                pretrained="meetkai/functionary-small-v2.4",
-                keep_assistant_prefix=keep_assistant_prefix,
-            )
-
-    def run_prepare_training_inputs(
-        self, pretrained: str, keep_assistant_prefix: bool = False
-    ):
         """this function is used to test function: prepare_training_inputs"""
-        # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
-        tokenizer = AutoTokenizer.from_pretrained(pretrained, legacy=True)
+        tokenizer = AutoTokenizer.from_pretrained(
+            "meta-llama/Meta-Llama-3-8B-Instruct", legacy=True
+        )
         tokenizer.pad_token = tokenizer.eos_token
         # first we add stop_tokens to the tokenizer
         prompt_template = self.prompt_template
+        added_tokens = prompt_template.get_additional_tokens()
+        if len(added_tokens) > 0:
+            tokenizer.add_special_tokens({"additional_special_tokens": added_tokens})
 
         inputs = prepare_training_inputs(
             messages=self.test_case,
@@ -93,7 +88,7 @@ class TestInsertingEndToken(unittest.TestCase):
             max_length=1024,
             return_tensor=False,
             verbose=False,
-            keep_assistant_prefix=keep_assistant_prefix,
+            keep_assistant_prefix=False,
         )
         input_ids = inputs["inputs"]["input_ids"]
         labels = inputs["inputs"]["labels"]
@@ -131,15 +126,9 @@ class TestInsertingEndToken(unittest.TestCase):
 
         print(f"number of unmasked chunks: {len(chunks)}")
         for chunk, message in zip(chunks, assistant_message):
-            if keep_assistant_prefix:
-                prefix = ""
-            else:
-                prefix = prompt_template.convert_message_to_prompt(
-                    {"role": "assistant"}
-                )
-            decoded_content = prefix + tokenizer.decode(
-                chunk
-            )  # note that need to add: "\nassistant" because we mask this, see line 194 in prompt_utils.py
+            prefix = prompt_template.convert_message_to_prompt({"role": "assistant"})
+            decoded_content = prefix + tokenizer.decode(chunk)
+
             prompt = prompt_template.convert_message_to_prompt(message)
             # decoded_content and prompt should be the same
             # to avoid any mistakes of tokenizer like adding white space we will compare after removing space
@@ -149,31 +138,34 @@ class TestInsertingEndToken(unittest.TestCase):
                 "decoded content is different from original content",
             )
 
-    def test_chat_template(self):
-        messages = self.prompt_template.inject_system_messages_based_on_tools(
-            self.test_case["messages"], self.test_case["tools"]
-        )
+    def test_against_original_llama3_chat_template(self):
         tokenizer = AutoTokenizer.from_pretrained(
-            "meetkai/functionary-small-v2.2", legacy=True
+            "meta-llama/Meta-Llama-3-8B-Instruct", legacy=True
         )
+        tokenizer.pad_token = tokenizer.eos_token
+        messages = [
+            {"role": "system", "content": "The current date is: 2024-04-23"},
+            {"role": "user", "content": "Hello how are you?"},
+            {"role": "assistant", "content": "Hi, I am good, and you?"},
+            {"role": "user", "content": "Can you help me book a car?"},
+            {"role": "assistant", "content": "Sure, I wil help you now"},
+        ]
 
-        final_prompt = tokenizer.apply_chat_template(messages, tokenize=False)
-        self.assertEqual(
-            final_prompt.strip(),
-            self.final_prompt,
-            "wrong final prompt for chat template",
-        )
+        inference_messages = messages[:-1] + [{"role": "assistant"}]
 
-        prompt_gen = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        self.assertEqual(
-            prompt_gen,
-            self.final_prompt
-            + "\n"
-            + self.prompt_template.convert_message_to_prompt({"role": "assistant"}),
-            "wrong prompt for generation",
-        )
+        for case in [messages]:
+            created_prompt = self.prompt_template.get_prompt_from_messages(
+                case, tools_or_functions=[]
+            )
+            correct_prompt = tokenizer.apply_chat_template(case, tokenize=False)
+
+            # print("created_prompt: ", created_prompt)
+            # print("correct: ", correct_prompt)
+
+            if correct_prompt.startswith("<|begin_of_text|>"):
+                correct_prompt = correct_prompt[len("<|begin_of_text|>") :]
+
+            assert created_prompt.endswith(correct_prompt)
 
 
 if __name__ == "__main__":
