@@ -3,18 +3,12 @@ from __future__ import annotations
 import json
 import re
 from abc import abstractmethod
-from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.schema import generate_schema_from_functions
 
 SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
 PYTHON_RUN_SYS_MSG = "When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files."
-
-
-class PredefinedFuncTypes(str, Enum):
-    no_tool_call = "no-tool-call"
-    code_interpreter = "code-interpreter"
 
 
 class PromptTemplate:
@@ -27,18 +21,6 @@ class PromptTemplate:
             str: a string token
         """
         raise NotImplementedError
-
-    def get_predefined_function_names(self, function_types: Any) -> List[str]:
-        """returns a list of predefined function names. Some prompt template versions may
-        require a default/predefined function name to indicate for example, no function called.
-        E.g.: in v2, 'all' is generated to indicate normal model response. In this case, the v2
-        subclass will overwrite this base method.
-        Args:
-            function_types (Any): Either "all" or one of the function type in PredefinedFuncTypes enum class
-        Returns:
-            List[str]: list of predefined function names (default to [])
-        """
-        return []
 
     @abstractmethod
     def initialize_grammar_sampling_gen_state(self, tool_choice: Optional[Any]) -> Dict:

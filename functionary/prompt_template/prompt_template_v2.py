@@ -5,10 +5,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.openai_types import Tool
 from functionary.prompt_template import prompt_utils
-from functionary.prompt_template.base_template import (
-    PredefinedFuncTypes,
-    PromptTemplate,
-)
+from functionary.prompt_template.base_template import PromptTemplate
 
 
 class PromptTemplateV2(PromptTemplate):
@@ -19,46 +16,40 @@ class PromptTemplateV2(PromptTemplate):
     version = "v2"
     # This token splits between function name and parameters
     fn_param_sep_token = "\n<|content|>"
-    # This maps the predefined function type to its str name
-    predefined_func_names = {
-        PredefinedFuncTypes.no_tool_call: "all",
-        PredefinedFuncTypes.code_interpreter: "python",
-    }
 
     def get_start_of_function_call_token(self) -> str:
         return self.recipient_token
 
-    def get_predefined_function_names(self, function_types: Any) -> List[str]:
-        if function_types == "all":
-            return [func_name for func_name in self.predefined_func_names.values()]
-
-        if not isinstance(function_types, list):
-            function_types = [function_types]
-
-        predefined_function_names = []
-        for function_type in function_types:
-            predefined_function_names.append(self.predefined_func_names[function_type])
-
-        return predefined_function_names
-
     def initialize_grammar_sampling_gen_state(
-        self, tool_choice: str, curr_text: str, curr_tokens: List[int]
+        self,
+        tool_choice: str,
+        curr_text: str,
+        curr_tokens: List[int],
+        add_code_interpreter: bool,
     ) -> Dict:
+        """Initializes grammar-sampling state
+
+        Args:
+            tool_choice (str): tool_choice provided by user
+            curr_text (str): Text to initialize in gen_state
+            curr_tokens (List[int]): Corresponding tokens of curr_text
+            add_code_interpreter (bool): Flag indicating whether to add "python" tool in options in "function" stage.
+        Returns:
+            Dict: generation state
+        """
+        add_all_recipient = False
         # To force a text response ("tool_choice"="none")
         if tool_choice == "none":
-            add_predefined_fns = False
-            stage = "no-tool-call"
+            stage = "text-gen"
         # Normal generation (function name first without "all") (tool_choice="returned")
         elif tool_choice == "required":
-            add_predefined_fns = False
             stage = "function"
         # To force a function call (tool_choice={"type": "function", "function": {...}})
         elif tool_choice != "":
-            add_predefined_fns = False
             stage = "parameter"
         # Normal generation (function name first) (tool_choice="auto")
         else:
-            add_predefined_fns = True
+            add_all_recipient = True
             stage = "function"
 
         return {
@@ -66,7 +57,8 @@ class PromptTemplateV2(PromptTemplate):
             "curr_tokens": curr_tokens,
             "curr_text": curr_text,
             "func_name": tool_choice,
-            "add_predefined_fns": add_predefined_fns,
+            "add_all_recipient": add_all_recipient,
+            "add_code_interpreter": add_code_interpreter,
         }
 
     def grammar_sample(
@@ -99,20 +91,24 @@ class PromptTemplateV2(PromptTemplate):
         """
         grammar_sampled_token_id, grammar_sampled_token = None, None
 
-        # Form the functions options
+        # Form the options for the following stages
         options = []
-        if gen_state["stage"] == "function":
+        if gen_state["stage"] == "pre-function":
+            options = [
+                f"\n{self.from_token}assistant\n{self.recipient_token}",
+                self.stop_token,
+            ]
+        elif gen_state["stage"] == "function":
             options = [tool_or_func["name"] for tool_or_func in tools_or_functions]
-            # Assume prompt template versions > 1 have "all" in function options
-            # Subjected to changes in future versions
-            # Concatenate the list of predefined function names in the respective prompt
-            # template version. For e.g., v2 returns ["all"]
-            if gen_state["add_predefined_fns"] is True:
-                options += self.get_predefined_function_names(function_types="all")
+            if gen_state["add_all_recipient"]:
+                options.append("all")
+            if gen_state["add_code_interpreter"]:
+                options.append("python")
+        elif gen_state["stage"] == "pre-parameter":
+            options = [self.fn_param_sep_token]
 
-        # No grammar sampling needed if gen_state not in "function" or
-        # "pre-parameter" stages. Just return the model_sampled_token_id
-        if gen_state["stage"] not in ["function", "pre-parameter"]:
+        # No grammar sampling needed if gen_state not in the following stages. Return model_sampled_token_id
+        if gen_state["stage"] not in ["pre-function", "function", "pre-parameter"]:
             grammar_sampled_token_id = model_sampled_token_id
             grammar_sampled_token = tokenizer.decode([model_sampled_token_id])
 
@@ -149,10 +145,9 @@ class PromptTemplateV2(PromptTemplate):
                         grammar_sampled_token_id = sampled_token_ind
                         grammar_sampled_token = sampled_token
                         break
-                # "pre-parameter" stage
-                elif gen_state["stage"] == "pre-parameter":
-                    # Check if new_curr_tokens is a prefix of fn_param_sep_token
-                    if self.fn_param_sep_token.startswith(new_curr_tokens):
+                elif gen_state["stage"] in ["pre-function", "pre-parameter"]:
+                    # Check if new_curr_tokens is a prefix of any of options
+                    if any([option.startswith(new_curr_tokens) for option in options]):
                         grammar_sampled_token_id = sampled_token_ind
                         grammar_sampled_token = sampled_token
                         break
@@ -176,7 +171,7 @@ class PromptTemplateV2(PromptTemplate):
             self.content_token,
             self.stop_token,
         ]
-        
+
     def update_grammar_sampling_gen_state(
         self,
         gen_state: Dict,
@@ -195,7 +190,7 @@ class PromptTemplateV2(PromptTemplate):
               - function: when the model is generating a function name
               - pre-parameter: when the model is generating the part between function name and parameter
               - parameter: when the model is generating parameters
-              - no-tool-call: when the model is generating content
+              - text-gen: when the model is generating content
               - code-interpreter: when the model is generating code
             - curr_tokens: all the tokens for the current stage being generated
             - curr_text: curr_tokens but in string text form
@@ -210,19 +205,13 @@ class PromptTemplateV2(PromptTemplate):
         gen_state["curr_tokens"].append(new_token_id)
         gen_state["curr_text"] = tokenizer.decode(gen_state["curr_tokens"])
 
-        # v1: "assistant:\n{content}\n{self.start_function}{function}:\n{arguments}\n"
         # v2: "{func_name}\n<content|>{param_names}\n<|from|> assistant\n<|recipient|>"
         if gen_state["stage"] == "pre-function":
             # Check if the new state is in "function" stage
             if gen_state["curr_text"].endswith(self.get_start_of_function_call_token()):
-                gen_state = {
-                    "stage": "function",
-                    "curr_tokens": [],
-                    "curr_text": "",
-                    "func_name": "",
-                    "add_predefined_fns": gen_state["add_predefined_fns"],
-                }
                 gen_state["stage"] = "function"
+                gen_state["curr_text"], gen_state["curr_tokens"] = "", []
+                gen_state["func_name"] = ""
 
         elif gen_state["stage"] == "function":
             curr_text = gen_state["curr_text"]
@@ -252,14 +241,10 @@ class PromptTemplateV2(PromptTemplate):
         elif gen_state["stage"] == "pre-parameter":
             if self.fn_param_sep_token in gen_state["curr_text"]:
                 gen_state["curr_text"], gen_state["curr_tokens"] = "", []
-                # Check if the new state is "no-tool-call" or "code-interpreter" or "parameter"
-                if gen_state["func_name"] in self.get_predefined_function_names(
-                    function_types=PredefinedFuncTypes.no_tool_call
-                ):
-                    gen_state["stage"] = "no-tool-call"
-                elif gen_state["func_name"] in self.get_predefined_function_names(
-                    function_types=PredefinedFuncTypes.code_interpreter
-                ):
+                # Check if the new state is "text-gen" or "code-interpreter" or "parameter"
+                if gen_state["func_name"] == "all":
+                    gen_state["stage"] = "text-gen"
+                elif gen_state["func_name"] == "python":
                     gen_state["stage"] = "code-interpreter"
                 else:
                     gen_state["stage"] = "parameter"
@@ -271,20 +256,16 @@ class PromptTemplateV2(PromptTemplate):
             try:
                 _ = json.loads(latest_param_str)
                 gen_state["stage"] = "pre-function"
+                gen_state["curr_text"], gen_state["curr_tokens"] = "", []
             except:
                 pass
-        elif gen_state["stage"] in ["no-tool-call", "code-interpreter"]:
-            # probability of stop token is not 100% at the end of no-tool-call
-            # We still need to check if the stage will go to "function" by checking
-            # for the presence of the start_of_function_call token
+        elif gen_state["stage"] in ["text-gen", "code-interpreter"]:
+            # Check if the new state is in "function" stage
+            # This happens when the text-gen is a COT or another fn is called after code-interpreter
             if gen_state["curr_text"].endswith(self.get_start_of_function_call_token()):
-                gen_state = {
-                    "stage": "function",
-                    "curr_tokens": [],
-                    "curr_text": "",
-                    "func_name": "",
-                    "add_predefined_fns": gen_state["add_predefined_fns"],
-                }
+                gen_state["stage"] = "function"
+                gen_state["curr_text"], gen_state["curr_tokens"] = "", []
+                gen_state["func_name"] = ""
 
         return gen_state
 
@@ -343,12 +324,7 @@ class PromptTemplateV2(PromptTemplate):
         recipient_to_fill = ""
         if tool_choice is not None:
             if tool_choice == "none":
-                recipient_to_fill = (
-                    self.get_predefined_function_names(
-                        function_types=PredefinedFuncTypes.no_tool_call
-                    )[0]
-                    + self.fn_param_sep_token
-                )
+                recipient_to_fill = "all" + self.fn_param_sep_token
             elif isinstance(tool_choice, Tool):
                 recipient_to_fill = tool_choice.function.name + self.fn_param_sep_token
 
@@ -462,7 +438,7 @@ class PromptTemplateV2(PromptTemplate):
 
             if tool_choice == "none":
                 response_type, skip_until_reach = "text", ""
-                func_name = self.predefined_func_names[PredefinedFuncTypes.no_tool_call]
+                func_name = "all"
             elif (
                 tool_choice is not str and tool_choice is not None
             ):  # tool_choice is a specific tool

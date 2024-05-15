@@ -20,7 +20,6 @@ from functionary.prompt_template import (
     PromptTemplate,
     get_prompt_template_from_tokenizer,
 )
-from functionary.prompt_template.base_template import PredefinedFuncTypes
 
 
 class StopWordsCriteria(StoppingCriteria):
@@ -78,12 +77,7 @@ def prepare_messages_for_inference(
     ):
         if tool_choice == "none":
             if prompt_template.version == "v2":
-                final_prompt += (
-                    prompt_template.get_predefined_function_names(
-                        function_types=PredefinedFuncTypes.no_tool_call
-                    )[0]
-                    + prompt_template.fn_param_sep_token
-                )
+                final_prompt += "all" + prompt_template.fn_param_sep_token
         else:
             final_prompt += prompt_template.get_force_function_call_prefix(
                 tool_choice.function.name
