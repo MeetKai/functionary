@@ -19,9 +19,9 @@ location: string,
 
 When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files.<|eot_id|><|start_header_id|>user<|end_header_id|>
 
-who is the president of US<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+who is the CEO of Meetkai<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
-Biden is the president of US<|eot_id|><|start_header_id|>user<|end_header_id|>
+James Kaplan is the Co-Founder and CEO of MeetKai Inc.<|eot_id|><|start_header_id|>user<|end_header_id|>
 
 is the car Song more expensive than car Tang?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
