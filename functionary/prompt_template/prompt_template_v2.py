@@ -546,5 +546,8 @@ class PromptTemplateV2(PromptTemplate):
 
                     return current_state, responses
 
+    def get_force_text_generation_prefix(self):
+        return f"all{self.fn_param_sep_token}"
+
     def get_force_function_call_prefix(self, function_name: str):
         return f"{function_name}{self.fn_param_sep_token}"

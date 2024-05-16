@@ -69,8 +69,7 @@ def prepare_messages_for_inference(
         and tool_choice not in ["auto", "required"]
     ):
         if tool_choice == "none":
-            if prompt_template.version == "v2":
-                final_prompt += "all" + prompt_template.fn_param_sep_token
+            final_prompt += prompt_template.get_force_text_response_prefix()
         else:
             final_prompt += prompt_template.get_force_function_call_prefix(
                 tool_choice.function.name

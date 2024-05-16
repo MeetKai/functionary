@@ -37,9 +37,6 @@ class Llama3Template(PromptTemplate):
     def get_stop_tokens_for_generation(self) -> List[str]:
         return ["<|eot_id|>", "<|end_of_text|>"]
 
-    def get_start_of_function_call_token(self) -> str:
-        pass
-
     def initialize_grammar_sampling_gen_state(
         self,
         tool_choice: str,
@@ -551,6 +548,8 @@ class Llama3Template(PromptTemplate):
         chat_template = chat_template.strip()
         return chat_template
 
+    def get_force_text_generation_prefix(self):
+        return ""
+
     def get_force_function_call_prefix(self, function_name: str):
-        return f"{self.function_separator}{function_name}\n"
         return f"{self.function_separator}{function_name}\n"
