@@ -211,6 +211,10 @@ class PromptTemplate:
         """
         raise NotImplementedError
 
+    def get_force_text_generation_prefix(self):
+        """This function will be used for force-text generation. Returns empty string by default"""
+        return ""
+
     @abstractmethod
     def get_force_function_call_prefix(self, function_name: str):
         """This function will be used for force-function call
