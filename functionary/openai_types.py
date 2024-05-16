@@ -115,6 +115,7 @@ class ChatCompletionRequest(BaseModel):
     messages: List[ChatMessage]
     functions: Optional[List[Function]] = None
     tools: Optional[List[Tool]] = None
+    function_call: Optional[Union[str, Function]] = None
     tool_choice: Optional[Union[str, Tool]] = None
     temperature: Optional[float] = 0.6
     top_p: Optional[float] = 1.0
@@ -132,14 +133,23 @@ class ChatCompletionRequest(BaseModel):
     ignore_eos: Optional[bool] = False
     use_beam_search: Optional[bool] = False
 
-    @validator("tool_choice", always=True)
-    def validate_tool_choice(cls, value, values):
-        if value is None:
-            if values["tools"] is None and values["functions"] is None:
-                return "none"
-            else:
-                return "auto"
-        return value
+    # @validator("tool_choice", always=True)
+    # def validate_tool_choice(cls, value, values):
+    #     if value is None:
+    #         if values["tools"] is None and values["functions"] is None:
+    #             return "none"
+    #         else:
+    #             return "auto"
+    #     return value
+
+    # @validator("function_call", always=True)
+    # def validate_function_call(cls, value, values):
+    #     if value is None:
+    #         if values["tools"] is None and values["functions"] is None:
+    #             return "none"
+    #         else:
+    #             return "auto"
+    #     return value
 
 
 class ChatCompletionResponseChoice(BaseModel):

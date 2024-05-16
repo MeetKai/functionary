@@ -221,7 +221,6 @@ class _AsyncLLMEngine(LLMEngine):
     # - curr_tokens: all the tokens for the current stage being generated
     # - curr_text: curr_tokens but in string text form
     # - func_name: the function name, if any
-    # - param_names: the parameters names, if any
     # - tool_choice: whether the user provided tool_choice
     gen_states: dict = {}
 
@@ -705,10 +704,14 @@ class AsyncLLMEngine:
 
         # Initialize the request_id entry of self.engine.tools_or_functions
         # and prompt_templates at the start of generate method
-        self.engine.tools_or_functions[request_id] = [
-            tool_or_func if "function" not in tool_or_func else tool_or_func["function"]
-            for tool_or_func in tools_or_functions
-        ]
+        self.engine.tools_or_functions[request_id] = []
+        for tool_or_func in tools_or_functions:
+            if "type" not in tool_or_func:
+                self.engine.tools_or_functions[request_id].append(tool_or_func)
+            elif tool_or_func["type"] == "function":
+                self.engine.tools_or_functions[request_id].append(
+                    tool_or_func["function"]
+                )
         self.engine.prompt_templates[request_id] = prompt_template_cls
 
         # Initialize gen_state based on tool_choice
@@ -727,7 +730,20 @@ class AsyncLLMEngine:
         self.engine.gen_states[request_id] = self.engine.prompt_templates[
             request_id
         ].initialize_grammar_sampling_gen_state(
-            tool_choice=tool_choice_name, curr_text=curr_text, curr_tokens=curr_tokens
+            tool_choice=tool_choice_name,
+            curr_text=curr_text,
+            curr_tokens=curr_tokens,
+            add_code_interpreter=(
+                True
+                if any(
+                    [
+                        "type" in tool_or_func
+                        and tool_or_func["type"] == "code_interpreter"
+                        for tool_or_func in tools_or_functions
+                    ]
+                )
+                else False
+            ),
         )
 
         try:

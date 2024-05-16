@@ -58,7 +58,6 @@ from functionary.openai_types import (
     UsageInfo,
 )
 from functionary.prompt_template import (
-    PredefinedFuncTypes,
     PromptTemplate,
     get_prompt_template_from_tokenizer,
 )
@@ -71,9 +70,16 @@ served_model = None
 app = fastapi.FastAPI()
 
 
-def create_error_response(status_code: HTTPStatus, message: str) -> JSONResponse:
+def create_error_response(
+    status_code: HTTPStatus, message: str, param: Optional[str]
+) -> JSONResponse:
     return JSONResponse(
-        ErrorResponse(message=message, type="invalid_request_error").dict(),
+        ErrorResponse(
+            message=message,
+            type="invalid_request_error",
+            param=param,
+            code=status_code.value,
+        ).dict(),
         status_code=status_code.value,
     )
 
@@ -83,14 +89,51 @@ async def validation_exception_handler(request, exc):  # pylint: disable=unused-
     return create_error_response(HTTPStatus.BAD_REQUEST, str(exc))
 
 
-async def check_model(request) -> Optional[JSONResponse]:
-    if request.model == served_model:
-        return
-    ret = create_error_response(
-        HTTPStatus.NOT_FOUND,
-        f"The model `{request.model}` does not exist.",
-    )
-    return ret
+async def check_all_errors(request) -> Optional[JSONResponse]:
+    if request.model != served_model:
+        return create_error_response(
+            status_code=HTTPStatus.NOT_FOUND,
+            message=f"The model `{request.model}` does not exist.",
+            param=None,
+        )
+    if request.tools and request.functions:
+        return create_error_response(
+            status_code=HTTPStatus.BAD_REQUEST,
+            message="'functions' and 'tools' cannot both be provided. 'functions' are deprecated; use the 'tools' parameter instead.",
+            param=None,
+        )
+    if isinstance(request.function_call, str) and request.function_call not in [
+        "none",
+        "auto",
+    ]:
+        return create_error_response(
+            status_code=HTTPStatus.BAD_REQUEST,
+            message=f"Invalid value: '{request.function_call}'. Supported values are: 'none' and 'auto'.",
+            param="function_call",
+        )
+    if isinstance(request.tool_choice, str) and request.tool_choice not in [
+        "none",
+        "auto",
+        "required",
+    ]:
+        return create_error_response(
+            status_code=HTTPStatus.BAD_REQUEST,
+            message=f"Invalid value: '{request.function_call}'. Supported values are: 'none', 'auto', and 'required'.",
+            param="tool_choice",
+        )
+    if request.functions is None and request.function_call is not None:
+        return create_error_response(
+            status_code=HTTPStatus.BAD_REQUEST,
+            message=f"Invalid value for 'function_call': 'function_call' is only allowed when 'functions' are specified.",
+            param="function_call",
+        )
+    if request.tools is None and request.tool_choice is not None:
+        return create_error_response(
+            status_code=HTTPStatus.BAD_REQUEST,
+            message=f"Invalid value for 'tool_choice': 'tool_choice' is only allowed when 'tools' are specified.",
+            param="tool_choice",
+        )
+    return
 
 
 async def check_length(request, input_ids, model_config):
@@ -109,12 +152,15 @@ async def check_length(request, input_ids, model_config):
 
     if token_num + request.max_tokens > context_len:
         return create_error_response(
-            HTTPStatus.BAD_REQUEST,
-            f"This model's maximum context length is {context_len} tokens. "
-            f"However, you requested {request.max_tokens + token_num} tokens "
-            f"({token_num} in the messages, "
-            f"{request.max_tokens} in the completion). "
-            f"Please reduce the length of the messages or completion.",
+            status=HTTPStatus.BAD_REQUEST,
+            message=(
+                f"This model's maximum context length is {context_len} tokens. "
+                f"However, you requested {request.max_tokens + token_num} tokens "
+                f"({token_num} in the messages, "
+                f"{request.max_tokens} in the completion). "
+                f"Please reduce the length of the messages or completion."
+            ),
+            param=None,
         )
     else:
         return None
@@ -166,42 +212,32 @@ async def create_chat_completion(raw_request: Request):
 
     logger.info(f"Received chat completion request: {request}")
 
-    error_check_ret = await check_model(request)
+    error_check_ret = await check_all_errors(request)
     if error_check_ret is not None:
         return error_check_ret
 
-    if request.logit_bias is not None and request.logit_bias:
-        # TODO: support logit_bias in vLLM engine.
-        return create_error_response(
-            HTTPStatus.BAD_REQUEST, "logit_bias is not currently supported"
-        )
-
     if request.tools:
         tools = enforce_tool_choice(
-            tool_choice=request.tool_choice, tools=request.tools
+            choice=request.tool_choice, tools_or_functions=request.tools
         )
         tools_or_functions = [item.dict() for item in tools]
+        tool_func_choice = request.tool_choice if request.tool_choice else "auto"
     elif request.functions:
-        tools = None
-        tools_or_functions = [item.dict() for item in request.functions]
+        functions = enforce_tool_choice(
+            choice=request.function_call, tools_or_functions=request.functions
+        )
+        tools_or_functions = [item.dict() for item in functions]
+        tool_func_choice = request.function_call if request.function_call else "auto"
     else:
-        tools = None
         tools_or_functions = []
+        tool_func_choice = "none"
 
     prompt_token_ids = prepare_messages_for_inference(
         tokenizer=tokenizer,
         messages=request.messages,
-        functions=request.functions,
-        tools=tools,
-        tool_choice=request.tool_choice,
+        tools_or_functions=tools_or_functions,
+        tool_choice=tool_func_choice,
     ).tolist()[0]
-
-    # Remove any code_interpreter tools remaining
-    if tools:
-        tools = [tool for tool in tools if tool.type != "code_interpreter"]
-        tools_or_functions = [
-            tool for tool in tools_or_functions if tool["type"] != "code_interpreter"
-        ]
 
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     if error_check_ret is not None:
@@ -288,9 +324,7 @@ async def create_chat_completion(raw_request: Request):
                         and prompt_template.version != "v1"
                     ):
                         if tool_choice == "none":
-                            yield prompt_template.get_predefined_function_names(
-                                function_types=PredefinedFuncTypes.no_tool_call
-                            )[0] + prompt_template.fn_param_sep_token, finish_reason
+                            yield "all" + prompt_template.fn_param_sep_token, finish_reason
                         elif isinstance(tool_choice, Tool):
                             yield tool_choice.function.name + prompt_template.fn_param_sep_token, finish_reason
                     yield delta_text, finish_reason
@@ -462,7 +496,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     pattern = r"v1.*$"
-    if re.search(pattern, args.model) or "llama" in args.model:
+    if re.search(pattern, args.model):
         args.grammar_sampling = False
 
     if args.grammar_sampling:
