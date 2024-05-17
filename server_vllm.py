@@ -391,6 +391,18 @@ async def create_chat_completion(raw_request: Request):
             llm_output=text_response, tool_choice=request.tool_choice
         )  # parse_generated_content(text_response)
 
+        # Convert tool_calls to function_call if request.functions is provided
+        if (
+            request.functions
+            and "tool_calls" in chat_mess
+            and len(chat_mess["tool_calls"]) > 0
+        ):
+            chat_mess["function_call"] = {
+                "name": chat_mess["tool_calls"][0]["function"]["name"],
+                "arguments": chat_mess["tool_calls"][0]["function"]["arguments"],
+            }
+            chat_mess["tool_calls"] = None
+
         # Postprocess finish reason
         if "function_call" in chat_mess and chat_mess["function_call"]:
             output.finish_reason = "function_call"
