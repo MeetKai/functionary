@@ -24,7 +24,7 @@ Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/ge
 
 **Small Model:**
 ```shell
-python3 server_vllm.py --model "meetkai/functionary-small-v2.4" --host 0.0.0.0 --max-model-len 8192
+python3 server_vllm.py --model "meetkai/functionary-small-v2.5" --host 0.0.0.0 --max-model-len 8192
 ```
 
 <details>
@@ -68,7 +68,7 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 
 client.chat.completions.create(
-    model="meetkai/functionary-small-v2.4",
+    model="meetkai/functionary-small-v2.5",
     messages=[{"role": "user",
             "content": "What is the weather for Istanbul?"}
     ],
@@ -104,7 +104,7 @@ client.chat.completions.create(
 import requests
 
 data = {
-    'model': 'meetkai/functionary-small-v2.4', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
+    'model': 'meetkai/functionary-small-v2.5', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
     'messages': [
         {
             "role": "user",
@@ -147,6 +147,7 @@ print(response.text)
 ## Models Available
 | Model                                                                                | Description                                                                                                                         | VRAM FP16 |
 |:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:------|
+| [functionary-small-v2.5](https://huggingface.co/meetkai/functionary-small-v2.5) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.5-GGUF) | 8k context, code interpreter | 24GB |
 | [functionary-small-v2.4](https://huggingface.co/meetkai/functionary-small-v2.4) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.4-GGUF) | 8k context, code interpreter | 24GB |
 | [functionary-medium-v2.4](https://huggingface.co/meetkai/functionary-medium-v2.4) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v2.4-GGUF) | 8k context, code interpreter, better accuracy | 90GB |
 | [functionary-small-v2.2](https://huggingface.co/meetkai/functionary-small-v2.2) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.2-GGUF) | 8k context | 24GB |
@@ -178,6 +179,12 @@ The difference between OpenAI-python v0 and v1 you may refer to the official doc
 **You can find more details of the features in [here](features_desc.md)**
 
 ## Llama.cpp Inference
+
+### Llama.cpp Inference 
+Example for using LLama-cpp can be found in: [llama_cpp_inference_example.py](llama_cpp_inference_example.py). 
+
+### Integration into Llama-cpp
+Besides, functionary was also integrated into LLama-cpp-python, however the integration might be not **quickly updated**, so if there is something wrong or weird in the result, please use: [llama_cpp_inference_example.py](llama_cpp_inference_example.py) instead.
 
 Make sure that the latest version of [llama-cpp-python](https://github.com/abetlen/llama-cpp-python) is successully installed in your system. Functionary v2 is fully integrated into llama-cpp-python. You can perform inference using Functionary's GGUF models either via normal chat completion or through llama-cpp-python's OpenAI-compatible server which behaves similarly to ours.
 
