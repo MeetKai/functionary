@@ -180,8 +180,8 @@ The difference between OpenAI-python v0 and v1 you may refer to the official doc
 
 ## Llama.cpp Inference
 
-### Llama.cpp Inference 
-Example for using LLama-cpp can be found in: [llama_cpp_inference_example.py](llama_cpp_inference_example.py). 
+### Llama.cpp Inference using Huggingface Tokenizer
+Example for inference using LLama-cpp-python can be found in: [llama_cpp_inference_example.py](llama_cpp_inference_example.py). 
 
 ### Integration into Llama-cpp
 Besides, functionary was also integrated into LLama-cpp-python, however the integration might be not **quickly updated**, so if there is something wrong or weird in the result, please use: [llama_cpp_inference_example.py](llama_cpp_inference_example.py) instead.
