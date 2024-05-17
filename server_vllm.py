@@ -334,9 +334,31 @@ async def create_chat_completion(raw_request: Request):
         tool_choice, functions
     ) -> AsyncGenerator[str, None]:
         generator = wrap_vllm_generator(tool_choice=tool_choice)
+        tool_call_count = 0
         async for response in generate_openai_format_from_stream_async(
             generator, prompt_template, tool_choice
         ):
+            # Convert tool_calls to function_call if request.functions is provided
+            if (
+                functions
+                and len(functions) > 0
+                and "tool_calls" in response["delta"]
+                and response["delta"]["tool_calls"]
+                and len(response["delta"]["tool_calls"]) > 0
+            ):
+                tool_name = response["delta"]["tool_calls"][0]["function"]["name"]
+                tool_args = response["delta"]["tool_calls"][0]["function"]["arguments"]
+                response["delta"]["function_call"] = response["delta"]["tool_calls"][0][
+                    "function"
+                ]
+                response["delta"]["tool_calls"] = None
+                if tool_name and len(tool_name) > 0 and tool_args == "":
+                    tool_call_count += 1
+            # Return finish_reason after the first tool_call is streamed if functions is provided
+            if functions and tool_call_count == 2:
+                response["delta"] = {}
+                response["finish_reason"] = "function_call"
+
             # Convert v1 from function_call to tool_calls if tools are provided instead of functions
             if prompt_template.version == "v1" and (
                 functions is None or len(functions) == 0
@@ -360,6 +382,9 @@ async def create_chat_completion(raw_request: Request):
             chunk_dic = result.dict(exclude_unset=True)
             chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
             yield f"data: {chunk_data}\n\n"
+            # Break from for loop after the first tool_call is streamed if functions is provided
+            if functions and tool_call_count == 2:
+                break
         yield "data: [DONE]\n\n"
 
     # Streaming response
@@ -390,6 +415,18 @@ async def create_chat_completion(raw_request: Request):
         chat_mess = prompt_template.parse_assistant_response(
             llm_output=text_response, tool_choice=request.tool_choice
         )  # parse_generated_content(text_response)
+
+        # Convert tool_calls to function_call if request.functions is provided
+        if (
+            request.functions
+            and "tool_calls" in chat_mess
+            and len(chat_mess["tool_calls"]) > 0
+        ):
+            chat_mess["function_call"] = {
+                "name": chat_mess["tool_calls"][0]["function"]["name"],
+                "arguments": chat_mess["tool_calls"][0]["function"]["arguments"],
+            }
+            chat_mess["tool_calls"] = None
 
         # Postprocess finish reason
         if "function_call" in chat_mess and chat_mess["function_call"]:

@@ -69,7 +69,7 @@ def prepare_messages_for_inference(
         and tool_choice not in ["auto", "required"]
     ):
         if tool_choice == "none":
-            final_prompt += prompt_template.get_force_text_response_prefix()
+            final_prompt += prompt_template.get_force_text_generation_prefix()
         else:
             final_prompt += prompt_template.get_force_function_call_prefix(
                 tool_choice.function.name
