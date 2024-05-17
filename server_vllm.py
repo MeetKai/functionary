@@ -348,6 +348,10 @@ async def create_chat_completion(raw_request: Request):
             ):
                 tool_name = response["delta"]["tool_calls"][0]["function"]["name"]
                 tool_args = response["delta"]["tool_calls"][0]["function"]["arguments"]
+                response["delta"]["function_call"] = response["delta"]["tool_calls"][0][
+                    "function"
+                ]
+                response["delta"]["tool_calls"] = None
                 if tool_name and len(tool_name) > 0 and tool_args == "":
                     tool_call_count += 1
             # Return finish_reason after the first tool_call is streamed if functions is provided
