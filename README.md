@@ -11,7 +11,7 @@ The model determines when to execute functions, whether in parallel or serially,
 
 Documentation and more examples: [functionary.meetkai.com](https://functionary.meetkai.com/)
 
-### News
+### Changelog
 + [2024/05/17] we released: [meetkai/functionary-small-v2.5](https://huggingface.co/meetkai/functionary-small-v2.5) with better capability for function calling and code interpreter compared with [functionary-small-v2.4](https://huggingface.co/meetkai/functionary-small-v2.4)
 ### Setup
 
