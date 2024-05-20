@@ -11,6 +11,8 @@ The model determines when to execute functions, whether in parallel or serially,
 
 Documentation and more examples: [functionary.meetkai.com](https://functionary.meetkai.com/)
 
+### News
++ [2024/05/17] we released: [meetkai/functionary-small-v2.5](https://huggingface.co/meetkai/functionary-small-v2.5) with better capability for function calling and code interpreter compared with [functionary-small-v2.4](https://huggingface.co/meetkai/functionary-small-v2.4)
 ### Setup
 
 To install the required dependencies, run:
@@ -184,7 +186,7 @@ The difference between OpenAI-python v0 and v1 you may refer to the official doc
 Example for inference using LLama-cpp-python can be found in: [llama_cpp_inference_example.py](llama_cpp_inference_example.py). 
 
 ### Integration into Llama-cpp
-Besides, functionary was also integrated into LLama-cpp-python, however the integration might be not **quickly updated**, so if there is something wrong or weird in the result, please use: [llama_cpp_inference_example.py](llama_cpp_inference_example.py) instead.
+Besides, functionary was also integrated into LLama-cpp-python, however the integration might not be **quickly updated**, so if there is something wrong or weird in the result, please use: [llama_cpp_inference_example.py](llama_cpp_inference_example.py) instead. Currently, v2.5 hasn't been integrated, so if you are using **functionary-small-v2.5-GGUF**, please use: [llama_cpp_inference_example.py](llama_cpp_inference_example.py)
 
 Make sure that the latest version of [llama-cpp-python](https://github.com/abetlen/llama-cpp-python) is successully installed in your system. Functionary v2 is fully integrated into llama-cpp-python. You can perform inference using Functionary's GGUF models either via normal chat completion or through llama-cpp-python's OpenAI-compatible server which behaves similarly to ours.
 
