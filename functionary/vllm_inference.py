@@ -71,7 +71,7 @@ async def check_all_errors(request, served_model) -> Optional[JSONResponse]:
     ]:
         return create_error_response(
             status_code=HTTPStatus.BAD_REQUEST,
-            message=f"Invalid value: '{request.function_call}'. Supported values are: 'none', 'auto', and 'required'.",
+            message=f"Invalid value: '{request.tool_choice}'. Supported values are: 'none', 'auto', and 'required'.",
             param="tool_choice",
         )
     if request.functions is None and request.function_call is not None:
