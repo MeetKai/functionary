@@ -183,10 +183,10 @@ The difference between OpenAI-python v0 and v1 you may refer to the official doc
 ## Llama.cpp Inference
 
 ### Llama.cpp Inference using Huggingface Tokenizer
-Example for inference using LLama-cpp-python can be found in: [llama_cpp_inference_example.py](llama_cpp_inference_example.py). 
+Example for inference using LLama-cpp-python can be found in: [llama_cpp_inference.py](functionary/examples/llama_cpp_inference.py). 
 
 ### Integration into Llama-cpp
-Besides, functionary was also integrated into LLama-cpp-python, however the integration might not be **quickly updated**, so if there is something wrong or weird in the result, please use: [llama_cpp_inference_example.py](llama_cpp_inference_example.py) instead. Currently, v2.5 hasn't been integrated, so if you are using **functionary-small-v2.5-GGUF**, please use: [llama_cpp_inference_example.py](llama_cpp_inference_example.py)
+Besides, functionary was also integrated into LLama-cpp-python, however the integration might not be **quickly updated**, so if there is something wrong or weird in the result, please use: [llama_cpp_inference.py](functionary/examples/llama_cpp_inference.py) instead. Currently, v2.5 hasn't been integrated, so if you are using **functionary-small-v2.5-GGUF**, please use: [llama_cpp_inference.py](functionary/examples/llama_cpp_inference.py)
 
 Make sure that the latest version of [llama-cpp-python](https://github.com/abetlen/llama-cpp-python) is successully installed in your system. Functionary v2 is fully integrated into llama-cpp-python. You can perform inference using Functionary's GGUF models either via normal chat completion or through llama-cpp-python's OpenAI-compatible server which behaves similarly to ours.
 
