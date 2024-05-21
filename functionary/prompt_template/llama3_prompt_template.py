@@ -435,7 +435,11 @@ class Llama3Template(PromptTemplate):
 
             elif type(tool_choice) is not str and tool_choice is not None:
                 self.update_state_for_function(current_state)
-                current_state["func_name"] = tool_choice.function.name
+                current_state["func_name"] = (
+                    tool_choice.function.name
+                    if isinstance(tool_choice, Tool)
+                    else tool_choice.name
+                )
                 current_state["skip_until_reach"] = (
                     None  # function is already defined, no need to wait for new tokens to define
                 )

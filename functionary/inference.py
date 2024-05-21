@@ -47,7 +47,7 @@ def prepare_messages_for_inference(
     tokenizer: LlamaTokenizer,
     messages: List[ChatMessage],
     tools_or_functions: List[Dict],
-    tool_choice: Optional[Union[str, Tool]] = None,
+    tool_choice: Optional[Union[str, Tool, Function]] = None,
     device="cuda:0",
 ) -> torch.Tensor:
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
@@ -71,8 +71,13 @@ def prepare_messages_for_inference(
         if tool_choice == "none":
             final_prompt += prompt_template.get_force_text_generation_prefix()
         else:
-            final_prompt += prompt_template.get_force_function_call_prefix(
+            tool_choice_name = (
                 tool_choice.function.name
+                if isinstance(tool_choice, Tool)
+                else tool_choice.name
+            )
+            final_prompt += prompt_template.get_force_function_call_prefix(
+                tool_choice_name
             )
     # some prompt template supports call a function directly such as: v2.llama3
     if tool_choice == "required":

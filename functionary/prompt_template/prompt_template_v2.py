@@ -449,7 +449,11 @@ class PromptTemplateV2(PromptTemplate):
                 tool_choice is not str and tool_choice is not None
             ):  # tool_choice is a specific tool
                 response_type, skip_until_reach = "function", ""
-                func_name = tool_choice.function.name
+                func_name = (
+                    tool_choice.function.name
+                    if isinstance(tool_choice, Tool)
+                    else tool_choice.name
+                )
 
             current_state = {
                 "current_text": "",  # the concatenation of all tokens so far
