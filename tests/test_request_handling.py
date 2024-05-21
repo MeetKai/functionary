@@ -1,10 +1,11 @@
 import json
 import unittest
+from http import HTTPStatus
 from typing import Any, Optional, Union
 
+from fastapi.responses import JSONResponse
 from transformers import AutoTokenizer
 
-from functionary.inference import enforce_tool_choice, prepare_messages_for_inference
 from functionary.openai_types import (
     ChatCompletionRequest,
     ChatCompletionResponseChoice,
@@ -13,7 +14,135 @@ from functionary.openai_types import (
     Tool,
 )
 from functionary.prompt_template import get_prompt_template_from_tokenizer
-from functionary.vllm_inference import check_all_errors
+
+
+def enforce_tool_choice(choice, tools_or_functions):
+    if choice == "none":
+        return []
+    elif isinstance(choice, Tool):
+        if choice.function.description == "" and choice.function.parameters is None:
+            tools_or_functions = [
+                tool
+                for tool in tools_or_functions
+                if tool.type == "function"
+                and tool.function.name == choice.function.name
+            ]
+            assert (
+                len(tools_or_functions) > 0
+            ), f"Invalid value for 'tool_choice': no function named {choice.function.name} was specified in the 'tools' parameter"
+        else:
+            tools_or_functions = [choice]
+    elif isinstance(choice, Function):
+        tools_or_functions = [
+            function for function in tools_or_functions if function.name == choice.name
+        ]
+        assert (
+            len(tools_or_functions) > 0
+        ), f"Invalid value for 'function_call': no function named {choice.name} was specified in the 'functions' parameter"
+
+    return tools_or_functions
+
+
+def prepare_messages_for_inference(
+    *, tokenizer, messages, tools_or_functions, tool_choice=None, device="cuda:0"
+):
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+
+    dic_messages = [mess.dict() for mess in messages]
+    dic_messages.append({"role": "assistant"})
+
+    dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)
+
+    # This also checks for code_interpreter and adds python default system message instead
+    # default system message
+    final_prompt = prompt_template.get_prompt_from_messages(
+        dic_messages, tools_or_functions=tools_or_functions
+    )
+
+    if (
+        prompt_template.version != "v1"
+        and tool_choice is not None
+        and tool_choice not in ["auto", "required"]
+    ):
+        if tool_choice == "none":
+            final_prompt += prompt_template.get_force_text_generation_prefix()
+        else:
+            tool_choice_name = (
+                tool_choice.function.name
+                if isinstance(tool_choice, Tool)
+                else tool_choice.name
+            )
+            final_prompt += prompt_template.get_force_function_call_prefix(
+                tool_choice_name
+            )
+    # some prompt template supports call a function directly such as: v2.llama3
+    if tool_choice == "required":
+        if hasattr(prompt_template, "function_separator"):
+            final_prompt += getattr(prompt_template, "function_separator")
+
+    input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
+    input_ids = input_ids.to(device)
+    return input_ids
+
+
+def create_error_response(status_code, message, param) -> JSONResponse:
+    return JSONResponse(
+        {
+            "object": "error",
+            "message": message,
+            "type": "invalid_request_error",
+            "param": param,
+            "code": status_code.value,
+        },
+        status_code=status_code.value,
+    )
+
+
+async def check_all_errors(request, served_model):
+    if request.model != served_model:
+        return create_error_response(
+            status_code=HTTPStatus.NOT_FOUND,
+            message=f"The model `{request.model}` does not exist.",
+            param=None,
+        )
+    if request.tools and request.functions:
+        return create_error_response(
+            status_code=HTTPStatus.BAD_REQUEST,
+            message="'functions' and 'tools' cannot both be provided. 'functions' are deprecated; use the 'tools' parameter instead.",
+            param=None,
+        )
+    if isinstance(request.function_call, str) and request.function_call not in [
+        "none",
+        "auto",
+    ]:
+        return create_error_response(
+            status_code=HTTPStatus.BAD_REQUEST,
+            message=f"Invalid value: '{request.function_call}'. Supported values are: 'none' and 'auto'.",
+            param="function_call",
+        )
+    if isinstance(request.tool_choice, str) and request.tool_choice not in [
+        "none",
+        "auto",
+        "required",
+    ]:
+        return create_error_response(
+            status_code=HTTPStatus.BAD_REQUEST,
+            message=f"Invalid value: '{request.tool_choice}'. Supported values are: 'none', 'auto', and 'required'.",
+            param="tool_choice",
+        )
+    if request.functions is None and request.function_call is not None:
+        return create_error_response(
+            status_code=HTTPStatus.BAD_REQUEST,
+            message=f"Invalid value for 'function_call': 'function_call' is only allowed when 'functions' are specified.",
+            param="function_call",
+        )
+    if request.tools is None and request.tool_choice is not None:
+        return create_error_response(
+            status_code=HTTPStatus.BAD_REQUEST,
+            message=f"Invalid value for 'tool_choice': 'tool_choice' is only allowed when 'tools' are specified.",
+            param="tool_choice",
+        )
+    return
 
 
 def convert_jsonresponse_to_json(obj):
