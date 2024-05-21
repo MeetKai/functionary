@@ -336,6 +336,7 @@ async def process_chat_completion(
         if (
             request.functions
             and "tool_calls" in chat_mess
+            and chat_mess["tool_calls"] is not None
             and len(chat_mess["tool_calls"]) > 0
         ):
             chat_mess["function_call"] = {

@@ -3,6 +3,7 @@ import random
 import string
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
+from functionary.openai_types import Tool
 from functionary.prompt_template import prompt_utils
 from functionary.prompt_template.base_template import PromptTemplate
 
@@ -286,9 +287,13 @@ class Llama3Template(PromptTemplate):
 
         # add forced-function from tool_choice if exists
         if type(tool_choice) is not str and tool_choice is not None:
+            tool_choice_name = (
+                tool_choice.function.name
+                if isinstance(tool_choice, Tool)
+                else tool_choice.name
+            )
             llm_output = (
-                self.get_force_function_call_prefix(tool_choice.function.name)
-                + llm_output
+                self.get_force_function_call_prefix(tool_choice_name) + llm_output
             )
         elif tool_choice == "required":
             llm_output = self.function_separator + llm_output
@@ -318,6 +323,7 @@ class Llama3Template(PromptTemplate):
                     "type": "function",
                 }
             )
+        tool_calls = None if len(tool_calls) == 0 else tool_calls
         return {"role": "assistant", "content": text_content, "tool_calls": tool_calls}
 
     def convert_message_to_prompt(self, message: Dict) -> str:
