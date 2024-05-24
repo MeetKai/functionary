@@ -212,6 +212,9 @@ def main(
     elif "mixtral" in config_type:
         print("model: Mixtral")
         monkey_patch_packing.monkey_patch_packing_mixtral()
+    elif "phi3" in config_type:
+        print("model: Phi3")
+        monkey_patch_packing.monkey_patch_packing_phi3()
     else:
         print(
             f"{config_type} is not supported, currently we only support: Mistral, Mixtral, Llama"
