@@ -135,3 +135,6 @@ def monkey_patch_packing_mixtral():
     transformers.models.mixtral.modeling_mixtral.load_balancing_loss_func = (
         load_balancing_loss_func
     )
+
+def monkey_patch_packing_phi():
+    transformers.models.phi3.modeling_phi3._get_unpad_data = get_unpad_data

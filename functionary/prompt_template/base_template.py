@@ -12,8 +12,7 @@ PYTHON_RUN_SYS_MSG = "When you send a message containing Python code to python, 
 
 
 class PromptTemplate:
-    _instance = None
-
+    
     @abstractmethod
     def get_start_of_function_call_token(self) -> str:
         """returns a token that indicates the start of a function call in the prompt template
@@ -231,10 +230,3 @@ class PromptTemplate:
     def get_chat_template_jinja(self):
         """Return chat_template in jinja format"""
         raise NotImplementedError
-
-    @classmethod
-    def get_prompt_template(cls):
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
-        return cls._instance
