@@ -6,7 +6,6 @@ import torch
 from transformers import LlamaTokenizer
 
 from functionary.openai_types import ChatMessage, Function, Tool
-from functionary.prompt_template import get_prompt_template_from_tokenizer
 
 
 def enforce_tool_choice(

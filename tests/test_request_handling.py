@@ -137,12 +137,14 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
         self.default_tools = [
             {"type": "function", "function": self.default_functions[0]}
         ]
-        self.v2_tokenizer = AutoTokenizer.from_pretrained(
-            "meetkai/functionary-small-v2.4"
-        )
-        self.v2_llama3_tokenizer = AutoTokenizer.from_pretrained(
-            "meetkai/functionary-small-v2.5"
-        )
+        self.tokenizers_to_test = [
+            "meetkai/functionary-small-v2.4",
+            "meetkai/functionary-small-v2.5",
+        ]
+        self.test_tokenizers = [
+            AutoTokenizer.from_pretrained(tokenizer_str)
+            for tokenizer_str in self.tokenizers_to_test
+        ]
         self.default_text_str = "Normal text generation"
         self.default_tool_call_name = "get_weather"
         self.default_tool_call_args = [
@@ -436,45 +438,61 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
         def generate_raw_response(
             gen_text: bool,
             num_tool_calls: Optional[int],
-            tool_func_choice: Union[str, Tool],
+            tool_func_choice: Union[str, Tool, Function],
         ):
-            response_components = []
+            messages = []
+            if gen_text:
+                messages.append({"role": "assistant", "content": self.default_text_str})
+            if num_tool_calls is not None:
+                tool_calls = []
+                for tool_call_args in self.default_tool_call_args[:num_tool_calls]:
+                    tool_calls.append(
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": self.default_tool_call_name,
+                                "arguments": tool_call_args,
+                            },
+                        }
+                    )
+                messages.append({"role": "assistant", "tool_calls": tool_calls})
+
+            raw_response = "".join(
+                [
+                    prompt_template.convert_message_to_prompt(message)
+                    for message in messages
+                ]
+            ).rstrip()
+            null_response = prompt_template.convert_message_to_prompt(
+                {"role": "assistant"}
+            )
+            raw_response = raw_response[len(null_response) :]
+            for stop_token in prompt_template.get_stop_tokens_for_generation():
+                raw_response = raw_response.replace(stop_token, "")
+
             if prompt_template.version == "v2":
-                if gen_text:
-                    if tool_func_choice == "none":
-                        response_components.append(self.default_text_str)
-                    else:
-                        response_components.append(
-                            f"all\n<|content|>{self.default_text_str}"
-                        )
-                if num_tool_calls is not None:
-                    for tool_call_args in self.default_tool_call_args[:num_tool_calls]:
-                        if not isinstance(tool_func_choice, str):
-                            response_components.append(tool_call_args)
-                        else:
-                            response_components.append(
-                                f"{self.default_tool_call_name}\n<|content|>{tool_call_args}"
-                            )
-                raw_response = (
-                    "\n<|from|>assistant<|recipient|>".join(response_components)
-                    + "<|stop|>"
-                )
-            else:
-                if gen_text:
-                    response_components.append(self.default_text_str)
-                if num_tool_calls is not None:
-                    for tool_call_args in self.default_tool_call_args[:num_tool_calls]:
-                        if not isinstance(tool_func_choice, str):
-                            response_components.append(tool_call_args)
-                        else:
-                            response_components.append(
-                                f"<|reserved_special_token_249|>{self.default_tool_call_name}\n{tool_call_args}"
-                            )
-                raw_response = "".join(response_components) + "<|eot_id|>"
+                if tool_func_choice == "none":
+                    raw_response = raw_response[len("all\n<|content|>") :]
+                elif isinstance(tool_func_choice, Tool) or isinstance(
+                    tool_func_choice, Function
+                ):
+                    raw_response = raw_response[
+                        len(f"{self.default_tool_call_name}\n<|content|>") :
+                    ]
+            elif prompt_template.version == "v2.llama3":
+                raw_response = raw_response.replace(null_response, "")
+                if isinstance(tool_func_choice, Tool) or isinstance(
+                    tool_func_choice, Function
+                ):
+                    raw_response = raw_response[
+                        len(
+                            f"<|reserved_special_token_249|>{self.default_tool_call_name}\n"
+                        ) :
+                    ]
 
             return raw_response
 
-        for tokenizer in [self.v2_tokenizer, self.v2_llama3_tokenizer]:
+        for tokenizer in self.test_tokenizers:
             prompt_template = get_prompt_template_from_tokenizer(tokenizer=tokenizer)
 
             for test_case in self.request_handling_test_cases:
