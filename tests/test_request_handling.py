@@ -14,75 +14,10 @@ from functionary.openai_types import (
     Tool,
 )
 from functionary.prompt_template import get_prompt_template_from_tokenizer
-
-
-def enforce_tool_choice(choice, tools_or_functions):
-    if choice == "none":
-        return []
-    elif isinstance(choice, Tool):
-        if choice.function.description == "" and choice.function.parameters is None:
-            tools_or_functions = [
-                tool
-                for tool in tools_or_functions
-                if tool.type == "function"
-                and tool.function.name == choice.function.name
-            ]
-            assert (
-                len(tools_or_functions) > 0
-            ), f"Invalid value for 'tool_choice': no function named {choice.function.name} was specified in the 'tools' parameter"
-        else:
-            tools_or_functions = [choice]
-    elif isinstance(choice, Function):
-        tools_or_functions = [
-            function for function in tools_or_functions if function.name == choice.name
-        ]
-        assert (
-            len(tools_or_functions) > 0
-        ), f"Invalid value for 'function_call': no function named {choice.name} was specified in the 'functions' parameter"
-
-    return tools_or_functions
-
-
-def prepare_messages_for_inference(
-    *, tokenizer, messages, tools_or_functions, tool_choice=None, device="cuda:0"
-):
-    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
-
-    dic_messages = [mess.dict() for mess in messages]
-    dic_messages.append({"role": "assistant"})
-
-    dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)
-
-    # This also checks for code_interpreter and adds python default system message instead
-    # default system message
-    final_prompt = prompt_template.get_prompt_from_messages(
-        dic_messages, tools_or_functions=tools_or_functions
-    )
-
-    if (
-        prompt_template.version != "v1"
-        and tool_choice is not None
-        and tool_choice not in ["auto", "required"]
-    ):
-        if tool_choice == "none":
-            final_prompt += prompt_template.get_force_text_generation_prefix()
-        else:
-            tool_choice_name = (
-                tool_choice.function.name
-                if isinstance(tool_choice, Tool)
-                else tool_choice.name
-            )
-            final_prompt += prompt_template.get_force_function_call_prefix(
-                tool_choice_name
-            )
-    # some prompt template supports call a function directly such as: v2.llama3
-    if tool_choice == "required":
-        if hasattr(prompt_template, "function_separator"):
-            final_prompt += getattr(prompt_template, "function_separator")
-
-    input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
-    input_ids = input_ids.to(device)
-    return input_ids
+from functionary.prompt_template.prompt_utils import (
+    enforce_tool_choice,
+    prepare_messages_for_inference,
+)
 
 
 def create_error_response(status_code, message, param) -> JSONResponse:

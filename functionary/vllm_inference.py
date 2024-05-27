@@ -10,7 +10,6 @@ from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
 from vllm.utils import random_uuid
 
-from functionary.inference import enforce_tool_choice, prepare_messages_for_inference
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
     ChatCompletionChunk,
@@ -25,7 +24,11 @@ from functionary.openai_types import (
     UsageInfo,
 )
 from functionary.prompt_template import get_prompt_template_from_tokenizer
-from functionary.prompt_template.prompt_utils import get_random_tool_call_id
+from functionary.prompt_template.prompt_utils import (
+    enforce_tool_choice,
+    get_random_tool_call_id,
+    prepare_messages_for_inference,
+)
 
 
 def create_error_response(
