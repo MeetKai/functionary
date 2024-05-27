@@ -70,6 +70,9 @@ def prepare_messages_for_inference(
         torch.Tensor: The tokenized tensor
     """
 
+    # Import function in this function to prevent circular imports
+    from functionary.prompt_template import get_prompt_template_from_tokenizer
+
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
 
     dic_messages = [mess.dict() for mess in messages]
