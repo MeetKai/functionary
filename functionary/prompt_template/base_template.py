@@ -5,6 +5,7 @@ import re
 from abc import abstractmethod
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
+from functionary.openai_types import Function, Tool
 from functionary.schema import generate_schema_from_functions
 
 SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
@@ -226,6 +227,39 @@ class PromptTemplate:
             NotImplementedError: _description_
         """
         raise NotImplementedError
+
+    def get_raw_response_from_assistant_messages(
+        self,
+        messages: List[Dict[str, str]],
+        tool_func_choice: Union[str, Tool, Function],
+        default_tool_call_name: str,
+    ):
+        # Form raw response from messages list
+        raw_response = "".join(
+            [self.convert_message_to_prompt(message) for message in messages]
+        ).rstrip()
+
+        # Remove null content
+        raw_response = self.get_raw_response_output(raw_response=raw_response)
+
+        # Remove stop tokens
+        for stop_token in self.get_stop_tokens_for_generation():
+            raw_response = raw_response.replace(stop_token, "")
+
+        if tool_func_choice == "none":
+            raw_response = raw_response[len(self.get_force_text_generation_prefix()) :]
+        elif isinstance(tool_func_choice, Tool) or isinstance(
+            tool_func_choice, Function
+        ):
+            raw_response = raw_response[
+                len(
+                    self.get_force_function_call_prefix(
+                        function_name=default_tool_call_name
+                    )
+                ) :
+            ]
+
+        return raw_response
 
     @abstractmethod
     def get_chat_template_jinja(self):
