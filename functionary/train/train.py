@@ -14,7 +14,7 @@ from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 from transformers import AutoConfig, AutoTokenizer, Trainer
 
-#  sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
+sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 from functionary.prompt_template import PromptTemplate, get_prompt_template_by_version
 from functionary.train.custom_datasets import read_dataset
 
@@ -73,7 +73,7 @@ class TrainingArguments(transformers.TrainingArguments):
         },
     )
     keep_assistant_prefix: bool = field(
-        default=True,
+        default=False,
         metadata={
             "help": "Whether to mask the assistant prefix `<|from|>assistant\n<|recipient|>` during training"
         },
@@ -349,9 +349,27 @@ def train():
         acc_count = 0
         total_num = 0
         dic = {token_id: {"acc": 0, "total": 0} for token_id in id2token}
-        for pred, label in zip(
-            predictions.flatten().tolist(), labels.flatten().tolist()
-        ):
+
+        first_token_total_count, first_token_correct_count = 0, 0
+        prediction_list, label_list = (
+            predictions.flatten().tolist(),
+            labels.flatten().tolist(),
+        )
+        first_token_label_dic = {}
+
+        for i in range(len(prediction_list)):
+            pred, label = prediction_list[i], label_list[i]
+            if i > 0 and label_list[i - 1] == -100 and label != -100:  # first token
+                first_token_total_count += 1
+                if label not in first_token_label_dic:
+                    first_token_label_dic[label] = {"correct": 0, "total": 0}
+
+                first_token_label_dic[label]["total"] += 1
+
+                if label == pred:
+                    first_token_correct_count += 1
+                    first_token_label_dic[label]["correct"] += 1
+
             if label != -100:
                 if label == pred:
                     acc_count += 1
@@ -367,6 +385,18 @@ def train():
         perplexity = math.exp(loss)
 
         metrics = {"accuracy": acc_count / total_num, "perplexity": perplexity}
+        metrics = {
+            "accuracy_first_token": first_token_correct_count / first_token_total_count,
+            "total_number_first_token": first_token_total_count,
+        }
+
+        for token_id, stat in sorted(
+            first_token_label_dic.items(), key=lambda x: -x[1]["total"]
+        )[:5]:
+            token = tokenizer.decode([token_id])
+            metrics[f"accuracy_first_token_{token}"] = stat["correct"] / stat["total"]
+            metrics[f"accuracy_first_token_{token}_total"] = stat["total"]
+
         for token_id in dic:
             token = id2token[token_id]
             total_num = dic[token_id]["total"]
