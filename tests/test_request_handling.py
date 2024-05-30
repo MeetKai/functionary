@@ -440,9 +440,9 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
             num_tool_calls: Optional[int],
             tool_func_choice: Union[str, Tool, Function],
         ):
-            messages = []
+            message = {"role": "assistant"}
             if gen_text:
-                messages.append({"role": "assistant", "content": self.default_text_str})
+                message["content"] = self.default_text_str
             if num_tool_calls is not None:
                 tool_calls = []
                 for tool_call_args in self.default_tool_call_args[:num_tool_calls]:
@@ -455,10 +455,10 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                             },
                         }
                     )
-                messages.append({"role": "assistant", "tool_calls": tool_calls})
+                message["tool_calls"] = tool_calls
 
-            return prompt_template.get_raw_response_from_assistant_messages(
-                messages=messages,
+            return prompt_template.get_raw_response_from_assistant_message(
+                message=message,
                 tool_func_choice=tool_func_choice,
                 default_tool_call_name=self.default_tool_call_name,
             )

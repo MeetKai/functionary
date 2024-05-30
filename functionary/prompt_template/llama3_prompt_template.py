@@ -563,15 +563,3 @@ class Llama3Template(PromptTemplate):
 
     def get_force_function_call_prefix(self, function_name: str):
         return f"{self.function_separator}{function_name}\n"
-
-    def get_raw_response_output(self, raw_response: str):
-        """Get raw response by removing all occurrences of null_response
-        (<|start_header_id|>assistant<|end_header_id|>\n\n)
-
-        Args:
-            raw_response (str): raw response with null_content still in it
-        """
-
-        null_content = self.convert_message_to_prompt({"role": "assistant"})
-
-        return raw_response.replace(null_content, "")

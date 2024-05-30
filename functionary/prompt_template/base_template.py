@@ -228,19 +228,18 @@ class PromptTemplate:
         """
         raise NotImplementedError
 
-    def get_raw_response_from_assistant_messages(
+    def get_raw_response_from_assistant_message(
         self,
-        messages: List[Dict[str, str]],
+        message: Dict[str, str],
         tool_func_choice: Union[str, Tool, Function],
         default_tool_call_name: str,
     ):
         # Form raw response from messages list
-        raw_response = "".join(
-            [self.convert_message_to_prompt(message) for message in messages]
-        ).rstrip()
+        raw_response = self.convert_message_to_prompt(message)
 
         # Remove null content
-        raw_response = self.get_raw_response_output(raw_response=raw_response)
+        null_content = self.convert_message_to_prompt({"role": "assistant"})
+        raw_response = raw_response[len(null_content) :]
 
         # Remove stop tokens
         for stop_token in self.get_stop_tokens_for_generation():

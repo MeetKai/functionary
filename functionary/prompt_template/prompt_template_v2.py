@@ -561,15 +561,3 @@ class PromptTemplateV2(PromptTemplate):
 
     def get_force_function_call_prefix(self, function_name: str):
         return f"{function_name}{self.fn_param_sep_token}"
-
-    def get_raw_response_output(self, raw_response: str):
-        """Get raw response by removing null_content from the beginnging of raw response
-        (<|from|>assistant\n<|recipient|>)
-
-        Args:
-            raw_response (str): raw response with null_content still in it
-        """
-
-        null_content = self.convert_message_to_prompt({"role": "assistant"})
-
-        return raw_response[len(null_content) :]
