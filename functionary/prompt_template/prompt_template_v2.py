@@ -3,7 +3,7 @@ import random
 import string
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
-from functionary.openai_types import Tool
+from functionary.openai_types import Function, Tool
 from functionary.prompt_template import prompt_utils
 from functionary.prompt_template.base_template import PromptTemplate
 
@@ -561,3 +561,37 @@ class PromptTemplateV2(PromptTemplate):
 
     def get_force_function_call_prefix(self, function_name: str):
         return f"{function_name}{self.fn_param_sep_token}"
+
+    def get_raw_response_from_assistant_messages(
+        self,
+        messages: List[Dict[str, str]],
+        tool_func_choice: Union[str, Tool, Function],
+        default_tool_call_name: str,
+    ):
+        # Form raw response from messages list
+        raw_response = "".join(
+            [self.convert_message_to_prompt(message) for message in messages]
+        ).rstrip()
+
+        # Remove null_response "<|from|>assistant\n<|recipient|>" from the beginning
+        null_response = self.convert_message_to_prompt({"role": "assistant"})
+        raw_response = raw_response[len(null_response) :]
+
+        # Remove stop tokens
+        for stop_token in self.get_stop_tokens_for_generation():
+            raw_response = raw_response.replace(stop_token, "")
+
+        if tool_func_choice == "none":
+            raw_response = raw_response[len(self.get_force_text_generation_prefix()) :]
+        elif isinstance(tool_func_choice, Tool) or isinstance(
+            tool_func_choice, Function
+        ):
+            raw_response = raw_response[
+                len(
+                    self.get_force_function_call_prefix(
+                        function_name=default_tool_call_name
+                    )
+                ) :
+            ]
+
+        return raw_response

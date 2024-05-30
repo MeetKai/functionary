@@ -457,40 +457,11 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                     )
                 messages.append({"role": "assistant", "tool_calls": tool_calls})
 
-            raw_response = "".join(
-                [
-                    prompt_template.convert_message_to_prompt(message)
-                    for message in messages
-                ]
-            ).rstrip()
-            null_response = prompt_template.convert_message_to_prompt(
-                {"role": "assistant"}
+            return prompt_template.get_raw_response_from_assistant_messages(
+                messages=messages,
+                tool_func_choice=tool_func_choice,
+                default_tool_call_name=self.default_tool_call_name,
             )
-            raw_response = raw_response[len(null_response) :]
-            for stop_token in prompt_template.get_stop_tokens_for_generation():
-                raw_response = raw_response.replace(stop_token, "")
-
-            if prompt_template.version == "v2":
-                if tool_func_choice == "none":
-                    raw_response = raw_response[len("all\n<|content|>") :]
-                elif isinstance(tool_func_choice, Tool) or isinstance(
-                    tool_func_choice, Function
-                ):
-                    raw_response = raw_response[
-                        len(f"{self.default_tool_call_name}\n<|content|>") :
-                    ]
-            elif prompt_template.version == "v2.llama3":
-                raw_response = raw_response.replace(null_response, "")
-                if isinstance(tool_func_choice, Tool) or isinstance(
-                    tool_func_choice, Function
-                ):
-                    raw_response = raw_response[
-                        len(
-                            f"<|reserved_special_token_249|>{self.default_tool_call_name}\n"
-                        ) :
-                    ]
-
-            return raw_response
 
         for tokenizer in self.test_tokenizers:
             prompt_template = get_prompt_template_from_tokenizer(tokenizer=tokenizer)
