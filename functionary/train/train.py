@@ -329,15 +329,22 @@ def train():
         """Preprocesses the logits during evaluation by computing the greedy token predictions for
         accuracy calculation and loss values for perplexity calculation. Both pred_ids and loss are
         of shape (batch_size x seq_len)"""
-        pred_ids = torch.argmax(logits, dim=-1)
+
+        correct_logits = logits
+        if (
+            type(logits) is tuple
+        ):  # in mixtral logits is a tuple, correct logits is at the second index
+            correct_logits = logits[1]
+
+        pred_ids = torch.argmax(correct_logits, dim=-1)
 
         loss_fn = CrossEntropyLoss(reduction="none")
-        shift_logits = logits[..., :-1, :].contiguous()
+        shift_logits = correct_logits[..., :-1, :].contiguous()
         shift_labels = labels[..., 1:].contiguous()
         shift_logits = shift_logits.view(-1, len(tokenizer))
         shift_labels = shift_labels.view(-1)
         loss = loss_fn(shift_logits, shift_labels)
-        loss = torch.mean(loss.view(logits.shape[0], -1), dim=-1)
+        loss = torch.mean(loss.view(correct_logits.shape[0], -1), dim=-1)
 
         return pred_ids, loss
 
@@ -415,17 +422,8 @@ def train():
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            # only compute_metrics for non-MoE models
-            compute_metrics=(
-                compute_metrics
-                if "mixtral" not in model_args.model_name_or_path.lower()
-                else None
-            ),
-            preprocess_logits_for_metrics=(
-                preprocess_logits_for_metrics
-                if "mixtral" not in model_args.model_name_or_path.lower()
-                else None
-            ),
+            compute_metrics=compute_metrics,
+            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
         )
     else:
         trainer = Trainer(
