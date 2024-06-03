@@ -5,6 +5,7 @@ import re
 from abc import abstractmethod
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
+from functionary.openai_types import Function, Tool
 from functionary.schema import generate_schema_from_functions
 
 SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
@@ -226,6 +227,50 @@ class PromptTemplate:
             NotImplementedError: _description_
         """
         raise NotImplementedError
+
+    def get_raw_response_from_assistant_message(
+        self,
+        message: Dict[str, Any],
+        tool_func_choice: Union[str, Tool, Function],
+        default_tool_call_name: str,
+    ):
+        """This function generates a mock raw response from a assistant message dict
+        given the tool_func_choice. This function is used in test_request_handling.py
+        to unittest the processing of raw response to OpenAI response message.
+
+        Args:
+            message (Dict[str, Any]): _description_
+            tool_func_choice (Union[str, Tool, Function]): _description_
+            default_tool_call_name (str): _description_
+
+        Returns:
+            str: The mock raw response in str format
+        """
+        # Form raw response from messages list
+        raw_response = self.convert_message_to_prompt(message)
+
+        # Remove null content
+        null_content = self.convert_message_to_prompt({"role": "assistant"})
+        raw_response = raw_response[len(null_content) :]
+
+        # Remove stop tokens
+        for stop_token in self.get_stop_tokens_for_generation():
+            raw_response = raw_response.replace(stop_token, "")
+
+        if tool_func_choice == "none":
+            raw_response = raw_response[len(self.get_force_text_generation_prefix()) :]
+        elif isinstance(tool_func_choice, Tool) or isinstance(
+            tool_func_choice, Function
+        ):
+            raw_response = raw_response[
+                len(
+                    self.get_force_function_call_prefix(
+                        function_name=default_tool_call_name
+                    )
+                ) :
+            ]
+
+        return raw_response
 
     @abstractmethod
     def get_chat_template_jinja(self):
