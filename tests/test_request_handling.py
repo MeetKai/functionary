@@ -13,7 +13,7 @@ from functionary.openai_types import (
     Function,
     Tool,
 )
-from functionary.prompt_template import get_prompt_template_from_tokenizer
+from functionary.prompt_template import get_available_prompt_template_versions
 from functionary.prompt_template.prompt_utils import (
     enforce_tool_choice,
     prepare_messages_for_inference,
@@ -137,14 +137,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
         self.default_tools = [
             {"type": "function", "function": self.default_functions[0]}
         ]
-        self.tokenizers_to_test = [
-            "meetkai/functionary-small-v2.4",
-            "meetkai/functionary-small-v2.5",
-        ]
-        self.test_tokenizers = [
-            AutoTokenizer.from_pretrained(tokenizer_str)
-            for tokenizer_str in self.tokenizers_to_test
-        ]
+        self.test_prompt_templates = get_available_prompt_template_versions()
         self.default_text_str = "Normal text generation"
         self.default_tool_call_name = "get_weather"
         self.default_tool_call_args = [
@@ -463,9 +456,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                 default_tool_call_name=self.default_tool_call_name,
             )
 
-        for tokenizer in self.test_tokenizers:
-            prompt_template = get_prompt_template_from_tokenizer(tokenizer=tokenizer)
-
+        for prompt_template in self.test_prompt_templates:
             for test_case in self.request_handling_test_cases:
                 raw_response = generate_raw_response(
                     gen_text=test_case["gen_text"],

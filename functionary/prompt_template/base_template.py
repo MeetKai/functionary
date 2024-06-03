@@ -230,10 +230,22 @@ class PromptTemplate:
 
     def get_raw_response_from_assistant_message(
         self,
-        message: Dict[str, str],
+        message: Dict[str, Any],
         tool_func_choice: Union[str, Tool, Function],
         default_tool_call_name: str,
     ):
+        """This function generates a mock raw response from a assistant message dict
+        given the tool_func_choice. This function is used in test_request_handling.py
+        to unittest the processing of raw response to OpenAI response message.
+
+        Args:
+            message (Dict[str, Any]): _description_
+            tool_func_choice (Union[str, Tool, Function]): _description_
+            default_tool_call_name (str): _description_
+
+        Returns:
+            str: The mock raw response in str format
+        """
         # Form raw response from messages list
         raw_response = self.convert_message_to_prompt(message)
 

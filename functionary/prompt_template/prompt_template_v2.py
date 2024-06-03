@@ -446,7 +446,7 @@ class PromptTemplateV2(PromptTemplate):
                 response_type, skip_until_reach = "text", ""
                 func_name = "all"
             elif (
-                tool_choice is not str and tool_choice is not None
+                type(tool_choice) is not str and tool_choice is not None
             ):  # tool_choice is a specific tool
                 response_type, skip_until_reach = "function", ""
                 func_name = (
