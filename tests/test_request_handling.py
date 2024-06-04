@@ -6,10 +6,8 @@ from typing import Any, List, Optional, Union
 from fastapi.responses import JSONResponse
 from transformers import AutoTokenizer
 
-from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
     ChatCompletionRequest,
-    ChatCompletionResponseChoice,
     ChatMessage,
     Function,
     FunctionCall,
@@ -566,34 +564,50 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                 tool_calls = []
                 tool_call_count = 0
                 chunks_list = []
-                async for response in generate_openai_format_from_stream_async(
-                    generator, prompt_template, test_case["tool_func_choice"]
-                ):
-                    chunk = StreamChoice(**response)
-                    if chunk.delta.content is not None:
-                        content += chunk.delta.content
-                    if chunk.delta.tool_calls is not None:
-                        name = chunk.delta.tool_calls[0].function.name
-                        arguments = chunk.delta.tool_calls[0].function.arguments
-                        # Convert chunk's tool_calls into function_call
-                        if test_case["expected_finish_reason"] == "function_call":
-                            chunk.delta.function_call = FunctionCall(
-                                name=name, arguments=arguments
-                            )
-                            chunk.delta.tool_calls = None
-                            if name is not None and len(name) > 0:
-                                tool_call_count += 1
-                            # Do not process the second tool call onwards for function_call
-                            if tool_call_count == 2:
-                                continue
-                        if name is not None:
-                            tool_calls.append({"name": name, "arguments": arguments})
-                        else:
-                            try:
-                                tool_calls[-1]["arguments"] += arguments
-                            except:
-                                breakpoint()
-                    chunks_list.append(chunk)
+                state = {}
+                async for delta_text, finish_reason in generator:
+                    state, responses = (
+                        prompt_template.update_response_state_from_delta_text(
+                            current_state=state,
+                            delta_text=delta_text,
+                            finish_reason=finish_reason,
+                            tool_choice=test_case["tool_func_choice"],
+                        )
+                    )
+                    if responses is not None:
+                        if type(responses) is not list:
+                            responses = [responses]
+                    else:
+                        responses = []
+
+                    for response in responses:
+                        chunk = StreamChoice(**response)
+                        if chunk.delta.content is not None:
+                            content += chunk.delta.content
+                        if chunk.delta.tool_calls is not None:
+                            name = chunk.delta.tool_calls[0].function.name
+                            arguments = chunk.delta.tool_calls[0].function.arguments
+                            # Convert chunk's tool_calls into function_call
+                            if test_case["expected_finish_reason"] == "function_call":
+                                chunk.delta.function_call = FunctionCall(
+                                    name=name, arguments=arguments
+                                )
+                                chunk.delta.tool_calls = None
+                                if name is not None and len(name) > 0:
+                                    tool_call_count += 1
+                                # Do not process the second tool call onwards for function_call
+                                if tool_call_count == 2:
+                                    continue
+                            if name is not None:
+                                tool_calls.append(
+                                    {"name": name, "arguments": arguments}
+                                )
+                            else:
+                                try:
+                                    tool_calls[-1]["arguments"] += arguments
+                                except:
+                                    breakpoint()
+                        chunks_list.append(chunk)
 
                 # Test content
                 label_content = self.default_text_str if test_case["gen_text"] else ""
