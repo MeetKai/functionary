@@ -28,6 +28,7 @@ class Llama3Template(PromptTemplate):
     function_separator = "<|reserved_special_token_249|>"
     version = "v2.llama3"
     fn_param_sep_token = "\n"
+    tokenizer_name_or_path = "meetkai/functionary-small-v2.5"
 
     def get_additional_tokens(self) -> List[str]:
         return []
@@ -563,3 +564,6 @@ class Llama3Template(PromptTemplate):
 
     def get_force_function_call_prefix(self, function_name: str):
         return f"{self.function_separator}{function_name}\n"
+
+    def get_tool_choice_required_prefix(self):
+        return self.function_separator
