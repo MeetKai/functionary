@@ -50,6 +50,7 @@ python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len
   
 </details>
 
+
 **Grammar Sampling**
 
 We also offer our own function-calling grammar sampling feature which constrains the LLM's generation to always follow the prompt template, and ensures 100% accuracy for function name. The parameters are generated using the efficient [lm-format-enforcer](https://github.com/noamgat/lm-format-enforcer), which ensures that the parameters follow the schema of the tool called. To enable grammar sampling, run the vLLM server with the command-line argument <code>--enable-grammar-sampling</code>:
@@ -61,6 +62,30 @@ python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len
 Note:
 - Grammar Sampling support is applicable only for the V2 models. There is no such support for V1 models.
 - Our vLLM server supports the `tool_choice="required"` feature in OpenAI Chat Completion API exclusively **only when grammar sampling is enabled**.
+
+
+**Text-Generation-Inference**
+
+We also provide a wrapper service that performs inference using [Text-Generation-Inference](https://huggingface.co/docs/text-generation-inference/en/index) (TGI). Follow these steps to get started:
+
+1. Start up the following TGI server
+
+```shell
+model=meetkai/functionary-small-v2.5
+volume=$PWD/data # share a volume with the Docker container to avoid downloading weights every run
+
+docker run --gpus all --shm-size 1g -p 8080:80 -v $volume:/data \
+    ghcr.io/huggingface/text-generation-inference:2.0.4 \
+    --model-id $model --max-batch-prefill-tokens 8242 --max-total-tokens 8192 --max-input-tokens 8191
+```
+
+2. Start up the wrapper server
+
+```shell
+python3 server_tgi.py --model meetkai/functionary-small-v2.5 --tgi_endpoint <TGI_SERVICE_ENDPOINT>
+```
+
+3. Make either [OpenAI-compatible](#openai-compatible-usage) or [raw HTTP](#raw-usage) requests to the wrapper server.
 
 
 **Docker**

@@ -3,7 +3,6 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 
-import docker
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
