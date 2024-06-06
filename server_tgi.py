@@ -16,9 +16,9 @@ from functionary.openai_types import (
     ChatCompletionResponse,
     ChatCompletionResponseChoice,
     ChatMessage,
-    Tool,
     Function,
     StreamChoice,
+    Tool,
     UsageInfo,
 )
 from functionary.prompt_template import get_prompt_template_from_tokenizer
@@ -61,7 +61,7 @@ async def create_chat_completion(raw_request: Request):
 
     request_id = f"cmpl-{str(uuid.uuid4().hex)}"
     created_time = int(time.time())
-    
+
     if request.tool_choice:
         tool_func_choice = request.tool_choice
     elif request.function_call:
@@ -77,7 +77,7 @@ async def create_chat_completion(raw_request: Request):
     tools_or_functions = [
         tool_or_function.model_dump() for tool_or_function in tools_or_functions
     ]
-    
+
     # Form prompt and suffix from tool_func_choice
     prompt = prompt_template.get_prompt_from_messages(
         messages=dic_messages, tools_or_functions=tools_or_functions
@@ -90,7 +90,9 @@ async def create_chat_completion(raw_request: Request):
             if isinstance(tool_func_choice, Tool)
             else tool_func_choice.name
         )
-    elif tool_func_choice == "required" and hasattr(prompt_template, "function_separator"):
+    elif tool_func_choice == "required" and hasattr(
+        prompt_template, "function_separator"
+    ):
         prompt += getattr(prompt_template, "function_separator")
 
     hyperparams = {
@@ -154,7 +156,7 @@ async def create_chat_completion(raw_request: Request):
         # )
         # for token in client.text_generation(prompt=prompt, details=True, **hyperparams):
         #     breakpoint()
-        raise NotImplementedError, "Streaming is not implemented yet."
+        raise NotImplementedError
     else:
         response = client.text_generation(prompt=prompt, details=True, **hyperparams)
         # Transformers tokenizers is problematic with some special tokens such that they
