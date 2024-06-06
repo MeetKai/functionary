@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "functionary"
+version = "0.0.1"
+authors = [
+  { name="Khai Mai", email="khai.mai@meetkai.com" },
+  { name="Jeffrey Fong", email="jeffrey.fong@meetkai.com" },
+  { name="Musab Gultekin", email="musab@meetkai.com" },
+]
+description = "A chat language model that can interpret and execute functions/plugins"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[options]
+install_requires = [
+  "transformers==4.36.2",
+  "accelerate~=0.21.0",
+  "sentencepiece~=0.1.99",
+  "fastapi~=0.104.0",
+  "uvicorn~=0.23.1",
+  "pydantic~=1.10.13",
+  "scipy~=1.11.1",
+  "jsonref~=1.1.0",
+  "requests~=2.31.0",
+  "PyYAML~=6.0.1",
+  "typer==0.9.0",
+  "protobuf==3.20.0",
+  "tokenizers==0.15.0",
+  "vllm==0.2.6"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/MeetKai/functionary"
+"Bug Tracker" = "https://github.com/MeetKai/functionary/issues"
