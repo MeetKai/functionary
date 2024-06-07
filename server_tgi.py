@@ -79,23 +79,18 @@ app = FastAPI(title="Functionary TGI", lifespan=lifespan)
 
 
 @app.post("/v1/chat/completions")
-async def create_chat_completion(raw_request: Request):
+async def create_chat_completion(raw_request: dict):
     """Completion API similar to OpenAI's API.
     See  https://platform.openai.com/docs/api-reference/chat/create
-    for the API specification. This API mimics the OpenAI ChatCompletion API.
+    for the API specification. This API follows the OpenAI ChatCompletion API.
     """
-    request_json = await raw_request.json()
-    request = ChatCompletionRequest(**request_json)
+
+    request = ChatCompletionRequest(**raw_request)
 
     request_id = f"cmpl-{str(uuid.uuid4().hex)}"
     created_time = int(time.time())
 
-    if request.tool_choice:
-        tool_func_choice = request.tool_choice
-    elif request.function_call:
-        tool_func_choice = request.function_call
-    else:
-        tool_func_choice = "auto"
+    tool_func_choice = request.tool_choice or "auto"
 
     # Create messages and tools/functions of type dicts
     dic_messages = [mess.dict() for mess in request.messages]
@@ -138,9 +133,7 @@ async def create_chat_completion(raw_request: Request):
         "top_p": request.top_p if 0 < request.top_p < 1.0 else None,
     }
 
-    async def wrap_tgi_generator(
-        tool_choice,
-    ) -> AsyncGenerator[Tuple[str, Optional[str]], None]:
+    async def wrap_tgi_generator() -> AsyncGenerator[Tuple[str, Optional[str]], None]:
         for chunk in client.text_generation(prompt=prompt, details=True, **hyperparams):
             delta_text = chunk.token.text
             finish_reason = None
@@ -148,26 +141,13 @@ async def create_chat_completion(raw_request: Request):
                 delta_text.strip()
                 not in prompt_template.get_stop_tokens_for_generation()
             ):
-                # # This part checks if delta_text is the first token and tool_choice is provided by user
-                # # If so, it yields the prefix containing the tool_choice name first
-                # if (
-                #     previous_texts == delta_text
-                #     and delta_text in prompt_template.fn_param_sep_token
-                #     and prompt_template.version != "v1"
-                # ):
-                #     if tool_choice == "none":
-                #         yield "all" + prompt_template.fn_param_sep_token, finish_reason
-                #     elif isinstance(tool_choice, Tool):
-                #         yield tool_choice.function.name + prompt_template.fn_param_sep_token, finish_reason
-                #     elif isinstance(tool_choice, Function):
-                #         yield tool_choice.name + prompt_template.fn_param_sep_token, finish_reason
                 yield delta_text, finish_reason
         yield "", "stop"
 
     async def completion_stream_generator(
         tool_choice, functions
     ) -> AsyncGenerator[str, None]:
-        generator = wrap_tgi_generator(tool_choice=tool_choice)
+        generator = wrap_tgi_generator()
         tool_call_count = 0
         async for response in generate_openai_format_from_stream_async(
             generator, prompt_template, tool_choice

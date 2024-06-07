@@ -66,26 +66,17 @@ Note:
 
 **Text-Generation-Inference**
 
-We also provide a wrapper service that performs inference using [Text-Generation-Inference](https://huggingface.co/docs/text-generation-inference/en/index) (TGI). Follow these steps to get started:
+We also provide a service that performs inference on Functionary models using [Text-Generation-Inference](https://huggingface.co/docs/text-generation-inference/en/index) (TGI). Follow these steps to get started:
 
-1. Start up the following TGI server
+1. Install Docker following [their installation instructions](https://docs.docker.com/get-docker/).
 
-```shell
-model=meetkai/functionary-small-v2.5
-volume=$PWD/data # share a volume with the Docker container to avoid downloading weights every run
-
-docker run --gpus all --shm-size 1g -p 8080:80 -v $volume:/data \
-    ghcr.io/huggingface/text-generation-inference:2.0.4 \
-    --model-id $model --max-batch-prefill-tokens 8242 --max-total-tokens 8192 --max-input-tokens 8191
-```
-
-2. Start up the wrapper server
+2. Start up the Functionary TGI server
 
 ```shell
 python3 server_tgi.py --model meetkai/functionary-small-v2.5 --tgi_endpoint <TGI_SERVICE_ENDPOINT>
 ```
 
-3. Make either [OpenAI-compatible](#openai-compatible-usage) or [raw HTTP](#raw-usage) requests to the wrapper server.
+3. Make either [OpenAI-compatible](#openai-compatible-usage) or [raw HTTP](#raw-usage) requests to the Functionary TGI server.
 
 
 **Docker**
