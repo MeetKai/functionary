@@ -1,0 +1,162 @@
+{
+    "tools": [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_car_price",
+                "description": "Get the price of a particular car model",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "car_name": {
+                            "type": "string",
+                            "description": "The name of the car model"
+                        }
+                    },
+                    "required": [
+                        "car_name"
+                    ]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "get the weather of a location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "where to get weather"
+                        }
+                    },
+                    "required": [
+                        "location"
+                    ]
+                }
+            }
+        },
+        {
+            "type": "code_interpreter"
+        }
+        
+    ],
+    "messages": [
+        {
+            "role": "user",
+            "content": "who is the CEO of Meetkai"
+        },
+        {
+            "role": "assistant",
+            "content": "James Kaplan is the Co-Founder and CEO of MeetKai Inc."
+        },
+        {
+            "role": "user",
+            "content": "is the car Song more expensive than car Tang?"
+        },
+        {
+            "role": "assistant",
+            "content": "I will get the price of 2 cars and compare",
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "get_car_price",
+                        "arguments": "{\"car_name\": \"Song\"}"
+                    }
+                },
+                {
+                    "function": {
+                        "name": "get_car_price",
+                        "arguments": "{\"car_name\": \"Tang\"}"
+                    }
+                }
+            ]
+        },
+        {
+            "role": "tool",
+            "content": "{\"price\": {\"price\": \"$25000\"}}",
+            "name": "get_car_price"
+        },
+        {
+            "role": "tool",
+            "content": "{\"price\": {\"price\": \"$20000\"}}",
+            "name": "get_car_price"
+        },
+        {
+            "role": "assistant",
+            "content": "No, the car Tang is less expensive than the car Song. The car Song is priced at $25,000, while the car Tang is priced at $20,000."
+        },
+        {
+            "role": "user",
+            "content": "what's the weather like in Hanoi?"
+        },
+        {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": "{\"location\": \"Hanoi\"}"
+                    }
+                }
+            ]
+        },
+        {
+            "role": "tool",
+            "content": "{\"result\": {\"temperature\": 10}}",
+            "name": "get_weather"
+        },
+        {
+            "role": "assistant",
+            "content": "The temperature in Hanoi is: 10 degree Celcious"
+        },
+        {
+            "role": "user",
+            "content": "Given the list: 0,1,2,3,4,5 remove the number in the list that is close to 3.6 the most"
+        },
+        {
+            "role": "assistant",
+            "content": "I will use code interpreter to handle this",
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "python",
+                        "arguments": "l=[0,1,2,3,4,5]\nl.remove(3.6)"
+                    }
+                }
+            ],
+            "metadata": {
+                "masked": true
+            }
+        },
+        {
+            "role": "tool",
+            "name": "python",
+            "content": "ValueError: list.remove(x): x not in list"
+        },
+        {
+            "role": "assistant",
+            "content": "I will fix the code",
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "python",
+                        "arguments": "l=[0,1,2,3,4,5]\nl.remove(4)\nl"
+                    }
+                }
+            ]
+        },
+        {
+            "role": "tool",
+            "name": "python",
+            "content": "[0,1,2,3,5,]"
+        },
+        {
+            "role": "assistant",
+            "content": "The final list is: 0,1,2,3,5"
+        }
+    ]
+}
