@@ -12,3 +12,4 @@ typer==0.9.0
 protobuf==3.20.0
 tokenizers==0.19.1
 vllm==0.4.1; sys_platform != "darwin"
+docker==7.1.0

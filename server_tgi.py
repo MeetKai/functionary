@@ -1,8 +1,14 @@
 import argparse
+import json
+import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import AsyncGenerator, Optional, Tuple
 
+import docker
+import requests
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
@@ -22,32 +28,54 @@ from functionary.openai_types import (
     UsageInfo,
 )
 from functionary.prompt_template import get_prompt_template_from_tokenizer
+from functionary.prompt_template.prompt_utils import enforce_tool_choice
 
-# @asynccontextmanager
-# async def lifespan(app: FastAPI):
-#     # Run TGI docker container at start up
-#     tgi_docker_client = docker.from_env()
-#     tgi_container = tgi_docker_client.containers.run(
-#         "ghcr.io/huggingface/text-generation-inference:2.0.4",
-#         f"--model-id {args.model} --max-batch-prefill-tokens 8242 --max-total-tokens 8192 --max-input-tokens 8191",
-#         device_requests=[docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])],
-#         shm_size="1g",
-#         ports={"8080/tcp": 80},
-#         volumes={"/home/jeffrey/data": {"bind": "/data", "mode": "rw"}},
-#         detach=True,
-#     )
-#     yield
-#     # Stop and remove TGI docker container at shutdown
-#     tgi_container.stop()
-#     tgi_container.remove()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
-# docker run --gpus all --shm-size 1g -p 8080:80 -v $volume:/data \
-#     ghcr.io/huggingface/text-generation-inference:2.0.4 \
-#     --model-id $model --max-batch-prefill-tokens 8242 --max-total-tokens 8192 --max-input-tokens 8191
+def get_health():
+    try:
+        response = requests.get(f"{args.tgi_endpoint}/health")
+        if response.status_code == 200:
+            return "healthy"
+    except requests.RequestException:
+        pass
+
+    return "unhealthy"
 
 
-app = FastAPI(title="Functionary TGI")  # , lifespan=lifespan)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Run TGI docker container at start up
+    logger.info("Starting TGI docker container...")
+    port = int(args.tgi_endpoint[args.tgi_endpoint.rindex(":") + 1 :])
+    tgi_docker_client = docker.from_env()
+    tgi_container = tgi_docker_client.containers.run(
+        "ghcr.io/huggingface/text-generation-inference:2.0.4",
+        f"--model-id {args.model} --max-total-tokens {args.tgi_max_total_tokens}",
+        device_requests=[docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])],
+        shm_size="1g",
+        ports={"80/tcp": port},
+        volumes={args.model_save_folder: {"bind": "/data", "mode": "rw"}},
+        detach=True,
+    )
+    # Wait until model is loaded in TGI container
+    sleep_time, elapsed_time = 1, 0
+    for _ in range(args.tgi_startup_timeout):
+        time.sleep(sleep_time)
+        if get_health() != "healthy":
+            elapsed_time += sleep_time
+        else:
+            break
+    logger.info("TGI docker container started. Ready to go...")
+    yield
+    # Stop and remove TGI docker container at shutdown
+    tgi_container.stop()
+    tgi_container.remove()
+
+
+app = FastAPI(title="Functionary TGI", lifespan=lifespan)
 
 
 @app.post("/v1/chat/completions")
@@ -74,6 +102,9 @@ async def create_chat_completion(raw_request: Request):
     dic_messages.append({"role": "assistant"})
     dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)
     tools_or_functions = request.tools if request.tools else request.functions
+    tools_or_functions = enforce_tool_choice(
+        choice=tool_func_choice, tools_or_functions=tools_or_functions
+    )
     tools_or_functions = [
         tool_or_function.model_dump() for tool_or_function in tools_or_functions
     ]
@@ -107,56 +138,79 @@ async def create_chat_completion(raw_request: Request):
         "top_p": request.top_p if 0 < request.top_p < 1.0 else None,
     }
 
-    # async def completion_stream_generator(
-    #     tool_choice, functions
-    # ) -> AsyncGenerator[str, None]:
-    #     generator = wrap_vllm_generator(tool_choice=tool_choice)
-    #     tool_call_count = 0
-    #     async for response in generate_openai_format_from_stream_async(
-    #         generator, prompt_template, tool_choice
-    #     ):
-    #         # Convert tool_calls to function_call if request.functions is provided
-    #         if (
-    #             functions
-    #             and len(functions) > 0
-    #             and "tool_calls" in response["delta"]
-    #             and response["delta"]["tool_calls"]
-    #             and len(response["delta"]["tool_calls"]) > 0
-    #         ):
-    #             tool_name = response["delta"]["tool_calls"][0]["function"]["name"]
-    #             tool_args = response["delta"]["tool_calls"][0]["function"]["arguments"]
-    #             response["delta"]["function_call"] = response["delta"]["tool_calls"][0][
-    #                 "function"
-    #             ]
-    #             response["delta"]["tool_calls"] = None
-    #             if tool_name and len(tool_name) > 0 and tool_args == "":
-    #                 tool_call_count += 1
-    #         # Return finish_reason after the first tool_call is streamed if functions is provided
-    #         if functions and tool_call_count == 2:
-    #             response["delta"] = {}
-    #             response["finish_reason"] = "function_call"
+    async def wrap_tgi_generator(
+        tool_choice,
+    ) -> AsyncGenerator[Tuple[str, Optional[str]], None]:
+        for chunk in client.text_generation(prompt=prompt, details=True, **hyperparams):
+            delta_text = chunk.token.text
+            finish_reason = None
+            if (
+                delta_text.strip()
+                not in prompt_template.get_stop_tokens_for_generation()
+            ):
+                # # This part checks if delta_text is the first token and tool_choice is provided by user
+                # # If so, it yields the prefix containing the tool_choice name first
+                # if (
+                #     previous_texts == delta_text
+                #     and delta_text in prompt_template.fn_param_sep_token
+                #     and prompt_template.version != "v1"
+                # ):
+                #     if tool_choice == "none":
+                #         yield "all" + prompt_template.fn_param_sep_token, finish_reason
+                #     elif isinstance(tool_choice, Tool):
+                #         yield tool_choice.function.name + prompt_template.fn_param_sep_token, finish_reason
+                #     elif isinstance(tool_choice, Function):
+                #         yield tool_choice.name + prompt_template.fn_param_sep_token, finish_reason
+                yield delta_text, finish_reason
+        yield "", "stop"
 
-    #         chunk = StreamChoice(**response)
-    #         result = ChatCompletionChunk(id=request_id, choices=[chunk])
-    #         chunk_dic = result.dict(exclude_unset=True)
-    #         chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
-    #         yield f"data: {chunk_data}\n\n"
-    #         # Break from for loop after the first tool_call is streamed if functions is provided
-    #         if functions and tool_call_count == 2:
-    #             break
-    #     yield "data: [DONE]\n\n"
+    async def completion_stream_generator(
+        tool_choice, functions
+    ) -> AsyncGenerator[str, None]:
+        generator = wrap_tgi_generator(tool_choice=tool_choice)
+        tool_call_count = 0
+        async for response in generate_openai_format_from_stream_async(
+            generator, prompt_template, tool_choice
+        ):
+            # Convert tool_calls to function_call if request.functions is provided
+            if (
+                functions
+                and len(functions) > 0
+                and "tool_calls" in response["delta"]
+                and response["delta"]["tool_calls"]
+                and len(response["delta"]["tool_calls"]) > 0
+            ):
+                tool_name = response["delta"]["tool_calls"][0]["function"]["name"]
+                tool_args = response["delta"]["tool_calls"][0]["function"]["arguments"]
+                response["delta"]["function_call"] = response["delta"]["tool_calls"][0][
+                    "function"
+                ]
+                response["delta"]["tool_calls"] = None
+                if tool_name and len(tool_name) > 0 and tool_args == "":
+                    tool_call_count += 1
+            # Return finish_reason after the first tool_call is streamed if functions is provided
+            if functions and tool_call_count == 2:
+                response["delta"] = {}
+                response["finish_reason"] = "function_call"
+
+            chunk = StreamChoice(**response)
+            result = ChatCompletionChunk(id=request_id, choices=[chunk])
+            chunk_dic = result.dict(exclude_unset=True)
+            chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
+            yield f"data: {chunk_data}\n\n"
+            # Break from for loop after the first tool_call is streamed if functions is provided
+            if functions and tool_call_count == 2:
+                break
+        yield "data: [DONE]\n\n"
 
     if request.stream:
-        # return StreamingResponse(
-        #     completion_stream_generator(
-        #         tool_choice=tool_func_choice,
-        #         functions=request.functions,
-        #     ),
-        #     media_type="text/event-stream",
-        # )
-        # for token in client.text_generation(prompt=prompt, details=True, **hyperparams):
-        #     breakpoint()
-        raise NotImplementedError
+        return StreamingResponse(
+            completion_stream_generator(
+                tool_choice=tool_func_choice,
+                functions=request.functions,
+            ),
+            media_type="text/event-stream",
+        )
     else:
         response = client.text_generation(prompt=prompt, details=True, **hyperparams)
         # Transformers tokenizers is problematic with some special tokens such that they
@@ -214,20 +268,37 @@ async def create_chat_completion(raw_request: Request):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Functionary TGI Server")
     parser.add_argument(
-        "--model",
-        type=str,
-        default="meetkai/functionary-small-v2.5",
-        help="Model name",
+        "--model", type=str, default="meetkai/functionary-small-v2.5", help="Model name"
     )
     parser.add_argument(
         "--tgi_endpoint",
         type=str,
         default="http://127.0.0.1:8080",
-        help="Model name",
+        help="The http address for TGI server",
     )
+    parser.add_argument(
+        "--model_save_folder",
+        type=str,
+        default=f"{Path.home()}/data",
+        help="The folder to save and cache the model weights",
+    )
+    parser.add_argument(
+        "--tgi_max_total_tokens",
+        type=int,
+        default=8192,
+        help="The context window of the model",
+    )
+    parser.add_argument(
+        "--tgi_startup_timeout",
+        type=int,
+        default=120,
+        help="How long this server waits for TGI server to load the model",
+    )
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="Server host")
+    parser.add_argument("--port", type=int, default=8000, help="Server port")
     args = parser.parse_args()
 
     client = InferenceClient(args.tgi_endpoint)
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=args.host, port=args.port)
