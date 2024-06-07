@@ -548,7 +548,7 @@ We convert function definitions to a similar text to TypeScript definitions.
 Then we inject these definitions as system prompts. After that, we inject the default system prompt. 
 Then we start the conversation messages. 
 
-The prompt example can be found here: [V1](tests/prompt_test_v1.txt) and [V2](tests/prompt_test_v2.txt)
+The prompt example can be found here: [V1](tests/prompt_test_v1.txt) (v1.4), [V2](tests/prompt_test_v2.txt) (v2, v2.1, v2.2, v2.4) and [V2.llama3](tests/prompt_test_v2.llama3.txt) (v2.5)
 
 
 We don't change the logit probabilities to conform to a certain schema, but the model itself knows how to conform. This allows us to use existing tools and caching systems with ease.

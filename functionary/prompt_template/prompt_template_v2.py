@@ -3,7 +3,7 @@ import random
 import string
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
-from functionary.openai_types import Tool
+from functionary.openai_types import Function, Tool
 from functionary.prompt_template import prompt_utils
 from functionary.prompt_template.base_template import PromptTemplate
 
@@ -325,8 +325,13 @@ class PromptTemplateV2(PromptTemplate):
         if tool_choice is not None:
             if tool_choice == "none":
                 recipient_to_fill = "all" + self.fn_param_sep_token
-            elif isinstance(tool_choice, Tool):
-                recipient_to_fill = tool_choice.function.name + self.fn_param_sep_token
+            elif type(tool_choice) is not str:
+                tool_choice_name = (
+                    tool_choice.function.name
+                    if isinstance(tool_choice, Tool)
+                    else tool_choice.name
+                )
+                recipient_to_fill = tool_choice_name + self.fn_param_sep_token
 
         llm_output = (
             f"{self.from_token}assistant\n{self.recipient_token}"
@@ -359,6 +364,7 @@ class PromptTemplateV2(PromptTemplate):
                         "type": "function",
                     }
                 )
+        tool_calls = None if len(tool_calls) == 0 else tool_calls
 
         return {"role": "assistant", "content": text_response, "tool_calls": tool_calls}
 
@@ -440,10 +446,14 @@ class PromptTemplateV2(PromptTemplate):
                 response_type, skip_until_reach = "text", ""
                 func_name = "all"
             elif (
-                tool_choice is not str and tool_choice is not None
+                type(tool_choice) is not str and tool_choice is not None
             ):  # tool_choice is a specific tool
                 response_type, skip_until_reach = "function", ""
-                func_name = tool_choice.function.name
+                func_name = (
+                    tool_choice.function.name
+                    if isinstance(tool_choice, Tool)
+                    else tool_choice.name
+                )
 
             current_state = {
                 "current_text": "",  # the concatenation of all tokens so far

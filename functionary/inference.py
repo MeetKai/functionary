@@ -16,10 +16,8 @@ from vllm.model_executor.guided_decoding.lm_format_enforcer_decoding import (
 from vllm.sampling_params import LogitsProcessor
 
 from functionary.openai_types import ChatMessage, Function, FunctionCall, Tool
-from functionary.prompt_template import (
-    PromptTemplate,
-    get_prompt_template_from_tokenizer,
-)
+from functionary.prompt_template import get_prompt_template_from_tokenizer
+from functionary.prompt_template.prompt_utils import prepare_messages_for_inference
 
 
 class StopWordsCriteria(StoppingCriteria):
@@ -40,87 +38,6 @@ def tokenize(message: ChatMessage, tokenizer: LlamaTokenizer, device="cuda:0"):
     return tokenizer(text, add_special_tokens=False, return_tensors="pt").input_ids.to(
         device
     )
-
-
-def prepare_messages_for_inference(
-    *,
-    tokenizer: LlamaTokenizer,
-    messages: List[ChatMessage],
-    tools_or_functions: List[Dict],
-    tool_choice: Optional[Union[str, Tool]] = None,
-    device="cuda:0",
-) -> torch.Tensor:
-    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
-
-    dic_messages = [mess.dict() for mess in messages]
-    dic_messages.append({"role": "assistant"})
-
-    dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)
-
-    # This also checks for code_interpreter and adds python default system message instead
-    # default system message
-    final_prompt = prompt_template.get_prompt_from_messages(
-        dic_messages, tools_or_functions=tools_or_functions
-    )
-
-    if (
-        prompt_template.version != "v1"
-        and tool_choice is not None
-        and tool_choice not in ["auto", "required"]
-    ):
-        if tool_choice == "none":
-            final_prompt += prompt_template.get_force_text_generation_prefix()
-        else:
-            final_prompt += prompt_template.get_force_function_call_prefix(
-                tool_choice.function.name
-            )
-    # some prompt template supports call a function directly such as: v2.llama3
-    if tool_choice == "required":
-        if hasattr(prompt_template, "function_separator"):
-            final_prompt += getattr(prompt_template, "function_separator")
-
-    input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
-    input_ids = input_ids.to(device)
-    return input_ids
-
-
-def enforce_tool_choice(
-    choice: Union[str, Tool, Function],
-    tools_or_functions: Optional[List[Union[Tool, Function]]],
-) -> Optional[List[Tool]]:
-    """This function is used to enforce tool_choice in the list of tools if it is provided by the user
-
-    Args:
-        choice: (Union[str, Tool]): either "auto", "none" or Tool/Function object
-        tools_or_functions (Optional[List[Tool, Function]]): the existing list of tools passed in from user
-
-    Returns:
-        List[Tool, Function]: the modified tools_or_functions based on tool_choice
-    """
-    if choice == "none":
-        return []
-    elif isinstance(choice, Tool):
-        if choice.function.description == "" and choice.function.parameters is None:
-            tools_or_functions = [
-                tool
-                for tool in tools_or_functions
-                if tool.type == "function"
-                and tool.function.name == choice.function.name
-            ]
-            assert (
-                len(tools_or_functions) > 0
-            ), f"Invalid value for 'tool_choice': no function named {choice.function.name} was specified in the 'tools' parameter"
-        else:
-            tools_or_functions = [choice]
-    elif isinstance(choice, Function):
-        tools_or_functions = [
-            function for function in tools_or_functions if function.name == choice.name
-        ]
-        assert (
-            len(tools_or_functions) > 0
-        ), f"Invalid value for 'function_call': no function named {choice.name} was specified in the 'functions' parameter"
-
-    return tools_or_functions
 
 
 def remove_stop_tokens_from_end(

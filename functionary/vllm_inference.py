@@ -10,7 +10,6 @@ from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
 from vllm.utils import random_uuid
 
-from functionary.inference import enforce_tool_choice, prepare_messages_for_inference
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.openai_types import (
     ChatCompletionChunk,
@@ -25,7 +24,11 @@ from functionary.openai_types import (
     UsageInfo,
 )
 from functionary.prompt_template import get_prompt_template_from_tokenizer
-from functionary.prompt_template.prompt_utils import get_random_tool_call_id
+from functionary.prompt_template.prompt_utils import (
+    enforce_tool_choice,
+    get_random_tool_call_id,
+    prepare_messages_for_inference,
+)
 
 
 def create_error_response(
@@ -71,7 +74,7 @@ async def check_all_errors(request, served_model) -> Optional[JSONResponse]:
     ]:
         return create_error_response(
             status_code=HTTPStatus.BAD_REQUEST,
-            message=f"Invalid value: '{request.function_call}'. Supported values are: 'none', 'auto', and 'required'.",
+            message=f"Invalid value: '{request.tool_choice}'. Supported values are: 'none', 'auto', and 'required'.",
             param="tool_choice",
         )
     if request.functions is None and request.function_call is not None:
@@ -206,7 +209,7 @@ async def process_chat_completion(
             prompt_token_ids=prompt_token_ids,
             tools_or_functions=tools_or_functions,
             prompt_template_cls=prompt_template,
-            tool_choice=request.tool_choice,
+            tool_choice=tool_func_choice,
         )
     else:
         result_generator = engine.generate(
@@ -243,6 +246,8 @@ async def process_chat_completion(
                             yield "all" + prompt_template.fn_param_sep_token, finish_reason
                         elif isinstance(tool_choice, Tool):
                             yield tool_choice.function.name + prompt_template.fn_param_sep_token, finish_reason
+                        elif isinstance(tool_choice, Function):
+                            yield tool_choice.name + prompt_template.fn_param_sep_token, finish_reason
                     yield delta_text, finish_reason
         # yield "", "stop"
 
@@ -310,7 +315,8 @@ async def process_chat_completion(
         background_tasks.add_task(abort_request)
         return StreamingResponse(
             completion_stream_generator(
-                tool_choice=request.tool_choice, functions=request.functions
+                tool_choice=tool_func_choice,
+                functions=request.functions,
             ),
             media_type="text/event-stream",
             background=background_tasks,
@@ -329,13 +335,15 @@ async def process_chat_completion(
     for output in final_res.outputs:
         text_response = output.text.strip()
         chat_mess = prompt_template.parse_assistant_response(
-            llm_output=text_response, tool_choice=request.tool_choice
+            llm_output=text_response,
+            tool_choice=tool_func_choice,
         )  # parse_generated_content(text_response)
 
         # Convert tool_calls to function_call if request.functions is provided
         if (
             request.functions
             and "tool_calls" in chat_mess
+            and chat_mess["tool_calls"] is not None
             and len(chat_mess["tool_calls"]) > 0
         ):
             chat_mess["function_call"] = {

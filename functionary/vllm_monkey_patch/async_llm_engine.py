@@ -31,6 +31,7 @@ from vllm.usage.usage_lib import UsageContext
 from functionary.inference import (
     get_lm_format_enforcer_vllm_logits_processor_from_tool_name,
 )
+from functionary.openai_types import Tool
 
 logger = init_logger(__name__)
 ENGINE_ITERATION_TIMEOUT_S = int(
@@ -721,7 +722,11 @@ class AsyncLLMEngine:
             elif tool_choice == "auto":
                 tool_choice_name = ""
             else:
-                tool_choice_name = tool_choice.function.name
+                tool_choice_name = (
+                    tool_choice.function.name
+                    if isinstance(tool_choice, Tool)
+                    else tool_choice.name
+                )
         else:
             tool_choice_name = ""
         curr_text, curr_tokens = "", []

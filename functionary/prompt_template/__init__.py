@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, List
 
 from functionary.prompt_template.base_template import SYSTEM_MESSAGE, PromptTemplate
 from functionary.prompt_template.llama3_prompt_template import Llama3Template
@@ -59,3 +59,21 @@ def get_prompt_template_from_tokenizer(tokenizer: Any) -> PromptTemplate:
     if len(token_ids) == 1:
         return p1
     return p2
+
+
+def get_available_prompt_template_versions() -> List[PromptTemplate]:
+    """This function will get all the available prompt templates in the module.
+
+    Returns:
+        List[PromptTemplate]: All the prompt template objects
+    """
+
+    all_templates_cls = PromptTemplate.__subclasses__()
+    # Remove PromptTemplateV1 as it is deprecated and not needed
+    all_templates_cls.remove(PromptTemplateV1)
+
+    all_templates_obj = [
+        template_cls.get_prompt_template() for template_cls in all_templates_cls
+    ]
+
+    return all_templates_obj
