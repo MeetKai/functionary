@@ -132,7 +132,7 @@ def create_labels_from_input_ids(input_ids: List[int], tokenizer: Any) -> List[i
 
 def main(
     pretrained_path: str,
-    max_input_length: int = typer.Option(default=4096),
+    max_input_length: int = typer.Option(default=1024),
     pack_length: int = typer.Option(default=-1),
     masking_labels: bool = typer.Option(default=False),
     max_packed_size: int = typer.Option(default=-1),
@@ -156,9 +156,6 @@ def main(
     assert pack_length <= max_input_length
     tokenizer = AutoTokenizer.from_pretrained(pretrained_path, legacy=True)
     tokenizer.pad_token = tokenizer.eos_token
-
-    model_config = transformers.AutoConfig.from_pretrained(pretrained_path)
-    config_type = type(model_config).__name__.lower()
 
     ds = load_dataset("tatsu-lab/alpaca")["train"]
     # extract 100 random data points from ds
@@ -201,22 +198,8 @@ def main(
     original_avg_loss, original_token_count = compute_loss_for_model_class(
         pretrained_path, tokenizer, ex_ds
     )
-    print("original_loss: ", original_avg_loss)
 
-    if "mistral" in config_type:
-        print("model: Mistral ")
-        monkey_patch_packing.monkey_patch_packing_mistral()
-    elif "llama" in config_type:
-        print("model: Llama ")
-        monkey_patch_packing.monkey_patch_packing_llama()
-    elif "mixtral" in config_type:
-        print("model: Mixtral")
-        monkey_patch_packing.monkey_patch_packing_mixtral()
-    else:
-        print(
-            f"{config_type} is not supported, currently we only support: Mistral, Mixtral, Llama"
-        )
-        sys.exit(1)
+    monkey_patch_packing.monkey_patch_packing_for_model(pretrained_path)
 
     # compute the loss on packed dataset with monkey-patched model
     mk_avg_loss, mk_token_count = compute_loss_for_model_class(

@@ -195,35 +195,11 @@ def load_model_with_rope_scaling(
     )
 
     if data_args.packing:
-        print("Packing=True, using monkey-patched")
-        config = AutoConfig.from_pretrained(model_args.model_name_or_path)
-        config_type = type(config).__name__.lower()
-        if "mistral" in config_type:
-            print_rank0("using Monkey-patched MistralForCausalLM")
-            from functionary.train.packing.monkey_patch_packing import (
-                monkey_patch_packing_mistral,
-            )
+        from functionary.train.packing.monkey_patch_packing import (
+            monkey_patch_packing_for_model,
+        )
 
-            monkey_patch_packing_mistral()
-
-        elif "llama" in config_type:  # llama
-            print_rank0("using Monkey-patched LlamaForCausalLM")
-            from functionary.train.packing.monkey_patch_packing import (
-                monkey_patch_packing_llama,
-            )
-
-            monkey_patch_packing_llama()
-
-        elif "mixtral" in config_type:
-            print_rank0("using Monkey-patched Mixtral")
-            from functionary.train.packing.monkey_patch_packing import (
-                monkey_patch_packing_mixtral,
-            )
-
-            monkey_patch_packing_mixtral()
-        else:
-            print("packing only supports models: Mistral, Llama, Mixtral")
-            sys.exit(1)
+        monkey_patch_packing_for_model(model_args.model_name_or_path)
 
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
