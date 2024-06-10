@@ -272,10 +272,9 @@ class PromptTemplate:
 
         return raw_response
 
-    @abstractmethod
     def get_chat_template_jinja(self):
         """Return chat_template in jinja format"""
-        raise NotImplementedError
+        raise ""
 
     @classmethod
     def get_prompt_template(cls):

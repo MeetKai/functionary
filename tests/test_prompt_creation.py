@@ -37,10 +37,11 @@ class TestPromptTemplate(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(TestPromptTemplate, self).__init__(*args, **kwargs)
 
-        self.template_versions = ["v2", "v2.llama3", "v2.qwen2"]
+        self.template_versions = ["v2", "v2.llama3", "v2.qwen2", "v2.qwen2_v2"]
         self.pretrained_models = [
             "meetkai/functionary-small-v2.4",
             "meta-llama/Meta-Llama-3-8B-Instruct",
+            "Qwen/Qwen2-7B-Instruct",
             "Qwen/Qwen2-7B-Instruct",
         ]
 
@@ -83,7 +84,7 @@ class TestPromptTemplate(unittest.TestCase):
             self.run_prepare_training_inputs(
                 template_version=template_version,
                 pretrained=pretrained_model,
-                verbose=True if template_version == "v2.qwen2" else False,
+                verbose=False
             )
 
     def run_prepare_training_inputs(
