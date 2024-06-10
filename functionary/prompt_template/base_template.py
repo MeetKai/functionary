@@ -274,7 +274,7 @@ class PromptTemplate:
 
     def get_chat_template_jinja(self):
         """Return chat_template in jinja format"""
-        raise ""
+        return ""
 
     @classmethod
     def get_prompt_template(cls):
