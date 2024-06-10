@@ -225,7 +225,7 @@ def print_some_examples(ds, tokenizer):
         print_rank0("attention mask: ", batch["attention_mask"])
         input_ids = batch["input_ids"][0].tolist()
         input_chunk = extract_unmasked_chunks(input_ids, tokenizer.pad_token_id)
-        assert len(input_chunk) == 1
+        # assert len(input_chunk) == 1  # padding at left or right only --> pad_token_id = eos_token_id --> wrong
         print_rank0("+ inputs: ")
         print_rank0(tokenizer.decode(input_chunk[0]))
         labels = batch["labels"][0].tolist()
