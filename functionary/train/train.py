@@ -10,11 +10,51 @@ import numpy as np
 import torch
 import torch.distributed
 import transformers
+from aenum import extend_enum
+
+from torch.optim.lr_scheduler import LambdaLR
+
+extend_enum(
+    transformers.trainer_utils.SchedulerType,
+    "CUSTOMIZED_SCHEDULER",
+    "customized_scheduler",
+)
+
+
+def get_scheduler(
+    optimizer: torch.optim.Optimizer,
+    num_warmup_steps: int,
+    num_training_steps: int,
+    num_cycles: float = 0.5,
+    min_lr_ratio: float = 0.75,
+    last_epoch: int = -1,
+) -> LambdaLR:
+
+    def lr_lambda(current_step):
+        if current_step < num_warmup_steps:
+            return current_step / max(1, num_warmup_steps)
+        progress = (current_step - num_warmup_steps) / max(
+            1, num_training_steps - num_warmup_steps
+        )
+        cosine_lr_multiple = (1.0 - min_lr_ratio) * 0.5 * (
+            1.0 + math.cos(math.pi * num_cycles * 2.0 * progress)
+        ) + min_lr_ratio
+        return max(0.0, cosine_lr_multiple)
+
+    return LambdaLR(optimizer, lr_lambda, last_epoch)
+
+
+transformers.optimization.TYPE_TO_SCHEDULER_FUNCTION["customized_scheduler"] = (
+    get_scheduler
+)
+
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 from transformers import AutoConfig, AutoTokenizer, Trainer
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
+from typing import Union
+
 from functionary.prompt_template import PromptTemplate, get_prompt_template_by_version
 from functionary.train.custom_datasets import read_dataset
 
