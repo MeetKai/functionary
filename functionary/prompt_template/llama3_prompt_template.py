@@ -28,7 +28,6 @@ class Llama3Template(PromptTemplate):
     function_separator = "<|reserved_special_token_249|>"
     version = "v2.llama3"
     fn_param_sep_token = "\n"
-    tokenizer_name_or_path = "meetkai/functionary-small-v2.5"
 
     def get_additional_tokens(self) -> List[str]:
         return []
@@ -297,7 +296,7 @@ class Llama3Template(PromptTemplate):
                 self.get_force_function_call_prefix(tool_choice_name) + llm_output
             )
         elif tool_choice == "required":
-            llm_output = self.function_separator + llm_output
+            llm_output = self.get_tool_choice_required_prefix() + llm_output
 
         chunks = llm_output.split(self.function_separator)
         chunks = [chunk.strip() for chunk in chunks if len(chunk.strip()) > 0]

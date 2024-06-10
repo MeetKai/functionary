@@ -15,7 +15,9 @@ from functionary.openai_types import (
     Tool,
 )
 from functionary.prompt_template import (
+    Llama3Template,
     PromptTemplate,
+    PromptTemplateV2,
     get_available_prompt_template_versions,
 )
 from functionary.prompt_template.prompt_utils import (
@@ -175,6 +177,10 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
             {"type": "function", "function": self.default_functions[0]}
         ]
         self.test_prompt_templates = get_available_prompt_template_versions()
+        self.prompt_template_to_tokenizer_name_mapping = {
+            PromptTemplateV2: "meetkai/functionary-small-v2.4",
+            Llama3Template: "meetkai/functionary-small-v2.5",
+        }
         self.default_text_str = "Normal text generation"
         self.default_tool_call_name = "get_weather"
         self.default_tool_call_args = [
@@ -464,6 +470,15 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
             "Edge case handling failed: tool_choice provided without providing tools",
         )
 
+    async def test_prompt_template_to_tokenizer(self):
+        # Test whether all prompt templates are included in template_to_tokenizer_mapping yet
+        for prompt_template in self.test_prompt_templates:
+            self.assertIn(
+                type(prompt_template),
+                self.prompt_template_to_tokenizer_name_mapping.keys(),
+                f"Prompt template `{type(prompt_template)}` is not included in template_to_tokenizer_mapping yet.",
+            )
+
     async def test_request_handling(self):
         for prompt_template in self.test_prompt_templates:
             for test_case in self.request_handling_test_cases:
@@ -545,8 +560,13 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
 
         for prompt_template in self.test_prompt_templates:
             tokenizer = AutoTokenizer.from_pretrained(
-                prompt_template.tokenizer_name_or_path
+                self.prompt_template_to_tokenizer_name_mapping[type(prompt_template)]
             )
+            special_tokens = {
+                "additional_special_tokens": prompt_template.get_additional_tokens()
+            }
+            tokenizer.add_special_tokens(special_tokens)
+
             for test_case in self.request_handling_test_cases:
                 raw_response = generate_raw_response(
                     gen_text=test_case["gen_text"],

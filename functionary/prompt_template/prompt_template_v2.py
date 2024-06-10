@@ -16,7 +16,6 @@ class PromptTemplateV2(PromptTemplate):
     version = "v2"
     # This token splits between function name and parameters
     fn_param_sep_token = "\n<|content|>"
-    tokenizer_name_or_path = "meetkai/functionary-small-v2.4"
 
     def get_start_of_function_call_token(self) -> str:
         return self.recipient_token
