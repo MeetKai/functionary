@@ -22,7 +22,7 @@ class Qwen2PromptTemplateV2(PromptTemplate):
 
 
     def get_additional_tokens(self) -> List[str]:
-        return [">>>"]
+        return []
 
     def get_assistant_prefixes(self) -> List[str]:
         return [f"{self.start_of_turn}assistant\n{self.function_separator}"]
