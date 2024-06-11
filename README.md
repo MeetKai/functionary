@@ -70,13 +70,21 @@ We also provide a service that performs inference on Functionary models using [T
 
 1. Install Docker following [their installation instructions](https://docs.docker.com/get-docker/).
 
-2. Start up the Functionary TGI server
+2. Install the Docker SDK for Python
 
 ```shell
-python3 server_tgi.py --model meetkai/functionary-small-v2.5 --tgi_endpoint <TGI_SERVICE_ENDPOINT>
+pip install docker
 ```
 
-3. Make either [OpenAI-compatible](#openai-compatible-usage) or [raw HTTP](#raw-usage) requests to the Functionary TGI server.
+4. Start up the Functionary TGI server
+
+```shell
+python3 server_tgi.py --model meetkai/functionary-small-v2.5 --endpoint <TGI_SERVICE_ENDPOINT>
+```
+
+At start-up, the Functionary TGI server tries to connect to an existing TGI endpoint. If the TGI endpoint does not exist, the Functionary TGI server will start a new TGI endpoint container with the address provided in the `endpoint` CLI argument via the installed Docker Python SDK.
+
+5. Make either [OpenAI-compatible](#openai-compatible-usage) or [raw HTTP](#raw-usage) requests to the Functionary TGI server.
 
 
 **Docker**

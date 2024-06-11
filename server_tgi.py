@@ -30,45 +30,49 @@ from functionary.openai_types import (
 from functionary.prompt_template import get_prompt_template_from_tokenizer
 from functionary.prompt_template.prompt_utils import enforce_tool_choice
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-
-def get_health():
+def check_health():
     try:
-        response = requests.get(f"{args.tgi_endpoint}/health")
+        response = requests.get(f"{args.endpoint}/health")
         if response.status_code == 200:
-            return "healthy"
+            return True
     except requests.RequestException:
         pass
 
-    return "unhealthy"
+    return False
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Run TGI docker container at start up
-    logger.info("Starting TGI docker container...")
-    port = int(args.tgi_endpoint[args.tgi_endpoint.rindex(":") + 1 :])
-    tgi_docker_client = docker.from_env()
-    tgi_container = tgi_docker_client.containers.run(
-        "ghcr.io/huggingface/text-generation-inference:2.0.4",
-        f"--model-id {args.model} --max-total-tokens {args.tgi_max_total_tokens}",
-        device_requests=[docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])],
-        shm_size="1g",
-        ports={"80/tcp": port},
-        volumes={args.model_save_folder: {"bind": "/data", "mode": "rw"}},
-        detach=True,
-    )
-    # Wait until model is loaded in TGI container
-    sleep_time, elapsed_time = 1, 0
-    for _ in range(args.tgi_startup_timeout):
-        time.sleep(sleep_time)
-        if get_health() != "healthy":
-            elapsed_time += sleep_time
-        else:
-            break
-    logger.info("TGI docker container started. Ready to go...")
+    # Run TGI docker container at start up only if endpoint is not set up yet
+    if check_health():
+        logger.info(
+            f"Connected to existing TGI docker container at endpoint `{args.endpoint}`"
+        )
+    else:
+        logger.info("No existing TGI docker containers. Starting new container...")
+        port = int(args.endpoint[args.endpoint.rindex(":") + 1 :])
+        tgi_docker_client = docker.from_env()
+        tgi_container = tgi_docker_client.containers.run(
+            "ghcr.io/huggingface/text-generation-inference:2.0.4",
+            f"--model-id {args.model} --max-total-tokens {args.max_total_tokens}",
+            device_requests=[
+                docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])
+            ],
+            shm_size="1g",
+            ports={"80/tcp": port},
+            volumes={args.model_save_folder: {"bind": "/data", "mode": "rw"}},
+            detach=True,
+        )
+        # Wait until model is loaded in TGI container
+        sleep_time, elapsed_time = 1, 0
+        for _ in range(args.startup_timeout):
+            time.sleep(sleep_time)
+            if not check_health():
+                elapsed_time += sleep_time
+            else:
+                break
+        logger.info("TGI docker container started. Ready to go...")
     yield
     # Stop and remove TGI docker container at shutdown
     tgi_container.stop()
@@ -197,33 +201,33 @@ async def create_chat_completion(raw_request: dict):
         # are not reflected in `response.generated_text`. Use this hack temporarily first.
         # Issue: https://github.com/huggingface/text-generation-inference/issues/1984
         response_text = "".join([token.text for token in response.details.tokens])
-        chat_mess = prompt_template.parse_assistant_response(
+        check_message = prompt_template.parse_assistant_response(
             llm_output=response_text, tool_choice=tool_func_choice
         )
         # Convert tool_calls to function_call if request.functions is provided
         if (
             request.functions
-            and "tool_calls" in chat_mess
-            and chat_mess["tool_calls"] is not None
-            and len(chat_mess["tool_calls"]) > 0
+            and "tool_calls" in check_message
+            and check_message["tool_calls"] is not None
+            and len(check_message["tool_calls"]) > 0
         ):
-            chat_mess["function_call"] = {
-                "name": chat_mess["tool_calls"][0]["function"]["name"],
-                "arguments": chat_mess["tool_calls"][0]["function"]["arguments"],
+            check_message["function_call"] = {
+                "name": check_message["tool_calls"][0]["function"]["name"],
+                "arguments": check_message["tool_calls"][0]["function"]["arguments"],
             }
-            chat_mess["tool_calls"] = None
+            check_message["tool_calls"] = None
 
         # Postprocess finish reason
         finish_reason = "stop"
-        if "function_call" in chat_mess and chat_mess["function_call"]:
+        if "function_call" in check_message and check_message["function_call"]:
             finish_reason = "function_call"
-        if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
+        if "tool_calls" in check_message and check_message["tool_calls"]:
             finish_reason = "tool_calls"
 
         choices = [
             ChatCompletionResponseChoice(
                 index=0,
-                message=ChatMessage(**chat_mess),
+                message=ChatMessage(**check_message),
                 finish_reason=finish_reason,
             )
         ]
@@ -251,7 +255,7 @@ if __name__ == "__main__":
         "--model", type=str, default="meetkai/functionary-small-v2.5", help="Model name"
     )
     parser.add_argument(
-        "--tgi_endpoint",
+        "--endpoint",
         type=str,
         default="http://127.0.0.1:8080",
         help="The http address for TGI server",
@@ -263,13 +267,13 @@ if __name__ == "__main__":
         help="The folder to save and cache the model weights",
     )
     parser.add_argument(
-        "--tgi_max_total_tokens",
+        "--max_total_tokens",
         type=int,
         default=8192,
         help="The context window of the model",
     )
     parser.add_argument(
-        "--tgi_startup_timeout",
+        "--startup_timeout",
         type=int,
         default=120,
         help="How long this server waits for TGI server to load the model",
@@ -278,7 +282,10 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8000, help="Server port")
     args = parser.parse_args()
 
-    client = InferenceClient(args.tgi_endpoint)
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    client = InferenceClient(args.endpoint)
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
     uvicorn.run(app, host=args.host, port=args.port)
