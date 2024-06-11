@@ -79,7 +79,7 @@ pip install docker
 4. Start up the Functionary TGI server
 
 ```shell
-python3 server_tgi.py --model meetkai/functionary-small-v2.5 --endpoint <TGI_SERVICE_ENDPOINT>
+python3 server_tgi.py --model <REMOTE_MODEL_ID_OR_LOCAL_MODEL_PATH> --endpoint <TGI_SERVICE_ENDPOINT>
 ```
 
 At start-up, the Functionary TGI server tries to connect to an existing TGI endpoint. If the TGI endpoint does not exist, the Functionary TGI server will start a new TGI endpoint container with the address provided in the `endpoint` CLI argument via the installed Docker Python SDK.
