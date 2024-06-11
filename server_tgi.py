@@ -42,6 +42,15 @@ def check_health():
     return False
 
 
+def check_hf_model_exists(model_name):
+    url = f"https://huggingface.co/api/models/{model_name}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        return True
+    else:
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Run TGI docker container at start up only if endpoint is not set up yet
@@ -49,19 +58,28 @@ async def lifespan(app: FastAPI):
         logger.info(
             f"Connected to existing TGI docker container at endpoint `{args.endpoint}`"
         )
+        tgi_container = None
     else:
         logger.info("No existing TGI docker containers. Starting new container...")
+
+        if check_hf_model_exists(model_name=args.model):
+            model_name = args.model
+            volume_dir = args.model_save_folder
+        else:
+            model_name = f"/data/{args.model[args.model.rindex('/'):]}"
+            volume_dir = args.model[: args.model.rindex("/")]
+
         port = int(args.endpoint[args.endpoint.rindex(":") + 1 :])
         tgi_docker_client = docker.from_env()
         tgi_container = tgi_docker_client.containers.run(
             "ghcr.io/huggingface/text-generation-inference:2.0.4",
-            f"--model-id {args.model} --max-total-tokens {args.max_total_tokens}",
+            f"--model-id {model_name} --max-total-tokens {args.max_total_tokens}",
             device_requests=[
                 docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])
             ],
             shm_size="1g",
             ports={"80/tcp": port},
-            volumes={args.model_save_folder: {"bind": "/data", "mode": "rw"}},
+            volumes={volume_dir: {"bind": "/data", "mode": "rw"}},
             detach=True,
         )
         # Wait until model is loaded in TGI container
@@ -75,8 +93,9 @@ async def lifespan(app: FastAPI):
         logger.info("TGI docker container started. Ready to go...")
     yield
     # Stop and remove TGI docker container at shutdown
-    tgi_container.stop()
-    tgi_container.remove()
+    if tgi_container:
+        tgi_container.stop()
+        tgi_container.remove()
 
 
 app = FastAPI(title="Functionary TGI", lifespan=lifespan)
