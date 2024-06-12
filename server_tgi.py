@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -42,15 +43,6 @@ def check_health():
     return False
 
 
-def check_hf_model_exists(model_name):
-    url = f"https://huggingface.co/api/models/{model_name}"
-    response = requests.get(url)
-    if response.status_code == 200:
-        return True
-    else:
-        return False
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Run TGI docker container at start up only if endpoint is not set up yet
@@ -62,12 +54,13 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("No existing TGI docker containers. Starting new container...")
 
-        if check_hf_model_exists(model_name=args.model):
+        if os.path.isdir(args.model):
             model_name = args.model
-            volume_dir = args.model_save_folder
-        else:
-            model_name = f"/data/{args.model[args.model.rindex('/'):]}"
             volume_dir = args.model[: args.model.rindex("/")]
+            volumes = {volume_dir: {"bind": volume_dir, "mode": "rw"}}
+        else:
+            model_name = args.model
+            volumes = {args.remote_model_save_folder: {"bind": "/data", "mode": "rw"}}
 
         port = int(args.endpoint[args.endpoint.rindex(":") + 1 :])
         tgi_docker_client = docker.from_env()
@@ -79,7 +72,7 @@ async def lifespan(app: FastAPI):
             ],
             shm_size="1g",
             ports={"80/tcp": port},
-            volumes={volume_dir: {"bind": "/data", "mode": "rw"}},
+            volumes=volumes,
             detach=True,
         )
         # Wait until model is loaded in TGI container
@@ -90,6 +83,11 @@ async def lifespan(app: FastAPI):
                 elapsed_time += sleep_time
             else:
                 break
+        else:
+            logger.info(
+                "Timed out when trying to start the TGI docker container. Shutting down now..."
+            )
+            raise SystemExit()
         logger.info("TGI docker container started. Ready to go...")
     yield
     # Stop and remove TGI docker container at shutdown
@@ -280,10 +278,10 @@ if __name__ == "__main__":
         help="The http address for TGI server",
     )
     parser.add_argument(
-        "--model_save_folder",
+        "--remote_model_save_folder",
         type=str,
         default=f"{Path.home()}/data",
-        help="The folder to save and cache the model weights",
+        help="The folder to save and cache remote model weights",
     )
     parser.add_argument(
         "--max_total_tokens",
@@ -294,8 +292,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--startup_timeout",
         type=int,
-        default=120,
-        help="How long this server waits for TGI server to load the model",
+        default=300,
+        help="How long in seconds this server waits for TGI server to load the model",
     )
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Server host")
     parser.add_argument("--port", type=int, default=8000, help="Server port")

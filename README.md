@@ -76,15 +76,25 @@ We also provide a service that performs inference on Functionary models using [T
 pip install docker
 ```
 
-4. Start up the Functionary TGI server
+3. Start up the Functionary TGI server
+
+At start-up, the Functionary TGI server tries to connect to an existing TGI endpoint. In this case, you can run the following:
 
 ```shell
 python3 server_tgi.py --model <REMOTE_MODEL_ID_OR_LOCAL_MODEL_PATH> --endpoint <TGI_SERVICE_ENDPOINT>
 ```
 
-At start-up, the Functionary TGI server tries to connect to an existing TGI endpoint. If the TGI endpoint does not exist, the Functionary TGI server will start a new TGI endpoint container with the address provided in the `endpoint` CLI argument via the installed Docker Python SDK.
+If the TGI endpoint does not exist, the Functionary TGI server will start a new TGI endpoint container with the address provided in the `endpoint` CLI argument via the installed Docker Python SDK. Run the following commands for remote and local models respectively:
 
-5. Make either [OpenAI-compatible](#openai-compatible-usage) or [raw HTTP](#raw-usage) requests to the Functionary TGI server.
+```shell
+python3 server_tgi.py --model <REMOTE_MODEL_ID> --remote_model_save_folder <PATH_TO_SAVE_AND_CACHE_REMOTE_MODEL> --endpoint <TGI_SERVICE_ENDPOINT>
+```
+
+```shell
+python3 server_tgi.py --model <LOCAL_MODEL_PATH> --endpoint <TGI_SERVICE_ENDPOINT>
+```
+
+4. Make either [OpenAI-compatible](#openai-compatible-usage) or [raw HTTP](#raw-usage) requests to the Functionary TGI server.
 
 
 **Docker**
