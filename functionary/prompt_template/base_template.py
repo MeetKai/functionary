@@ -227,6 +227,11 @@ class PromptTemplate:
             NotImplementedError: _description_
         """
         raise NotImplementedError
+    
+    def get_force_required_prefix(self):
+        """This function will be used for force-required generation. Return empty string by default
+        """
+        return ""
 
     def get_raw_response_from_assistant_message(
         self,

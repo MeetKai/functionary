@@ -76,7 +76,10 @@ def get_prompt_template_from_tokenizer(tokenizer: Any) -> PromptTemplate:
     if len(token_ids) == 1:
         return p1
     
-    return p5
+    token_ids = tokenizer.encode("<|im_end|>", add_special_tokens=False)
+    if len(token_ids) == 1 and token_ids[0] == 151645:
+        return p5
+    raise Exception("Cannot detect prompt template based on tokenizer")
 
 
 

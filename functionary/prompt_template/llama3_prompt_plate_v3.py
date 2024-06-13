@@ -176,3 +176,4 @@ class Llama3TemplateV3(PromptTemplate):
 
     def get_force_text_generation_prefix(self):
         return f"{self.function_separator}all\n"
+    

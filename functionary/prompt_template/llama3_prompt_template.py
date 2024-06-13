@@ -563,3 +563,6 @@ class Llama3Template(PromptTemplate):
 
     def get_force_function_call_prefix(self, function_name: str):
         return f"{self.function_separator}{function_name}\n"
+
+    def get_force_required_prefix(self):
+        return f"{self.function_separator}"
