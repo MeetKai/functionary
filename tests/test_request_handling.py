@@ -1,19 +1,25 @@
 import json
 import unittest
 from http import HTTPStatus
-from typing import Any, Optional, Union
+from typing import Any, List, Optional, Union
 
 from fastapi.responses import JSONResponse
 from transformers import AutoTokenizer
 
 from functionary.openai_types import (
     ChatCompletionRequest,
-    ChatCompletionResponseChoice,
     ChatMessage,
     Function,
+    FunctionCall,
+    StreamChoice,
     Tool,
 )
-from functionary.prompt_template import get_available_prompt_template_versions
+from functionary.prompt_template import (
+    Llama3Template,
+    PromptTemplate,
+    PromptTemplateV2,
+    get_available_prompt_template_versions,
+)
 from functionary.prompt_template.prompt_utils import (
     enforce_tool_choice,
     prepare_messages_for_inference,
@@ -113,6 +119,39 @@ def get_token_ids_from_request(
     return prompt_token_ids
 
 
+def generate_raw_response(
+    gen_text: bool,
+    num_tool_calls: Optional[int],
+    tool_func_choice: Union[str, Tool, Function],
+    default_text_str: str,
+    default_tool_call_name: str,
+    default_tool_call_args: List[str],
+    prompt_template: PromptTemplate,
+):
+    message = {"role": "assistant"}
+    if gen_text:
+        message["content"] = default_text_str
+    if num_tool_calls is not None:
+        tool_calls = []
+        for tool_call_args in default_tool_call_args[:num_tool_calls]:
+            tool_calls.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": default_tool_call_name,
+                        "arguments": tool_call_args,
+                    },
+                }
+            )
+        message["tool_calls"] = tool_calls
+
+    return prompt_template.get_raw_response_from_assistant_message(
+        message=message,
+        tool_func_choice=tool_func_choice,
+        default_tool_call_name=default_tool_call_name,
+    )
+
+
 class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
     def __init__(self, *args, **kwargs):
         super(TestRequestHandling, self).__init__(*args, **kwargs)
@@ -138,6 +177,10 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
             {"type": "function", "function": self.default_functions[0]}
         ]
         self.test_prompt_templates = get_available_prompt_template_versions()
+        self.prompt_template_to_tokenizer_name_mapping = {
+            PromptTemplateV2: "meetkai/functionary-small-v2.4",
+            Llama3Template: "meetkai/functionary-small-v2.5",
+        }
         self.default_text_str = "Normal text generation"
         self.default_tool_call_name = "get_weather"
         self.default_tool_call_args = [
@@ -427,41 +470,26 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
             "Edge case handling failed: tool_choice provided without providing tools",
         )
 
-    async def test_request_handling(self):
-        def generate_raw_response(
-            gen_text: bool,
-            num_tool_calls: Optional[int],
-            tool_func_choice: Union[str, Tool, Function],
-        ):
-            message = {"role": "assistant"}
-            if gen_text:
-                message["content"] = self.default_text_str
-            if num_tool_calls is not None:
-                tool_calls = []
-                for tool_call_args in self.default_tool_call_args[:num_tool_calls]:
-                    tool_calls.append(
-                        {
-                            "type": "function",
-                            "function": {
-                                "name": self.default_tool_call_name,
-                                "arguments": tool_call_args,
-                            },
-                        }
-                    )
-                message["tool_calls"] = tool_calls
-
-            return prompt_template.get_raw_response_from_assistant_message(
-                message=message,
-                tool_func_choice=tool_func_choice,
-                default_tool_call_name=self.default_tool_call_name,
+    async def test_prompt_template_to_tokenizer(self):
+        # Test whether all prompt templates are included in template_to_tokenizer_mapping yet
+        for prompt_template in self.test_prompt_templates:
+            self.assertIn(
+                type(prompt_template),
+                self.prompt_template_to_tokenizer_name_mapping.keys(),
+                f"Prompt template `{type(prompt_template)}` is not included in template_to_tokenizer_mapping yet.",
             )
 
+    async def test_request_handling(self):
         for prompt_template in self.test_prompt_templates:
             for test_case in self.request_handling_test_cases:
                 raw_response = generate_raw_response(
                     gen_text=test_case["gen_text"],
                     num_tool_calls=test_case["num_tool_calls"],
                     tool_func_choice=test_case["tool_func_choice"],
+                    default_text_str=self.default_text_str,
+                    default_tool_call_name=self.default_tool_call_name,
+                    default_tool_call_args=self.default_tool_call_args,
+                    prompt_template=prompt_template,
                 )
                 chat_mess = prompt_template.parse_assistant_response(
                     llm_output=raw_response, tool_choice=test_case["tool_func_choice"]
@@ -510,6 +538,146 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                     test_case["expected_finish_reason"],
                     f"Wrong finish reason for version: {prompt_template.version} | test: `{test_case['test_aim']}`",
                 )
+
+    async def test_request_handling_streaming(self):
+        async def wrap_generator(tokenizer, raw_response, test_case):
+            tokenized_response = tokenizer.encode(
+                raw_response, add_special_tokens=False
+            )
+            # Append None to the end to produce finish_reason
+            tokenized_response.append(None)
+
+            prev_ids = []
+            for token_id in tokenized_response:
+                if token_id is not None:
+                    offset = tokenizer.decode(prev_ids + [token_id])[
+                        len(tokenizer.decode(prev_ids)) :
+                    ]
+                    prev_ids.append(token_id)
+                    yield offset, None
+                else:
+                    yield "", test_case["expected_finish_reason"]
+
+        for prompt_template in self.test_prompt_templates:
+            tokenizer = AutoTokenizer.from_pretrained(
+                self.prompt_template_to_tokenizer_name_mapping[type(prompt_template)]
+            )
+            special_tokens = {
+                "additional_special_tokens": prompt_template.get_additional_tokens()
+            }
+            tokenizer.add_special_tokens(special_tokens)
+
+            for test_case in self.request_handling_test_cases:
+                raw_response = generate_raw_response(
+                    gen_text=test_case["gen_text"],
+                    num_tool_calls=test_case["num_tool_calls"],
+                    tool_func_choice=test_case["tool_func_choice"],
+                    default_text_str=self.default_text_str,
+                    default_tool_call_name=self.default_tool_call_name,
+                    default_tool_call_args=self.default_tool_call_args,
+                    prompt_template=prompt_template,
+                )
+                # Use tokenizer to split raw response into chunks
+                generator = wrap_generator(tokenizer, raw_response, test_case)
+
+                content = ""
+                tool_calls = []
+                tool_call_count = 0
+                chunks_list = []
+                state = {}
+                async for delta_text, finish_reason in generator:
+                    state, responses = (
+                        prompt_template.update_response_state_from_delta_text(
+                            current_state=state,
+                            delta_text=delta_text,
+                            finish_reason=finish_reason,
+                            tool_choice=test_case["tool_func_choice"],
+                        )
+                    )
+                    if responses is not None:
+                        if type(responses) is not list:
+                            responses = [responses]
+                    else:
+                        responses = []
+
+                    for response in responses:
+                        chunk = StreamChoice(**response)
+                        if chunk.delta.content is not None:
+                            content += chunk.delta.content
+                        if chunk.delta.tool_calls is not None:
+                            name = chunk.delta.tool_calls[0].function.name
+                            arguments = chunk.delta.tool_calls[0].function.arguments
+                            # Convert chunk's tool_calls into function_call
+                            if test_case["expected_finish_reason"] == "function_call":
+                                chunk.delta.function_call = FunctionCall(
+                                    name=name, arguments=arguments
+                                )
+                                chunk.delta.tool_calls = None
+                                if name is not None and len(name) > 0:
+                                    tool_call_count += 1
+                                # Do not process the second tool call onwards for function_call
+                                if tool_call_count == 2:
+                                    continue
+                            if name is not None:
+                                tool_calls.append(
+                                    {"name": name, "arguments": arguments}
+                                )
+                            else:
+                                try:
+                                    tool_calls[-1]["arguments"] += arguments
+                                except:
+                                    breakpoint()
+                        chunks_list.append(chunk)
+
+                # Test content
+                label_content = self.default_text_str if test_case["gen_text"] else ""
+                self.assertEqual(
+                    content,
+                    label_content,
+                    f"Wrong streamed content for version: {prompt_template.version} | test: `{test_case['test_aim']}`",
+                )
+                # Test tool_calls
+                if test_case["expected_finish_reason"] == "tool_calls":
+                    for tool_call in tool_calls:
+                        self.assertEqual(
+                            tool_call["name"],
+                            self.default_tool_call_name,
+                            f"Wrong streamed tool call name for version: {prompt_template.version} | test: `{test_case['test_aim']}`",
+                        )
+                        self.assertIn(
+                            tool_call["arguments"],
+                            self.default_tool_call_args,
+                            f"Wrong streamed tool call args for version: {prompt_template.version} | test: `{test_case['test_aim']}`",
+                        )
+                # Test function_call
+                elif test_case["expected_finish_reason"] == "function_call":
+                    self.assertEqual(
+                        len(tool_calls),
+                        1,
+                        f"More than 1 tool call for function_call for version: {prompt_template.version} | test: `{test_case['test_aim']}`",
+                    )
+                    self.assertEqual(
+                        tool_calls[0]["name"],
+                        self.default_tool_call_name,
+                        f"Wrong streamed fn call name for version: {prompt_template.version} | test: `{test_case['test_aim']}`",
+                    )
+                    self.assertIn(
+                        tool_calls[0]["arguments"],
+                        self.default_tool_call_args,
+                        f"Wrong streamed fn call args for version: {prompt_template.version} | test: `{test_case['test_aim']}`",
+                    )
+                # Test finish_reason at last chunk and None for all preceding chunks
+                self.assertNotEqual(
+                    chunks_list[-1].finish_reason,
+                    None,
+                    f"Wrong streamed finish_reason for version: {prompt_template.version} | test: `{test_case['test_aim']}`",
+                )
+                for chunk in chunks_list[:-1]:
+                    self.assertEqual(
+                        chunk.finish_reason,
+                        None,
+                        f"finish_reason should be None for all chunks except last for version: {prompt_template.version} | test: `{test_case['test_aim']}`",
+                    )
 
 
 if __name__ == "__main__":

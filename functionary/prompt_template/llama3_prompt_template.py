@@ -296,7 +296,7 @@ class Llama3Template(PromptTemplate):
                 self.get_force_function_call_prefix(tool_choice_name) + llm_output
             )
         elif tool_choice == "required":
-            llm_output = self.function_separator + llm_output
+            llm_output = self.get_tool_choice_required_prefix() + llm_output
 
         chunks = llm_output.split(self.function_separator)
         chunks = [chunk.strip() for chunk in chunks if len(chunk.strip()) > 0]
@@ -563,3 +563,6 @@ class Llama3Template(PromptTemplate):
 
     def get_force_function_call_prefix(self, function_name: str):
         return f"{self.function_separator}{function_name}\n"
+
+    def get_tool_choice_required_prefix(self):
+        return self.function_separator

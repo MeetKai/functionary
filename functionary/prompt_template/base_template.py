@@ -228,6 +228,10 @@ class PromptTemplate:
         """
         raise NotImplementedError
 
+    def get_tool_choice_required_prefix(self):
+        """This function will be used when tool_choice='required'. Returns empty string by default"""
+        return ""
+
     def get_raw_response_from_assistant_message(
         self,
         message: Dict[str, Any],
@@ -259,6 +263,8 @@ class PromptTemplate:
 
         if tool_func_choice == "none":
             raw_response = raw_response[len(self.get_force_text_generation_prefix()) :]
+        elif tool_func_choice == "required":
+            raw_response = raw_response[len(self.get_tool_choice_required_prefix()) :]
         elif isinstance(tool_func_choice, Tool) or isinstance(
             tool_func_choice, Function
         ):
@@ -270,7 +276,7 @@ class PromptTemplate:
                 ) :
             ]
 
-        return raw_response
+        return raw_response.rstrip()
 
     @abstractmethod
     def get_chat_template_jinja(self):

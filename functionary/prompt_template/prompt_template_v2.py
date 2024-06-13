@@ -427,6 +427,28 @@ class PromptTemplateV2(PromptTemplate):
         chat_template = chat_template.strip()
         return chat_template
 
+    def update_state_for_text(self, current_state):
+        """update the state when a function is going to be called
+
+        Args:
+            current_state (_type_): _description_
+        """
+        current_state["response_type"] = "text"
+        current_state["skip_until_reach"] = ""
+        current_state["current_text"] = ""
+
+    def update_state_for_function(self, current_state):
+        """update the state when a function is going to be called
+
+        Args:
+            current_state (_type_): _description_
+        """
+        current_state["response_type"] = "function"
+        current_state["skip_until_reach"] = ""
+        current_state["current_text"] = ""
+        current_state["func_index"] += 1
+        current_state["call_id"] = prompt_utils.get_random_tool_call_id()
+
     def update_response_state_from_delta_text(
         self,
         *,
@@ -435,52 +457,63 @@ class PromptTemplateV2(PromptTemplate):
         finish_reason: Optional[str],
         tool_choice: Any,
     ) -> Tuple[Dict[str, Any], Union[None, Dict, List[Dict]]]:
-        func_name = None
-        response_type = None
-        skip_until_reach = ""
 
         if len(current_state) == 0:  # empty dict, at the first_time
-            response_type, skip_until_reach, func_name = None, self.content_token, None
+            current_state = {
+                "current_text": "",  # the concatenation of all tokens so far
+                "func_name": None,  # function_name of the current tool, if the response requires to use tool
+                "response_type": None,  # response_type=text(text response)/function (using tool)
+                "func_index": -1,  # index of the tool in tool_calls
+                "call_id": None,  # call_id of the current tool
+                # skip_until_reach we skip new tokens until we reach certain token. This is used when we hit special tokens
+                "skip_until_reach": self.content_token,  # at first we don't need to skip as we are generating function
+                "first_time": True,  # if first_time we return an tempty delta with role=assistant
+                "prev_whitespaces": 0,  # number of consecutive whitespaces prior to this token
+            }
 
             if tool_choice == "none":
-                response_type, skip_until_reach = "text", ""
-                func_name = "all"
-            elif (
-                type(tool_choice) is not str and tool_choice is not None
-            ):  # tool_choice is a specific tool
-                response_type, skip_until_reach = "function", ""
-                func_name = (
+                self.update_state_for_text(current_state=current_state)
+
+            elif type(tool_choice) is not str and tool_choice is not None:
+                self.update_state_for_function(current_state=current_state)
+                current_state["func_name"] = (
                     tool_choice.function.name
                     if isinstance(tool_choice, Tool)
                     else tool_choice.name
                 )
+                current_state["current_text"] += delta_text
+                # first return a delta with function_name only
+                responses = [
+                    prompt_utils.get_function_delta_response(
+                        current_state, "", True, False, finish_reason
+                    )
+                ]
+                # next return the first chunk of params
+                responses.append(
+                    prompt_utils.get_function_delta_response(
+                        current_state, delta_text, False, False, finish_reason
+                    )
+                )
+                return current_state, responses
+        else:
+            current_state["first_time"] = False
 
-            current_state = {
-                "current_text": "",  # the concatenation of all tokens so far
-                "func_name": func_name,  # function_name of the current tool, if the response requires to use tool
-                "response_type": response_type,  # response_type=text(text response)/function (using tool)
-                "func_index": -1,  # index of the tool in tool_calls
-                "call_id": None,  # call_id of the current tool
-                # skip_until_reach we skip new tokens until we reach certain token. This is used when we hit special tokens
-                "skip_until_reach": skip_until_reach,  # at first we don't need to skip as we are generating function
-                "first_time": True,  # if first_time we return an tempty delta with role=assistant
-            }
         # check if previous token is <|content|>, there might be a space between this token and next token (ex, <|content|> Hello)
         if current_state["current_text"].endswith(self.content_token):
             if delta_text[0] == " ":
                 delta_text = delta_text[1:]
 
         current_state["current_text"] += delta_text
-        if finish_reason is not None:
+
+        if finish_reason is not None:  # handle if finish
             if current_state["response_type"] == "function":
                 finish_reason = "tool_calls"
-
             return current_state, prompt_utils.get_text_delta_response(
                 None, False, finish_reason
             )
 
         skip_until_reach = current_state.get("skip_until_reach", "")
-        if skip_until_reach:
+        if skip_until_reach:  # if have to wait
             if delta_text != skip_until_reach:
                 return current_state, None
             else:
@@ -507,40 +540,63 @@ class PromptTemplateV2(PromptTemplate):
             assert current_state["response_type"] is not None
 
             first_time = current_state["first_time"]
-            if (
-                delta_text == self.from_token
-            ):  # skip until reach <content> to check type of response
+            # If the model is generating a new assistant turn
+            if delta_text == "\n":
+                current_state["prev_whitespaces"] += 1
+                return current_state, None
+            elif (
+                delta_text == self.from_token and current_state["prev_whitespaces"] > 0
+            ):
                 current_state["current_text"] = ""
                 current_state["skip_until_reach"] = self.content_token
                 current_state["response_type"] = None
-                return current_state, None
-
+                responses = None
+                if current_state["prev_whitespaces"] > 1:
+                    for _ in range(1, current_state["prev_whitespaces"]):
+                        if current_state["response_type"] == "text":
+                            responses.append(
+                                prompt_utils.get_text_delta_response(
+                                    "\n", True, finish_reason
+                                )
+                            )
+                        else:
+                            responses.append(
+                                prompt_utils.get_function_delta_response(
+                                    current_state, "\n", False, False, finish_reason
+                                )
+                            )
+                current_state["prev_whitespaces"] = 0
+                return current_state, responses
+            # Continue generating delta_text
             else:
+                responses = []
                 if current_state["response_type"] == "function":
                     if first_time:
                         current_state["call_id"] = (
                             prompt_utils.get_random_tool_call_id()
                         )
                         current_state["func_index"] += 1
-                        responses = []
                         responses.append(
                             prompt_utils.get_function_delta_response(
                                 current_state, "", first_time, False, finish_reason
                             )
                         )
                         current_state["first_time"] = False
-                        responses.append(
-                            prompt_utils.get_function_delta_response(
-                                current_state, delta_text, False, False, finish_reason
+                    if current_state["prev_whitespaces"] > 0:
+                        for _ in range(current_state["prev_whitespaces"]):
+                            responses.append(
+                                prompt_utils.get_function_delta_response(
+                                    current_state, "\n", False, False, finish_reason
+                                )
                             )
-                        )
-                    else:
-                        responses = prompt_utils.get_function_delta_response(
+                        current_state["prev_whitespaces"] = 0
+                    responses.append(
+                        prompt_utils.get_function_delta_response(
                             current_state, delta_text, False, False, finish_reason
                         )
+                    )
                     return current_state, responses
                 else:  # response_type=text
-                    responses = []
                     if first_time:
                         current_state["first_time"] = False
                         responses.append(
@@ -548,6 +604,14 @@ class PromptTemplateV2(PromptTemplate):
                                 "", True, finish_reason
                             )
                         )
+                    if current_state["prev_whitespaces"] > 0:
+                        for _ in range(current_state["prev_whitespaces"]):
+                            responses.append(
+                                prompt_utils.get_text_delta_response(
+                                    "\n", True, finish_reason
+                                )
+                            )
+                        current_state["prev_whitespaces"] = 0
                     responses.append(
                         prompt_utils.get_text_delta_response(
                             delta_text, True, finish_reason
@@ -561,3 +625,6 @@ class PromptTemplateV2(PromptTemplate):
 
     def get_force_function_call_prefix(self, function_name: str):
         return f"{function_name}{self.fn_param_sep_token}"
+
+    def get_tool_choice_required_prefix(self):
+        return ""
