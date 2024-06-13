@@ -292,7 +292,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--startup_timeout",
         type=int,
-        default=300,
+        default=600,    # Default to 10 mins
         help="How long in seconds this server waits for TGI server to load the model",
     )
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Server host")
