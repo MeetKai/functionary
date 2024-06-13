@@ -2,6 +2,7 @@ from functionary.prompt_template.base_template import PromptTemplate, PYTHON_RUN
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from functionary.prompt_template import prompt_utils
 from functionary.schema import generate_schema_from_functions
+from functionary.openai_types import Function, Tool
 
 SYSTEM_CONTENT = """You are capable of executing available function(s) if required.
 Only execute function(s) when absolutely necessary.
@@ -34,7 +35,7 @@ class Llama3TemplateV3(PromptTemplate):
     # ["<|eot_id|>", "<|end_of_text|>"]
 
     def get_force_function_call_prefix(self, function_name: str):
-        return f"{self.function_separator}{function_name}\n"
+        return f"{function_name}\n"
 
     def pre_process_messages_before_inference(self, messages: List[Dict]) -> List[Dict]:
         """Order the tool results by the order of tool call ids
@@ -98,23 +99,14 @@ class Llama3TemplateV3(PromptTemplate):
             if llm_output.endswith(stop):
                 llm_output = llm_output[: -len(stop)]
 
-        # add forced-function from tool_choice if exists
-        if type(tool_choice) is not str and tool_choice is not None:
-            llm_output = (
-                self.get_force_function_call_prefix(tool_choice.function.name)
-                + llm_output
-            )
-        elif tool_choice == "required":
-            llm_output = self.function_separator + llm_output
-        elif tool_choice == "none":
-            llm_output = self.get_force_text_generation_prefix() + llm_output
+        llm_output = self.get_generation_prefix_for_tool_choice(tool_choice) + llm_output
 
         chunks = llm_output.split(self.function_separator)
         chunks = [chunk.strip() for chunk in chunks if len(chunk.strip()) > 0]
 
         tool_calls = []
         text_content = None
-
+        
         for chunk in chunks:
             # format: function_name\narguments<end_of_functioncall>
             index = chunk.find("\n")
@@ -175,5 +167,117 @@ class Llama3TemplateV3(PromptTemplate):
         return messages_clone
 
     def get_force_text_generation_prefix(self):
-        return f"{self.function_separator}all\n"
+        return f"all\n"
     
+    def update_state_for_function(self, current_state: Dict, func_name: str):
+        """update the state when a function is going to be called
+
+        Args:
+            current_state (_type_): _description_
+        """
+        current_state["func_name"] = func_name
+        current_state["func_index"] += 1
+        current_state["call_id"] = prompt_utils.get_random_tool_call_id()
+        current_state["first_time_func"] = True
+
+    
+    def update_response_state_from_delta_text(
+        self,
+        *,
+        current_state: Dict[str, Any],
+        delta_text: str,
+        finish_reason: Optional[str],
+        tool_choice: Any,
+    ) -> Tuple[Dict[str, Any], Union[None, Dict, List[Dict]]]:
+        """This function is used for streaming
+
+        Args:
+            current_state (Dict[str, Any]):  a dictionary containing the state of the streaming: such as current function_name,
+            delta_text: new token generated
+            finish_reason: if finished or not
+
+        Returns:
+            Tuple[Dict[str, Any], Optional[Dict]]: updated state, response: can be None, a dictionary: {} or a list of dictionary: [{}, ..., {}]
+        """
+        state_gen_function_name = "gen_function_name"
+        state_gen_text = "gen_text"
+        state_gen_arguments = "gen_arguments"
+        
+        if len(current_state) == 0:  # empty dict, at the first_time
+            current_state = {
+                "state_name": state_gen_function_name, # can be all or a function_name
+                "current_text": "",  # the concatenation of all tokens so far
+                "func_name": None,  # function_name of the current tool, if the response requires to use tool
+                "response_type": None,  # response_type=text(text response)/function (using tool)
+                "func_index": -1,  # index of the tool in tool_calls
+                "call_id": None,  # call_id of the current tool
+                "gen_empty_text": True,  # if first_time we return an tempty delta with role=assistant
+                "first_time_func": True
+            }
+            if tool_choice == "none":
+                current_state["state_name"] = state_gen_text
+                
+            elif type(tool_choice) is not str and tool_choice is not None:
+                current_state["state_name"] = state_gen_arguments
+                function_name = (
+                    tool_choice.function.name
+                    if isinstance(tool_choice, Tool)
+                    else tool_choice.name
+                )
+                self.update_state_for_function(current_state, function_name)
+            
+        current_state["current_text"] += delta_text
+
+        if finish_reason is not None:  # handle if finish
+            if current_state["response_type"] == "function":
+                finish_reason = "tool_calls"
+            return current_state, prompt_utils.get_text_delta_response(
+                None, False, finish_reason
+            )
+                        
+        if current_state["state_name"] == state_gen_function_name:
+            if current_state["current_text"].endswith("\n"):
+                func_name = current_state["current_text"].strip()
+                if func_name == "all": # start gen_text
+                    current_state["state_name"] = state_gen_text
+                    return current_state, None
+                else: # start gen function
+                    current_state["state_name"] = state_gen_arguments
+                    self.update_state_for_function(current_state, func_name)
+                    return current_state, None
+            else:
+                return current_state, None
+
+        elif current_state["state_name"] == state_gen_text:
+            if delta_text == self.function_separator:
+                current_state["state_name"] = state_gen_function_name
+                current_state["current_text"] = ""
+                return current_state, None
+            else:
+                responses = []
+                if current_state["gen_empty_text"]:
+                    empty_response = prompt_utils.get_text_delta_response(
+                            "", True, finish_reason
+                        )
+                    current_state["gen_empty_text"] = False
+                    responses.append(empty_response)
+                responses.append(prompt_utils.get_text_delta_response( delta_text, True, finish_reason))
+                return current_state, responses
+            
+        elif current_state["state_name"] == state_gen_arguments:
+            if delta_text == self.function_separator: # change to another function
+                current_state["state_name"] = state_gen_function_name
+                current_state["current_text"] = ""
+                return current_state, None
+            else:
+                responses = []
+                if current_state["first_time_func"]:
+                    current_state["first_time_func"] = False
+                    first_function_response = prompt_utils.get_function_delta_response(
+                        current_state, "", True, False, finish_reason
+                        )
+                    responses.append(first_function_response)
+                responses.append(prompt_utils.get_function_delta_response(
+                        current_state, delta_text, False, False, finish_reason
+                    ))
+                return current_state, responses

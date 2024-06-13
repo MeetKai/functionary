@@ -88,7 +88,7 @@ def prepare_messages_for_inference(
 
     # add prefix based on tool-choice
     if tool_choice == "required":
-        final_prompt += prompt_template.get_force_required_prefix()
+        final_prompt += prompt_template.get_tool_choice_required_prefix()
     elif tool_choice == "none":
         final_prompt += prompt_template.get_force_text_generation_prefix()
     elif isinstance(tool_choice, Tool):

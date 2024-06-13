@@ -93,6 +93,8 @@ def get_available_prompt_template_versions() -> List[PromptTemplate]:
     all_templates_cls = PromptTemplate.__subclasses__()
     # Remove PromptTemplateV1 as it is deprecated and not needed
     all_templates_cls.remove(PromptTemplateV1)
+    all_templates_cls.remove(Qwen2PromptTemplate)
+    all_templates_cls.remove(Qwen2PromptTemplateV2)
 
     all_templates_obj = [
         template_cls.get_prompt_template() for template_cls in all_templates_cls
