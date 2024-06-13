@@ -50,6 +50,7 @@ python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len
   
 </details>
 
+
 **Grammar Sampling**
 
 We also offer our own function-calling grammar sampling feature which constrains the LLM's generation to always follow the prompt template, and ensures 100% accuracy for function name. The parameters are generated using the efficient [lm-format-enforcer](https://github.com/noamgat/lm-format-enforcer), which ensures that the parameters follow the schema of the tool called. To enable grammar sampling, run the vLLM server with the command-line argument <code>--enable-grammar-sampling</code>:
@@ -61,6 +62,39 @@ python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len
 Note:
 - Grammar Sampling support is applicable only for the V2 models. There is no such support for V1 models.
 - Our vLLM server supports the `tool_choice="required"` feature in OpenAI Chat Completion API exclusively **only when grammar sampling is enabled**.
+
+
+**Text-Generation-Inference**
+
+We also provide a service that performs inference on Functionary models using [Text-Generation-Inference](https://huggingface.co/docs/text-generation-inference/en/index) (TGI). Follow these steps to get started:
+
+1. Install Docker following [their installation instructions](https://docs.docker.com/get-docker/).
+
+2. Install the Docker SDK for Python
+
+```shell
+pip install docker
+```
+
+3. Start up the Functionary TGI server
+
+At start-up, the Functionary TGI server tries to connect to an existing TGI endpoint. In this case, you can run the following:
+
+```shell
+python3 server_tgi.py --model <REMOTE_MODEL_ID_OR_LOCAL_MODEL_PATH> --endpoint <TGI_SERVICE_ENDPOINT>
+```
+
+If the TGI endpoint does not exist, the Functionary TGI server will start a new TGI endpoint container with the address provided in the `endpoint` CLI argument via the installed Docker Python SDK. Run the following commands for remote and local models respectively:
+
+```shell
+python3 server_tgi.py --model <REMOTE_MODEL_ID> --remote_model_save_folder <PATH_TO_SAVE_AND_CACHE_REMOTE_MODEL> --endpoint <TGI_SERVICE_ENDPOINT>
+```
+
+```shell
+python3 server_tgi.py --model <LOCAL_MODEL_PATH> --endpoint <TGI_SERVICE_ENDPOINT>
+```
+
+4. Make either [OpenAI-compatible](#openai-compatible-usage) or [raw HTTP](#raw-usage) requests to the Functionary TGI server.
 
 
 **Docker**
