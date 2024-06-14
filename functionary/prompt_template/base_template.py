@@ -263,20 +263,6 @@ class PromptTemplate:
 
         generation_prefix = self.get_generation_prefix_for_tool_choice(tool_func_choice)
         raw_response = raw_response[len(generation_prefix) :]
-        # if tool_func_choice == "none":
-        #     raw_response = raw_response[len(self.get_force_text_generation_prefix()) :]
-        # elif tool_func_choice == "required":
-        #     raw_response = raw_response[len(self.get_tool_choice_required_prefix()) :]
-        # elif isinstance(tool_func_choice, Tool) or isinstance(
-        #     tool_func_choice, Function
-        # ):
-        #     raw_response = raw_response[
-        #         len(
-        #             self.get_force_function_call_prefix(
-        #                 function_name=default_tool_call_name
-        #             )
-        #         ) :
-        #     ]
 
         return raw_response.rstrip()
 
