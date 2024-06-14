@@ -261,27 +261,29 @@ class PromptTemplate:
         for stop_token in self.get_stop_tokens_for_generation():
             raw_response = raw_response.replace(stop_token, "")
 
-        if tool_func_choice == "none":
-            raw_response = raw_response[len(self.get_force_text_generation_prefix()) :]
-        elif tool_func_choice == "required":
-            raw_response = raw_response[len(self.get_tool_choice_required_prefix()) :]
-        elif isinstance(tool_func_choice, Tool) or isinstance(
-            tool_func_choice, Function
-        ):
-            raw_response = raw_response[
-                len(
-                    self.get_force_function_call_prefix(
-                        function_name=default_tool_call_name
-                    )
-                ) :
-            ]
+        generation_prefix = self.get_generation_prefix_for_tool_choice(tool_func_choice)
+        raw_response = raw_response[len(generation_prefix) :]
 
         return raw_response.rstrip()
 
-    @abstractmethod
     def get_chat_template_jinja(self):
         """Return chat_template in jinja format"""
-        raise NotImplementedError
+        return ""
+
+    def get_generation_prefix_for_tool_choice(self, tool_choice: Any):
+        if tool_choice == "auto" or tool_choice is None:
+            return ""
+        if tool_choice == "required":
+            return self.get_tool_choice_required_prefix()
+        elif tool_choice == "none":
+            return self.get_force_text_generation_prefix()
+        elif isinstance(tool_choice, Tool):
+            return self.get_force_function_call_prefix(tool_choice.function.name)
+        elif isinstance(tool_choice, Function):
+            return self.get_force_function_call_prefix(tool_choice.name)
+        raise Exception(
+            "tool-choice must be one of: None, none, auto, required, or a specific tool"
+        )
 
     @classmethod
     def get_prompt_template(cls):

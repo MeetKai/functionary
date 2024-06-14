@@ -2,7 +2,6 @@ import torch
 import torch.nn.functional as F
 import transformers
 from typing import Optional
-from transformers import MixtralForCausalLM
 
 
 def get_max_seqlen_in_batch(attention_mask):
@@ -122,16 +121,25 @@ def load_balancing_loss_func(
     return overall_loss * num_experts
 
 
-def monkey_patch_packing_llama():
-    transformers.models.llama.modeling_llama._get_unpad_data = get_unpad_data
-
-
-def monkey_patch_packing_mistral():
-    transformers.models.mistral.modeling_mistral._get_unpad_data = get_unpad_data
-
-
-def monkey_patch_packing_mixtral():
-    transformers.models.mixtral.modeling_mixtral._get_unpad_data = get_unpad_data
-    transformers.models.mixtral.modeling_mixtral.load_balancing_loss_func = (
-        load_balancing_loss_func
-    )
+def monkey_patch_packing_for_model(pretrained_model):
+    model_config = transformers.AutoConfig.from_pretrained(pretrained_model)
+    config_type = type(model_config).__name__.lower()
+    if "mistral" in config_type:
+        print("monkey_patch_packing for Mistral ")
+        transformers.models.mistral.modeling_mistral._get_unpad_data = get_unpad_data
+    elif "llama" in config_type:
+        print("monkey_patch_packing for Llama ")
+        transformers.models.llama.modeling_llama._get_unpad_data = get_unpad_data
+    elif "mixtral" in config_type:
+        print("monkey_patch_packing for Mixtral")
+        transformers.models.mixtral.modeling_mixtral._get_unpad_data = get_unpad_data
+        transformers.models.mixtral.modeling_mixtral.load_balancing_loss_func = (
+            load_balancing_loss_func
+        )
+    elif "qwen2" in config_type:
+        print("monkey_patch_packing for Qwen2")
+        transformers.models.qwen2.modeling_qwen2._get_unpad_data = get_unpad_data
+    else:
+        raise Exception(
+            f"{config_type} is not supported, currently we only support: Mistral, Mixtral, Llama, Qwen2 for monkey-patch-packing"
+        )

@@ -18,6 +18,7 @@ from functionary.prompt_template import (
     Llama3Template,
     PromptTemplate,
     PromptTemplateV2,
+    Llama3TemplateV3,
     get_available_prompt_template_versions,
 )
 from functionary.prompt_template.prompt_utils import (
@@ -180,6 +181,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
         self.prompt_template_to_tokenizer_name_mapping = {
             PromptTemplateV2: "meetkai/functionary-small-v2.4",
             Llama3Template: "meetkai/functionary-small-v2.5",
+            Llama3TemplateV3: "meetkai/functionary-medium-v3.0",
         }
         self.default_text_str = "Normal text generation"
         self.default_tool_call_name = "get_weather"
@@ -531,7 +533,8 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     ChatMessage(**chat_mess),
                     test_case["expected_result"],
-                    f"Wrong ChatMessage for version: {prompt_template.version} | test: `{test_case['test_aim']}`",
+                    f"Wrong ChatMessage for version: {prompt_template.version} | test: `{test_case['test_aim']}`|result={chat_mess}|expect:%s"
+                    % test_case["expected_result"],
                 )
                 self.assertEqual(
                     finish_reason,
@@ -559,6 +562,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                     yield "", test_case["expected_finish_reason"]
 
         for prompt_template in self.test_prompt_templates:
+
             tokenizer = AutoTokenizer.from_pretrained(
                 self.prompt_template_to_tokenizer_name_mapping[type(prompt_template)]
             )
@@ -594,6 +598,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                             tool_choice=test_case["tool_func_choice"],
                         )
                     )
+
                     if responses is not None:
                         if type(responses) is not list:
                             responses = [responses]

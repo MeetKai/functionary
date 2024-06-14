@@ -286,17 +286,9 @@ class Llama3Template(PromptTemplate):
                 llm_output = llm_output[: -len(stop)]
 
         # add forced-function from tool_choice if exists
-        if type(tool_choice) is not str and tool_choice is not None:
-            tool_choice_name = (
-                tool_choice.function.name
-                if isinstance(tool_choice, Tool)
-                else tool_choice.name
-            )
-            llm_output = (
-                self.get_force_function_call_prefix(tool_choice_name) + llm_output
-            )
-        elif tool_choice == "required":
-            llm_output = self.get_tool_choice_required_prefix() + llm_output
+        llm_output = (
+            self.get_generation_prefix_for_tool_choice(tool_choice) + llm_output
+        )
 
         chunks = llm_output.split(self.function_separator)
         chunks = [chunk.strip() for chunk in chunks if len(chunk.strip()) > 0]

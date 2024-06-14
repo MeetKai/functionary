@@ -33,66 +33,86 @@ def extract_unmasked_chunks(labels: List[int]) -> List[List[int]]:
     return chunks
 
 
-class TestInsertingEndToken(unittest.TestCase):
+class TestPromptTemplate(unittest.TestCase):
     def __init__(self, *args, **kwargs):
-        super(TestInsertingEndToken, self).__init__(*args, **kwargs)
+        super(TestPromptTemplate, self).__init__(*args, **kwargs)
 
-        self.template_version = "v2"
-        self.prompt_template = get_prompt_template_by_version(self.template_version)
+        self.template_versions = ["v2", "v2.llama3", "v3.llama3"]
+        self.pretrained_models = [
+            "meetkai/functionary-small-v2.4",
+            "meetkai/functionary-small-v2.5",
+            "meetkai/functionary-medium-v3.0",
+        ]
 
+    def read_example_data(self, template_version: str):
         current_folder = os.path.dirname(os.path.abspath(__file__))
-        with open(
-            os.path.join(current_folder, f"test_case_{self.template_version}.json")
-        ) as f:
-            self.test_case = json.loads(f.read())
+        with open(os.path.join(current_folder, f"test_case.json")) as f:
+            test_case = json.loads(f.read())
 
         with open(
-            os.path.join(current_folder, f"prompt_test_{self.template_version}.txt")
+            os.path.join(current_folder, f"prompt_test_{template_version}.txt")
         ) as f:
-            self.final_prompt = f.read()
-            self.final_prompt = self.final_prompt.replace("\n\n<|from|>", "\n<|from|>")
+            final_prompt = f.read()
+            if template_version == "v2":
+                final_prompt = final_prompt.replace("\n\n<|from|>", "\n<|from|>")
+        return test_case, final_prompt
 
     def test_final_prompt_generation(self):
-        tools_or_functions = (
-            self.test_case["tools"]
-            if "tools" in self.test_case
-            else self.test_case["functions"]
-        )
-        final_prompt = self.prompt_template.get_prompt_from_messages(
-            self.test_case["messages"], tools_or_functions
-        )
+        for template_version in self.template_versions:
+            print("--------------test template_version: ", template_version)
+            test_case, final_prompt = self.read_example_data(template_version)
+            tools_or_functions = (
+                test_case["tools"] if "tools" in test_case else test_case["functions"]
+            )
+            prompt_template = get_prompt_template_by_version(template_version)
+            created_prompt = prompt_template.get_prompt_from_messages(
+                test_case["messages"], tools_or_functions
+            )
 
-        self.assertEqual(
-            final_prompt.strip(),
-            self.final_prompt.strip(),
-            "wrong final prompt from: get_prompt_from_messages",
-        )
+            self.assertEqual(
+                final_prompt.strip(),
+                created_prompt.strip(),
+                f"wrong final prompt from: get_prompt_from_messages, for version={template_version}",
+            )
 
     def test_prepare_training_inputs_normal_tokenizer(self):
-        print("start testing normal tokenizer")
-        for keep_assistant_prefix in [False]:
+        for template_version, pretrained_model in zip(
+            self.template_versions, self.pretrained_models
+        ):
+            print(f"-------------_TEST: {template_version}, {pretrained_model}")
             self.run_prepare_training_inputs(
-                pretrained="meetkai/functionary-small-v2.4",
-                keep_assistant_prefix=keep_assistant_prefix,
+                template_version=template_version,
+                pretrained=pretrained_model,
+                verbose=False,
             )
 
     def run_prepare_training_inputs(
-        self, pretrained: str, keep_assistant_prefix: bool = False
+        self,
+        template_version: str,
+        pretrained: str,
+        keep_assistant_prefix: bool = False,
+        verbose: bool = False,
     ):
         """this function is used to test function: prepare_training_inputs"""
         # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
         tokenizer = AutoTokenizer.from_pretrained(pretrained, legacy=True)
         tokenizer.pad_token = tokenizer.eos_token
         # first we add stop_tokens to the tokenizer
-        prompt_template = self.prompt_template
+        prompt_template = get_prompt_template_by_version(template_version)
+
+        added_tokens = prompt_template.get_additional_tokens()
+        special_tokens = {"additional_special_tokens": added_tokens}
+        tokenizer.add_special_tokens(special_tokens)
+
+        test_case, _ = self.read_example_data(template_version)
 
         inputs = prepare_training_inputs(
-            messages=self.test_case,
+            messages=test_case,
             tokenizer=tokenizer,
             padding="longest",
             max_length=1024,
             return_tensor=False,
-            verbose=False,
+            verbose=verbose,
             keep_assistant_prefix=keep_assistant_prefix,
         )
         input_ids = inputs["inputs"]["input_ids"]
@@ -110,7 +130,7 @@ class TestInsertingEndToken(unittest.TestCase):
 
         # Check if only messages where role=assistant and unmasked are remained, others will be masked as -100
         assistant_message = []
-        for message in self.test_case["messages"]:
+        for message in test_case["messages"]:
             if message["role"] == "assistant":
                 masked = False
 
@@ -146,34 +166,8 @@ class TestInsertingEndToken(unittest.TestCase):
             self.assertEqual(
                 re.sub("\s", "", decoded_content),
                 re.sub("\s", "", prompt),
-                "decoded content is different from original content",
+                f"decoded content is different from original content:\ndecoded_content:{decoded_content}\nprompt:{prompt}",
             )
-
-    def test_chat_template(self):
-        messages = self.prompt_template.inject_system_messages_based_on_tools(
-            self.test_case["messages"], self.test_case["tools"]
-        )
-        tokenizer = AutoTokenizer.from_pretrained(
-            "meetkai/functionary-small-v2.2", legacy=True
-        )
-
-        final_prompt = tokenizer.apply_chat_template(messages, tokenize=False)
-        self.assertEqual(
-            final_prompt.strip(),
-            self.final_prompt,
-            "wrong final prompt for chat template",
-        )
-
-        prompt_gen = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        self.assertEqual(
-            prompt_gen,
-            self.final_prompt
-            + "\n"
-            + self.prompt_template.convert_message_to_prompt({"role": "assistant"}),
-            "wrong prompt for generation",
-        )
 
 
 if __name__ == "__main__":

@@ -10,11 +10,51 @@ import numpy as np
 import torch
 import torch.distributed
 import transformers
+from aenum import extend_enum
+
+from torch.optim.lr_scheduler import LambdaLR
+
+extend_enum(
+    transformers.trainer_utils.SchedulerType,
+    "CUSTOMIZED_SCHEDULER",
+    "customized_scheduler",
+)
+
+
+def get_scheduler(
+    optimizer: torch.optim.Optimizer,
+    num_warmup_steps: int,
+    num_training_steps: int,
+    num_cycles: float = 0.5,
+    min_lr_ratio: float = 0.75,
+    last_epoch: int = -1,
+) -> LambdaLR:
+
+    def lr_lambda(current_step):
+        if current_step < num_warmup_steps:
+            return current_step / max(1, num_warmup_steps)
+        progress = (current_step - num_warmup_steps) / max(
+            1, num_training_steps - num_warmup_steps
+        )
+        cosine_lr_multiple = (1.0 - min_lr_ratio) * 0.5 * (
+            1.0 + math.cos(math.pi * num_cycles * 2.0 * progress)
+        ) + min_lr_ratio
+        return max(0.0, cosine_lr_multiple)
+
+    return LambdaLR(optimizer, lr_lambda, last_epoch)
+
+
+transformers.optimization.TYPE_TO_SCHEDULER_FUNCTION["customized_scheduler"] = (
+    get_scheduler
+)
+
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 from transformers import AutoConfig, AutoTokenizer, Trainer
 
-#  sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
+sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
+from typing import Union
+
 from functionary.prompt_template import PromptTemplate, get_prompt_template_by_version
 from functionary.train.custom_datasets import read_dataset
 
@@ -73,7 +113,7 @@ class TrainingArguments(transformers.TrainingArguments):
         },
     )
     keep_assistant_prefix: bool = field(
-        default=True,
+        default=False,
         metadata={
             "help": "Whether to mask the assistant prefix `<|from|>assistant\n<|recipient|>` during training"
         },
@@ -185,7 +225,7 @@ def print_some_examples(ds, tokenizer):
         print_rank0("attention mask: ", batch["attention_mask"])
         input_ids = batch["input_ids"][0].tolist()
         input_chunk = extract_unmasked_chunks(input_ids, tokenizer.pad_token_id)
-        assert len(input_chunk) == 1
+        # assert len(input_chunk) == 1  # padding at left or right only --> pad_token_id = eos_token_id --> wrong
         print_rank0("+ inputs: ")
         print_rank0(tokenizer.decode(input_chunk[0]))
         labels = batch["labels"][0].tolist()
@@ -219,35 +259,11 @@ def train():
     config.sliding_window = training_args.model_max_length
 
     if data_args.packing:
-        print("Packing=True, using monkey-patched")
-        config = AutoConfig.from_pretrained(model_args.model_name_or_path)
-        config_type = type(config).__name__.lower()
-        if "mistral" in config_type:
-            print_rank0("using Monkey-patched MistralForCausalLM")
-            from functionary.train.packing.monkey_patch_packing import (
-                monkey_patch_packing_mistral,
-            )
+        from functionary.train.packing.monkey_patch_packing import (
+            monkey_patch_packing_for_model,
+        )
 
-            monkey_patch_packing_mistral()
-
-        elif "llama" in config_type:  # llama
-            print_rank0("using Monkey-patched LlamaForCausalLM")
-            from functionary.train.packing.monkey_patch_packing import (
-                monkey_patch_packing_llama,
-            )
-
-            monkey_patch_packing_llama()
-
-        elif "mixtral" in config_type:
-            print_rank0("using Monkey-patched Mixtral")
-            from functionary.train.packing.monkey_patch_packing import (
-                monkey_patch_packing_mixtral,
-            )
-
-            monkey_patch_packing_mixtral()
-        else:
-            print("packing only supports models: Mistral, Llama, Mixtral")
-            sys.exit(1)
+        monkey_patch_packing_for_model(model_args.model_name_or_path)
 
     compute_dtype = (
         torch.float16
@@ -329,15 +345,22 @@ def train():
         """Preprocesses the logits during evaluation by computing the greedy token predictions for
         accuracy calculation and loss values for perplexity calculation. Both pred_ids and loss are
         of shape (batch_size x seq_len)"""
-        pred_ids = torch.argmax(logits, dim=-1)
+
+        correct_logits = logits
+        if (
+            type(logits) is tuple
+        ):  # in mixtral logits is a tuple, correct logits is at the second index
+            correct_logits = logits[1]
+
+        pred_ids = torch.argmax(correct_logits, dim=-1)
 
         loss_fn = CrossEntropyLoss(reduction="none")
-        shift_logits = logits[..., :-1, :].contiguous()
+        shift_logits = correct_logits[..., :-1, :].contiguous()
         shift_labels = labels[..., 1:].contiguous()
         shift_logits = shift_logits.view(-1, len(tokenizer))
         shift_labels = shift_labels.view(-1)
         loss = loss_fn(shift_logits, shift_labels)
-        loss = torch.mean(loss.view(logits.shape[0], -1), dim=-1)
+        loss = torch.mean(loss.view(correct_logits.shape[0], -1), dim=-1)
 
         return pred_ids, loss
 
@@ -349,9 +372,27 @@ def train():
         acc_count = 0
         total_num = 0
         dic = {token_id: {"acc": 0, "total": 0} for token_id in id2token}
-        for pred, label in zip(
-            predictions.flatten().tolist(), labels.flatten().tolist()
-        ):
+
+        first_token_total_count, first_token_correct_count = 0, 0
+        prediction_list, label_list = (
+            predictions.flatten().tolist(),
+            labels.flatten().tolist(),
+        )
+        first_token_label_dic = {}
+
+        for i in range(len(prediction_list)):
+            pred, label = prediction_list[i], label_list[i]
+            if i > 0 and label_list[i - 1] == -100 and label != -100:  # first token
+                first_token_total_count += 1
+                if label not in first_token_label_dic:
+                    first_token_label_dic[label] = {"correct": 0, "total": 0}
+
+                first_token_label_dic[label]["total"] += 1
+
+                if label == pred:
+                    first_token_correct_count += 1
+                    first_token_label_dic[label]["correct"] += 1
+
             if label != -100:
                 if label == pred:
                     acc_count += 1
@@ -367,6 +408,18 @@ def train():
         perplexity = math.exp(loss)
 
         metrics = {"accuracy": acc_count / total_num, "perplexity": perplexity}
+        metrics = {
+            "accuracy_first_token": first_token_correct_count / first_token_total_count,
+            "total_number_first_token": first_token_total_count,
+        }
+
+        for token_id, stat in sorted(
+            first_token_label_dic.items(), key=lambda x: -x[1]["total"]
+        )[:5]:
+            token = tokenizer.decode([token_id])
+            metrics[f"accuracy_first_token_{token}"] = stat["correct"] / stat["total"]
+            metrics[f"accuracy_first_token_{token}_total"] = stat["total"]
+
         for token_id in dic:
             token = id2token[token_id]
             total_num = dic[token_id]["total"]
@@ -385,17 +438,8 @@ def train():
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            # only compute_metrics for non-MoE models
-            compute_metrics=(
-                compute_metrics
-                if "mixtral" not in model_args.model_name_or_path.lower()
-                else None
-            ),
-            preprocess_logits_for_metrics=(
-                preprocess_logits_for_metrics
-                if "mixtral" not in model_args.model_name_or_path.lower()
-                else None
-            ),
+            compute_metrics=compute_metrics,
+            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
         )
     else:
         trainer = Trainer(

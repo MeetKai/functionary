@@ -1,6 +1,6 @@
 # Packing Inputs Without Cross-Contamination Attention
 
-To speed up training, we have implemented packing without **cross-contamination attention** by monkey-patching ``MistralForCausalLM``, ``LlamaForCausalLM`` and ``MixtralForCausalLM``. The idea of packing is to merge/pack short inputs into a single input so the number of training data points would be reduced.
+To speed up training, we have implemented packing without **cross-contamination attention** by monkey-patching ``MistralForCausalLM``, ``LlamaForCausalLM`` and ``MixtralForCausalLM``, ``Qwen2ForCausalLM``. The idea of packing is to merge/pack short inputs into a single input so the number of training data points would be reduced.
 
 Concretely, when we pack inputs, the attention should be only within individual sequences. For example, assume that we are packing 2 inputs: packed input = [input 1] [input 2]. Tokens from **input 1** only attend to tokens from **input 1** and tokens from **input 2** only attend to tokens from **input 2**
 
@@ -58,7 +58,7 @@ packed_ds = PackedDataset(original_ds, tokenizer, pack_length)
 
 **Note that our implementation is only correct if using [Flash Attenion](https://github.com/Dao-AILab/flash-attention)**
 
-We recommend using ``transformers==4.36.2`` for **finetuning LLama or Mistral**. **For Mixtral**, should use the latest implementation: ``pip install git+https://github.com/huggingface/transformers.git``
+We recommend using the latest implementation: ``pip install git+https://github.com/huggingface/transformers.git``
 
 So the additional requirement is only **Flash Attention**:
 
@@ -66,38 +66,18 @@ So the additional requirement is only **Flash Attention**:
 pip install flash-attn --no-build-isolation
 ```
 
-Based on your model: ``MistralForCausalLM``,  ``LlamaForCausalLM`` or ``MixtralForCausalLM`` that you will call the function for monkey-patching from: ``monkey_patch_packing.py`` accordingly
-
-**For LlamaForCausalLM**
-```python 
-from monkey_patch_packing import monkey_patch_packing_llama
-monkey_patch_packing_llama() # Monkey-patch LlamaForCausalLM
-...
+To use packed implementation, please run function ``monkey_patch_packing_for_model`` first:
+```python
+from monkey_patch_packing import monkey_patch_packing_for_model
+monkey_patch_packing_for_model(model_path)
 # Load the model
 model = transformers.AutoModelForCausalLM.from_pretrained(model_path, ...)
 model.config.use_cache = False # In the training, we don't need to use cache, note: must add this or can encounter assertion error
-```
-**For MistralForCausalLM**
-```python
-from monkey_patch_packing import monkey_patch_packing_mistral
-monkey_patch_packing_mistral()
-...
-# Load the model
-model = transformers.AutoModelForCausalLM.from_pretrained(model_path, ...)
-model.config.use_cache = False # In the training, we don't need to use cache, note: must add this
-```
 
-**For MixtralForCausalLM**
-```python
-from monkey_patch_packing import monkey_patch_packing_mixtral
-monkey_patch_packing_mixtral()
-...
-# Load the model
-model = transformers.AutoModelForCausalLM.from_pretrained(model_path, ...)
-model.config.use_cache = False # In the training, we don't need to use cache, note: must add this
 ```
+Note that currently we only support: ``Mistral, Mixtral, Llama, Qwen2``
 
-The implementation is based on the idea of overwriting the function: ``_get_unpad_data`` of ``MistralForCausalLM``, ``LlamaForCausalLM`` and ``MixtralForCausalLM`` with a monkey-patched function that can handle ``attentions_mask`` of packed inputs. You can take a look at the file: **monkey_patch_packing.py**
+The implementation is based on the idea of overwriting the function: ``_get_unpad_data`` with a monkey-patched function that can handle ``attentions_mask`` of packed inputs. You can take a look at the file: **monkey_patch_packing.py**
 
 ## Assert Implementation
 To make sure that the implementation is correct, we implemented a script for:
