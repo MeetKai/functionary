@@ -154,7 +154,6 @@ async def create_chat_completion(raw_request: dict):
                 not in prompt_template.get_stop_tokens_for_generation()
             ):
                 yield delta_text, finish_reason
-                start_time = time.time()
         yield "", "stop"
 
     async def completion_stream_generator(
