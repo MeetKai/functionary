@@ -87,20 +87,7 @@ def prepare_messages_for_inference(
     )
 
     # add prefix based on tool-choice
-    if tool_choice == "required":
-        final_prompt += prompt_template.get_tool_choice_required_prefix()
-    elif tool_choice == "none":
-        final_prompt += prompt_template.get_force_text_generation_prefix()
-    elif isinstance(tool_choice, Tool):
-        tool_choice_name = (
-                tool_choice.function.name
-                if isinstance(tool_choice, Tool)
-                else tool_choice.name
-            )
-        
-        final_prompt += prompt_template.get_force_function_call_prefix(
-            tool_choice_name
-        ) 
+    final_prompt += prompt_template.get_generation_prefix_for_tool_choice(tool_choice)
 
     input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
     input_ids = input_ids.to(device)
