@@ -289,3 +289,29 @@ class Llama3TemplateV3(PromptTemplate):
                     )
                 )
                 return current_state, responses
+
+    def get_chat_template_jinja(self) -> str:
+        chat_template = """{% for message in messages %}
+        {% if message['role'] == 'user' or message['role'] == 'system' %}
+            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}<br>
+        {% elif message['role'] == 'tool' %}
+            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}<br>
+        {% else %}
+            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'}}<br>
+            {% if message['content'] is not none %}
+                {{ '>>>all\n' + message['content'] }}<br>
+            {% endif %}
+            {% if 'tool_calls' in message and message['tool_calls'] is not none %}
+                {% for tool_call in message['tool_calls'] %}
+                    {{ '>>>' + tool_call['function']['name'] + '\n' + tool_call['function']['arguments'] }}<br>
+                {% endfor %}
+            {% endif %}
+            {{ '<|eot_id|>' }}<br>
+        {% endif %}
+        {% endfor %}
+        {% if add_generation_prompt %}{{ '<|start_header_id|>{role}<|end_header_id|>\n\n' }}{% endif %}
+        """
+        chat_template = chat_template.replace("    ", "")
+        chat_template = chat_template.replace("<br>\n", "")
+        chat_template = chat_template.strip()
+        return chat_template
