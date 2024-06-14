@@ -129,18 +129,9 @@ async def create_chat_completion(raw_request: dict):
     prompt = prompt_template.get_prompt_from_messages(
         messages=dic_messages, tools_or_functions=tools_or_functions
     )
-    if tool_func_choice == "none":
-        prompt += prompt_template.get_force_text_generation_prefix()
-    elif isinstance(tool_func_choice, Tool) or isinstance(tool_func_choice, Function):
-        prompt += prompt_template.get_force_function_call_prefix(
-            tool_func_choice.function.name
-            if isinstance(tool_func_choice, Tool)
-            else tool_func_choice.name
-        )
-    elif tool_func_choice == "required" and hasattr(
-        prompt_template, "function_separator"
-    ):
-        prompt += getattr(prompt_template, "function_separator")
+    prompt += prompt_template.get_generation_prefix_for_tool_choice(
+        tool_choice=tool_func_choice
+    )
 
     hyperparams = {
         "stream": request.stream,
@@ -163,6 +154,7 @@ async def create_chat_completion(raw_request: dict):
                 not in prompt_template.get_stop_tokens_for_generation()
             ):
                 yield delta_text, finish_reason
+                start_time = time.time()
         yield "", "stop"
 
     async def completion_stream_generator(
@@ -218,6 +210,7 @@ async def create_chat_completion(raw_request: dict):
         # are not reflected in `response.generated_text`. Use this hack temporarily first.
         # Issue: https://github.com/huggingface/text-generation-inference/issues/1984
         response_text = "".join([token.text for token in response.details.tokens])
+        breakpoint()
         check_message = prompt_template.parse_assistant_response(
             llm_output=response_text, tool_choice=tool_func_choice
         )
