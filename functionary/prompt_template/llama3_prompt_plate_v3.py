@@ -32,6 +32,7 @@ class Llama3TemplateV3(PromptTemplate):
 
     def get_stop_tokens_for_generation(self) -> List[str]:
         return [self.eos_token, "<|end_of_text|>"]
+
     # ["<|eot_id|>", "<|end_of_text|>"]
 
     def get_force_function_call_prefix(self, function_name: str):
@@ -99,14 +100,16 @@ class Llama3TemplateV3(PromptTemplate):
             if llm_output.endswith(stop):
                 llm_output = llm_output[: -len(stop)]
 
-        llm_output = self.get_generation_prefix_for_tool_choice(tool_choice) + llm_output
+        llm_output = (
+            self.get_generation_prefix_for_tool_choice(tool_choice) + llm_output
+        )
 
         chunks = llm_output.split(self.function_separator)
         chunks = [chunk.strip() for chunk in chunks if len(chunk.strip()) > 0]
 
         tool_calls = []
         text_content = None
-        
+
         for chunk in chunks:
             # format: function_name\narguments<end_of_functioncall>
             index = chunk.find("\n")
@@ -168,7 +171,7 @@ class Llama3TemplateV3(PromptTemplate):
 
     def get_force_text_generation_prefix(self):
         return f"all\n"
-    
+
     def update_state_for_function(self, current_state: Dict, func_name: str):
         """update the state when a function is going to be called
 
@@ -180,7 +183,6 @@ class Llama3TemplateV3(PromptTemplate):
         current_state["call_id"] = prompt_utils.get_random_tool_call_id()
         current_state["first_time_func"] = True
 
-    
     def update_response_state_from_delta_text(
         self,
         *,
@@ -202,21 +204,21 @@ class Llama3TemplateV3(PromptTemplate):
         state_gen_function_name = "gen_function_name"
         state_gen_text = "gen_text"
         state_gen_arguments = "gen_arguments"
-        
+
         if len(current_state) == 0:  # empty dict, at the first_time
             current_state = {
-                "state_name": state_gen_function_name, # can be all or a function_name
+                "state_name": state_gen_function_name,  # can be all or a function_name
                 "current_text": "",  # the concatenation of all tokens so far
                 "func_name": None,  # function_name of the current tool, if the response requires to use tool
                 "response_type": None,  # response_type=text(text response)/function (using tool)
                 "func_index": -1,  # index of the tool in tool_calls
                 "call_id": None,  # call_id of the current tool
                 "gen_empty_text": True,  # if first_time we return an tempty delta with role=assistant
-                "first_time_func": True
+                "first_time_func": True,
             }
             if tool_choice == "none":
                 current_state["state_name"] = state_gen_text
-                
+
             elif type(tool_choice) is not str and tool_choice is not None:
                 current_state["state_name"] = state_gen_arguments
                 function_name = (
@@ -225,7 +227,7 @@ class Llama3TemplateV3(PromptTemplate):
                     else tool_choice.name
                 )
                 self.update_state_for_function(current_state, function_name)
-            
+
         current_state["current_text"] += delta_text
 
         if finish_reason is not None:  # handle if finish
@@ -234,14 +236,14 @@ class Llama3TemplateV3(PromptTemplate):
             return current_state, prompt_utils.get_text_delta_response(
                 None, False, finish_reason
             )
-                        
+
         if current_state["state_name"] == state_gen_function_name:
             if current_state["current_text"].endswith("\n"):
                 func_name = current_state["current_text"].strip()
-                if func_name == "all": # start gen_text
+                if func_name == "all":  # start gen_text
                     current_state["state_name"] = state_gen_text
                     return current_state, None
-                else: # start gen function
+                else:  # start gen function
                     current_state["state_name"] = state_gen_arguments
                     self.update_state_for_function(current_state, func_name)
                     return current_state, None
@@ -257,15 +259,19 @@ class Llama3TemplateV3(PromptTemplate):
                 responses = []
                 if current_state["gen_empty_text"]:
                     empty_response = prompt_utils.get_text_delta_response(
-                            "", True, finish_reason
-                        )
+                        "", True, finish_reason
+                    )
                     current_state["gen_empty_text"] = False
                     responses.append(empty_response)
-                responses.append(prompt_utils.get_text_delta_response( delta_text, True, finish_reason))
+                responses.append(
+                    prompt_utils.get_text_delta_response(
+                        delta_text, True, finish_reason
+                    )
+                )
                 return current_state, responses
-            
+
         elif current_state["state_name"] == state_gen_arguments:
-            if delta_text == self.function_separator: # change to another function
+            if delta_text == self.function_separator:  # change to another function
                 current_state["state_name"] = state_gen_function_name
                 current_state["current_text"] = ""
                 return current_state, None
@@ -275,9 +281,11 @@ class Llama3TemplateV3(PromptTemplate):
                     current_state["first_time_func"] = False
                     first_function_response = prompt_utils.get_function_delta_response(
                         current_state, "", True, False, finish_reason
-                        )
+                    )
                     responses.append(first_function_response)
-                responses.append(prompt_utils.get_function_delta_response(
+                responses.append(
+                    prompt_utils.get_function_delta_response(
                         current_state, delta_text, False, False, finish_reason
-                    ))
+                    )
+                )
                 return current_state, responses
