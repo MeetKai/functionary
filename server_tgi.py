@@ -209,7 +209,6 @@ async def create_chat_completion(raw_request: dict):
         # are not reflected in `response.generated_text`. Use this hack temporarily first.
         # Issue: https://github.com/huggingface/text-generation-inference/issues/1984
         response_text = "".join([token.text for token in response.details.tokens])
-        breakpoint()
         check_message = prompt_template.parse_assistant_response(
             llm_output=response_text, tool_choice=tool_func_choice
         )
