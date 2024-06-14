@@ -15,6 +15,7 @@ Documentation and more examples: [functionary.meetkai.com](https://functionary.m
 
   <summary>Changelog: (click to expand)</summary>
 
+  + [2024/06/14] We release [meetkai/functionary-medium-v3.0](https://huggingface.co/meetkai/functionary-medium-v3.0) (based on [meta-llama/Meta-Llama-3-70B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-70B-Instruct)) with better capability for function calling
   + [2024/05/17] We release [meetkai/functionary-small-v2.5](https://huggingface.co/meetkai/functionary-small-v2.5) with better capability for function calling and code interpreter compared with [functionary-small-v2.4](https://huggingface.co/meetkai/functionary-small-v2.4)
   + [2024/05/06] Streaming support for functionary v2 to v2.4 models is released in [llama-cpp-python](https://github.com/abetlen/llama-cpp-python)!
   + [2024/05/03] Added support for serverless vLLM deployment on [Modal.com](https://modal.com/)
@@ -193,6 +194,7 @@ print(response.text)
 ## Models Available
 | Model                                                                                | Description                                                                                                                         | VRAM FP16 |
 |:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:------|
+| [functionary-medium-v3.0](https://huggingface.co/meetkai/functionary-medium-v3.0) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v3.0-GGUF) | 8k context, based on [meta-llama/Meta-Llama-3-70B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-70B-Instruct) | 160GB |
 | [functionary-small-v2.5](https://huggingface.co/meetkai/functionary-small-v2.5) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.5-GGUF) | 8k context, code interpreter | 24GB |
 | [functionary-small-v2.4](https://huggingface.co/meetkai/functionary-small-v2.4) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.4-GGUF) | 8k context, code interpreter | 24GB |
 | [functionary-medium-v2.4](https://huggingface.co/meetkai/functionary-medium-v2.4) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v2.4-GGUF) | 8k context, code interpreter, better accuracy | 90GB |
@@ -592,14 +594,15 @@ We don't change the logit probabilities to conform to a certain schema, but the 
 ### Function Prediction Evaluation
 Evaluation function call prediction in SGD dataset. The accuracy metric measures the overall correctness of predicted function calls, including function name prediction and arguments extraction.
 
-<img align="left" width="800" src="assets/SGD_acc.png">
+<img align="left" width="800" src="assets/SGD_v30.png">
 
 | Dataset       | Model Name          | Function Calling  Accuracy (Name & Arguments) |
 | :-------------| :-------------------| ---------------------------: | 
-| SGD | MeetKai-functionary-small-v2.4  |                       0.830|
-| SGD | MeetKai-functionary-medium-v2.4  |                       **0.881**|
-| SGD | OpenAI-gpt-3.5-turbo-0125  |                        0.716 |
-| SGD | OpenAI-gpt-4-turbo-0125  |                        0.762 |
+| SGD | MeetKai-functionary-medium-v3.0  |                       **89.6%**|
+| SGD | MeetKai-functionary-small-v2.4  |                       83%|
+| SGD | MeetKai-functionary-medium-v2.4  |                       88.1%|
+| SGD | OpenAI-gpt-3.5-turbo-0125  |                        71.6% |
+| SGD | OpenAI-gpt-4-turbo-0125  |                        76.2% |
 
 </details>
 
