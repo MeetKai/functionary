@@ -41,7 +41,7 @@ class TestPromptTemplate(unittest.TestCase):
         self.pretrained_models = [
             "meetkai/functionary-small-v2.4",
             "meetkai/functionary-small-v2.5",
-            "meetkai/Meta-Llama-3-70B-Instruct-2024-06-10"
+            "meetkai/functionary-medium-v3.0",
         ]
 
     def read_example_data(self, template_version: str):
@@ -83,7 +83,7 @@ class TestPromptTemplate(unittest.TestCase):
             self.run_prepare_training_inputs(
                 template_version=template_version,
                 pretrained=pretrained_model,
-                verbose=False
+                verbose=False,
             )
 
     def run_prepare_training_inputs(

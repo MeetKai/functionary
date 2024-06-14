@@ -181,7 +181,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
         self.prompt_template_to_tokenizer_name_mapping = {
             PromptTemplateV2: "meetkai/functionary-small-v2.4",
             Llama3Template: "meetkai/functionary-small-v2.5",
-            Llama3TemplateV3: "meetkai/Meta-Llama-3-70B-Instruct-2024-06-10",
+            Llama3TemplateV3: "meetkai/functionary-medium-v3.0",
         }
         self.default_text_str = "Normal text generation"
         self.default_tool_call_name = "get_weather"
