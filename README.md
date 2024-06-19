@@ -599,7 +599,7 @@ Evaluation function call prediction in SGD dataset. The accuracy metric measures
 | Dataset       | Model Name          | Function Calling  Accuracy (Name & Arguments) |
 | :-------------| :-------------------| ---------------------------: | 
 | SGD | MeetKai-functionary-medium-v3.0  |                       **89.6%**|
-| SGD | gpt-4o-2024-05-13  |                       82.54%|
+| SGD | gpt-4o-2024-05-13  |                       82.75%|
 | SGD | gemini-1.5-flash  |                       79.64%|
 | SGD | c4ai-command-r-plus  |                        45.66% |
 
