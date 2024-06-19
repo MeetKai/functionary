@@ -43,10 +43,10 @@ python3 server_vllm.py --model "meetkai/functionary-small-v2.5" --host 0.0.0.0 -
 <details>
   <summary>Medium model: (click to expand)</summary>
   
-  If you use multiple GPUs (medium models require: 4A6000 or 2A100 80GB to run), need to use: `tensor-parallel-size`
+  If you use multiple GPUs (medium models require: 4xA6000 or 2xA100 80GB to run), need to use: `tensor-parallel-size`
   
 ```shell
-python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len 8192 --tensor-parallel-size 2
+python3 server_vllm.py --model "meetkai/functionary-medium-v3.0" --max-model-len 8192 --tensor-parallel-size 2
 ```
   
 </details>
@@ -599,10 +599,9 @@ Evaluation function call prediction in SGD dataset. The accuracy metric measures
 | Dataset       | Model Name          | Function Calling  Accuracy (Name & Arguments) |
 | :-------------| :-------------------| ---------------------------: | 
 | SGD | MeetKai-functionary-medium-v3.0  |                       **89.6%**|
-| SGD | MeetKai-functionary-small-v2.4  |                       83%|
-| SGD | MeetKai-functionary-medium-v2.4  |                       88.1%|
-| SGD | OpenAI-gpt-3.5-turbo-0125  |                        71.6% |
-| SGD | OpenAI-gpt-4-turbo-0125  |                        76.2% |
+| SGD | gpt-4o-2024-05-13  |                       82.75%|
+| SGD | gemini-1.5-flash  |                       79.64%|
+| SGD | c4ai-command-r-plus  |                        45.66% |
 
 </details>
 
