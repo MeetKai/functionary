@@ -129,18 +129,9 @@ async def create_chat_completion(raw_request: dict):
     prompt = prompt_template.get_prompt_from_messages(
         messages=dic_messages, tools_or_functions=tools_or_functions
     )
-    if tool_func_choice == "none":
-        prompt += prompt_template.get_force_text_generation_prefix()
-    elif isinstance(tool_func_choice, Tool) or isinstance(tool_func_choice, Function):
-        prompt += prompt_template.get_force_function_call_prefix(
-            tool_func_choice.function.name
-            if isinstance(tool_func_choice, Tool)
-            else tool_func_choice.name
-        )
-    elif tool_func_choice == "required" and hasattr(
-        prompt_template, "function_separator"
-    ):
-        prompt += getattr(prompt_template, "function_separator")
+    prompt += prompt_template.get_generation_prefix_for_tool_choice(
+        tool_choice=tool_func_choice
+    )
 
     hyperparams = {
         "stream": request.stream,
