@@ -43,7 +43,7 @@ python3 server_vllm.py --model "meetkai/functionary-small-v2.5" --host 0.0.0.0 -
 <details>
   <summary>Medium model: (click to expand)</summary>
   
-  If you use multiple GPUs (medium models require: 4A6000 or 2A100 80GB to run), need to use: `tensor-parallel-size`
+  If you use multiple GPUs (medium models require: 4xA6000 or 2xA100 80GB to run), need to use: `tensor-parallel-size`
   
 ```shell
 python3 server_vllm.py --model "meetkai/functionary-medium-v3.0" --max-model-len 8192 --tensor-parallel-size 2
