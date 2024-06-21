@@ -108,7 +108,7 @@ class PromptTemplateV2(PromptTemplate):
             options = [self.fn_param_sep_token]
 
         # No grammar sampling needed if gen_state not in the following stages. Return model_sampled_token_id
-        if gen_state["stage"] not in ["pre-function", "function", "pre-parameter"]:
+        if gen_state["stage"] not in ["function", "pre-parameter"]:
             grammar_sampled_token_id = model_sampled_token_id
             grammar_sampled_token = tokenizer.decode([model_sampled_token_id])
 
@@ -145,7 +145,7 @@ class PromptTemplateV2(PromptTemplate):
                         grammar_sampled_token_id = sampled_token_ind
                         grammar_sampled_token = sampled_token
                         break
-                elif gen_state["stage"] in ["pre-function", "pre-parameter"]:
+                elif gen_state["stage"] == "pre-parameter":
                     # Check if new_curr_tokens is a prefix of any of options
                     if any([option.startswith(new_curr_tokens) for option in options]):
                         grammar_sampled_token_id = sampled_token_ind
