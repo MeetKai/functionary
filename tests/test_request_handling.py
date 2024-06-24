@@ -559,7 +559,10 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                     prev_ids.append(token_id)
                     yield offset, None
                 else:
-                    yield "", test_case["expected_finish_reason"]
+                    # Always yield stop to simulate actual inference where vLLM only provides "stop"
+                    # Tests whether inference code can infer the actual finish_reason
+                    yield "", "stop"
+                    # yield "", test_case["expected_finish_reason"]
 
         for prompt_template in self.test_prompt_templates:
 

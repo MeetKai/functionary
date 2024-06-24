@@ -231,6 +231,12 @@ async def process_chat_completion(
                 delta_text = output.text[len(previous_texts) :]
                 previous_texts = output.text
                 finish_reason = output.finish_reason
+
+                # If finish_reason is not None and delta_text is not empty,
+                # the delta_text is the eos_token and just remove it
+                if output.finish_reason is not None and len(delta_text) > 0:
+                    delta_text = ""
+
                 if (
                     delta_text.strip()
                     not in prompt_template.get_stop_tokens_for_generation()
