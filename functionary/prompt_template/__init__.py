@@ -5,6 +5,7 @@ from functionary.prompt_template.llama3_prompt_template import Llama3Template
 from functionary.prompt_template.prompt_template_v1 import PromptTemplateV1
 from functionary.prompt_template.prompt_template_v2 import PromptTemplateV2
 from functionary.prompt_template.llama3_prompt_template_v3 import Llama3TemplateV3
+from functionary.prompt_template.llava_prompt_template import LlavaLlama
 
 
 def get_available_prompt_template_versions() -> List[PromptTemplate]:
@@ -59,10 +60,13 @@ def get_prompt_template_from_tokenizer(tokenizer: Any) -> PromptTemplate:
     p2 = PromptTemplateV2.get_prompt_template()
     p3 = Llama3Template.get_prompt_template()
     p4 = Llama3TemplateV3.get_prompt_template()
+    p5 = LlavaLlama.get_prompt_template()
 
     token_ids = tokenizer.encode(p3.function_separator, add_special_tokens=False)
-    if len(token_ids) == 1 and token_ids[0] == 128254:  # based on llam3
-        if p3.function_separator in tokenizer.chat_template:
+    if len(token_ids) == 1 and token_ids[0] == 128254:  # based on llama3
+        if "img_path" in tokenizer.chat_template and ">>>" in tokenizer.chat_template:
+            return p5
+        elif p3.function_separator in tokenizer.chat_template:
             return p3
         else:
             return p4

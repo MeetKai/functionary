@@ -37,11 +37,12 @@ class TestPromptTemplate(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(TestPromptTemplate, self).__init__(*args, **kwargs)
 
-        self.template_versions = ["v2", "v2.llama3", "v3.llama3"]
+        self.template_versions = ["v2", "v2.llama3", "v3.llama3", "v3.llava_llama"]
         self.pretrained_models = [
             "meetkai/functionary-small-v2.4",
             "meetkai/functionary-small-v2.5",
             "meetkai/functionary-medium-v3.0",
+            "lmms-lab/llama3-llava-next-8b"
         ]
 
     def read_example_data(self, template_version: str):
@@ -68,7 +69,7 @@ class TestPromptTemplate(unittest.TestCase):
             created_prompt = prompt_template.get_prompt_from_messages(
                 test_case["messages"], tools_or_functions
             )
-
+            print(created_prompt)
             self.assertEqual(
                 final_prompt.strip(),
                 created_prompt.strip(),
@@ -112,7 +113,7 @@ class TestPromptTemplate(unittest.TestCase):
             padding="longest",
             max_length=1024,
             return_tensor=False,
-            verbose=verbose,
+            verbose=True,
             keep_assistant_prefix=keep_assistant_prefix,
         )
         input_ids = inputs["inputs"]["input_ids"]
