@@ -3,6 +3,8 @@ import math
 import os
 import pathlib
 import sys
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -14,9 +16,11 @@ from aenum import extend_enum
 
 from torch.optim.lr_scheduler import LambdaLR
 from llava.model.language_model.llava_llama import LlavaLlamaForCausalLM
-from llava.model.builder import load_pretrained_model
 from llava.model.language_model.llava_llama import LlavaConfig
 from functionary.train.llava_dataset import LazyVisionDataset
+from PIL import Image
+from llava.mm_utils import process_images
+
 
 extend_enum(
     transformers.trainer_utils.SchedulerType,
@@ -56,7 +60,6 @@ from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 from transformers import AutoConfig, AutoTokenizer, Trainer
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 from typing import Union
 
 from functionary.prompt_template import PromptTemplate, get_prompt_template_by_version
@@ -227,6 +230,9 @@ def print_some_examples(ds, tokenizer):
         # print_rank0('input_ids: ', batch["input_ids"].tolist())
         # print_rank0('labels: ', batch["labels"].tolist())
         print_rank0("attention mask: ", batch["attention_mask"])
+        batch["input_ids"][0][batch["input_ids"][0] == -200] = tokenizer.encode(
+            "<|reserved_special_token_250|>", add_special_tokens=False
+        )[0]
         input_ids = batch["input_ids"][0].tolist()
         input_chunk = extract_unmasked_chunks(input_ids, tokenizer.pad_token_id)
         # assert len(input_chunk) == 1  # padding at left or right only --> pad_token_id = eos_token_id --> wrong
@@ -248,6 +254,12 @@ def train():
         (ModelArguments, DataArguments, TrainingArguments)
     )
     model_args, data_args, training_args = argument_parser.parse_args_into_dataclasses()
+    training_args.remove_unused_columns = False
+    training_args.prompt_template_version = "v3.llava_llama"
+    print(
+        "---------------------training_args.remove_unused_columns: ",
+        training_args.remove_unused_columns,
+    )
 
     compute_dtype = (
         torch.float16
@@ -259,7 +271,7 @@ def train():
     llava_cfg = LlavaConfig.from_pretrained(model_args.model_name_or_path)
     if "v1.5" in model_args.model_name_or_path.lower():
         llava_cfg.delay_load = True  # a workaround for correctly loading v1.5 models
-    
+
     model = LlavaLlamaForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         torch_dtype=compute_dtype,
@@ -267,11 +279,13 @@ def train():
         cache_dir=training_args.cache_dir,
         use_flash_attention_2=True,
     )
-    
+
+    model.config.use_cache = False
+
     vision_tower = model.get_vision_tower()
     if not vision_tower.is_loaded:
         vision_tower.load_model(device_map="auto")
-    #if device_map != "auto":
+    # if device_map != "auto":
     #    vision_tower.to(device="cuda", dtype=torch.float16)
     image_processor = vision_tower.image_processor
 
@@ -311,31 +325,42 @@ def train():
 
     with open(data_args.train_data_path, "r") as f:
         raw_train_ds = [json.loads(line) for line in f]
-        
-    train_dataset = LazyVisionDataset(raw_train_ds, tokenizer, image_processor, model.config)
+
+    train_dataset = LazyVisionDataset(
+        raw_train_ds, tokenizer, image_processor, model.config
+    )
     if torch.distributed.get_rank() == 0:
         print(f"Training Data Loaded: #{len(train_dataset)}")
 
     if training_args.do_eval:
         with open(data_args.eval_data_path, "r") as f:
             raw_eval_ds = [json.loads(line) for line in f]
-            
-        eval_dataset = LazyVisionDataset(raw_eval_ds, tokenizer, image_processor, model.config)
+
+        eval_dataset = LazyVisionDataset(
+            raw_eval_ds, tokenizer, image_processor, model.config
+        )
 
         if torch.distributed.get_rank() == 0:
             print(f"Eval Data Loaded: #{len(eval_dataset)}")
 
     print_rank0("***** HERE ARE SOME EXAMPLES FROM TRAINING ****")
-    print_some_examples(train_dataset, tokenizer)
+    # print_some_examples(train_dataset, tokenizer)
 
     print_rank0("***** HERE ARE SOME EXAMPLES FROM EVALUATION ***")
-    print_some_examples(eval_dataset, tokenizer)
+    # print_some_examples(eval_dataset, tokenizer)
 
     def preprocess_logits_for_metrics(logits, labels):
         """Preprocesses the logits during evaluation by computing the greedy token predictions for
         accuracy calculation and loss values for perplexity calculation. Both pred_ids and loss are
         of shape (batch_size x seq_len)"""
-
+        # if LOCAL_RANK == 0:
+        #     for name, param in model.named_parameters():
+        #         if param.requires_grad:
+        #             print ("trainable: ", name)
+        #     print("--------UN-TRAINABLE----")
+        #     for name, param in model.named_parameters():
+        #         if not param.requires_grad:
+        #             print ("freeze: ", name)
         correct_logits = logits
         if (
             type(logits) is tuple
@@ -421,6 +446,32 @@ def train():
 
         return metrics
 
+    def collate_examples(features):
+        result = {}
+        first = features[0]
+        for k, v in first.items():
+            if k in ["input_ids", "attention_mask", "labels"]:
+                if isinstance(v, torch.Tensor):
+                    result[k] = torch.stack([f[k] for f in features])
+                elif isinstance(v, np.ndarray):
+                    result[k] = torch.tensor(np.stack([f[k] for f in features]))
+                else:
+                    result[k] = torch.tensor([f[k] for f in features])
+        # aggregate images & image_sizes
+        images = []
+        for feature in features:
+            images.extend(feature["images"])
+
+        image_sizes = [image.size for image in images]
+
+        image_tensor = process_images(images, image_processor, model.config)
+        if type(image_tensor) is not list:
+            image_tensor = image_tensor.to(model.dtype)
+
+        result["images"] = image_tensor
+        result["image_sizes"] = image_sizes
+        return result
+
     if training_args.do_eval:
         trainer = Trainer(
             model=model,
@@ -428,8 +479,9 @@ def train():
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            compute_metrics=compute_metrics,
-            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+            compute_metrics=None,
+            preprocess_logits_for_metrics=None,
+            data_collator=collate_examples,
         )
     else:
         trainer = Trainer(
@@ -437,6 +489,7 @@ def train():
             tokenizer=tokenizer,
             args=training_args,
             train_dataset=train_dataset,
+            data_collator=collate_examples,
         )
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):

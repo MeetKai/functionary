@@ -314,6 +314,7 @@ class LlavaLlama(PromptTemplate):
                 if image_paths is not None:
                     if type(image_paths) is str:
                         content = f"{self.image_token}\n{content}"
+                        # print("*******************FOUND IMAGE")
                     else:  # TODO implement multiple-images uploading
                         pass
 
