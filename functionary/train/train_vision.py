@@ -280,6 +280,8 @@ def train():
         use_flash_attention_2=True,
     )
 
+    if hasattr(model.config, "tokenizer_model_max_length"):
+        model.config.tokenizer_model_max_length = training_args.model_max_length
     model.config.use_cache = False
 
     vision_tower = model.get_vision_tower()
@@ -327,7 +329,7 @@ def train():
         raw_train_ds = [json.loads(line) for line in f]
 
     train_dataset = LazyVisionDataset(
-        raw_train_ds, tokenizer, image_processor, model.config
+        raw_train_ds, tokenizer
     )
     if torch.distributed.get_rank() == 0:
         print(f"Training Data Loaded: #{len(train_dataset)}")
@@ -337,7 +339,7 @@ def train():
             raw_eval_ds = [json.loads(line) for line in f]
 
         eval_dataset = LazyVisionDataset(
-            raw_eval_ds, tokenizer, image_processor, model.config
+            raw_eval_ds, tokenizer
         )
 
         if torch.distributed.get_rank() == 0:

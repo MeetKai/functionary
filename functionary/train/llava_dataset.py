@@ -4,8 +4,6 @@ from typing import Dict, Any
 import torch
 from PIL import Image
 from functionary.train.custom_datasets import prepare_training_inputs
-from llava.mm_utils import process_images
-import numpy as np
 
 IMAGE_TOKEN_INDEX = -200
 
@@ -16,17 +14,12 @@ class LazyVisionDataset(Dataset):
     def __init__(
         self,
         raw_data,
-        tokenizer: transformers.PreTrainedTokenizer,
-        image_processor: Any,
-        model_config: Any,
+        tokenizer: transformers.PreTrainedTokenizer
     ):
         super().__init__()
         self.tokenizer = tokenizer
-
         self.raw_data = raw_data
         self.cached_data_dict = {}
-        self.model_config = model_config
-        self.image_processor = image_processor
         self.rep_token_id = tokenizer.encode(
             "<|reserved_special_token_250|>", add_special_tokens=False
         )[0]
@@ -56,6 +49,8 @@ class LazyVisionDataset(Dataset):
         # replace unused token with image_token_index
         input_ids[input_ids == self.rep_token_id] = IMAGE_TOKEN_INDEX
 
+        # assert number of images == number of image tokens
+        assert (input_ids == IMAGE_TOKEN_INDEX).sum() == len(images)
         ret = {
             "input_ids": input_ids,
             "labels": ret["inputs"]["labels"],
