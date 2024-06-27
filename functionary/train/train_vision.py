@@ -15,7 +15,7 @@ import transformers
 from aenum import extend_enum
 
 from torch.optim.lr_scheduler import LambdaLR
-from llava.model.language_model.llava_llama import LlavaLlamaForCausalLM
+from functionary.train.models.modeling_llava import FixedLlavaLlamaForCausalLM as LlavaLlamaForCausalLM
 from llava.model.language_model.llava_llama import LlavaConfig
 from functionary.train.llava_dataset import LazyVisionDataset
 from PIL import Image
@@ -355,19 +355,17 @@ def train():
         """Preprocesses the logits during evaluation by computing the greedy token predictions for
         accuracy calculation and loss values for perplexity calculation. Both pred_ids and loss are
         of shape (batch_size x seq_len)"""
-        # if LOCAL_RANK == 0:
-        #     for name, param in model.named_parameters():
-        #         if param.requires_grad:
-        #             print ("trainable: ", name)
-        #     print("--------UN-TRAINABLE----")
-        #     for name, param in model.named_parameters():
-        #         if not param.requires_grad:
-        #             print ("freeze: ", name)
         correct_logits = logits
+        added_labels = None
         if (
             type(logits) is tuple
         ):  # in mixtral logits is a tuple, correct logits is at the second index
             correct_logits = logits[1]
+        elif type(logits) is dict:
+            correct_logits = logits["logits"]
+            added_labels = logits["labels"]
+            labels = added_labels
+            print(f"shape of labels: {added_labels.shape}, shape of logits: {correct_logits.shape}")
 
         pred_ids = torch.argmax(correct_logits, dim=-1)
 
@@ -379,24 +377,17 @@ def train():
         loss = loss_fn(shift_logits, shift_labels)
         loss = torch.mean(loss.view(correct_logits.shape[0], -1), dim=-1)
 
-        return pred_ids, loss
-
-    def compute_metrics(eval_preds):
+        return pred_ids, loss, added_labels
+    
+    def compute_accuracy_metrics(prediction_list, label_list):
         """Computes next-token accuracy and perplexity metrics for evaluation"""
-        predictions = eval_preds.predictions[0][:, :-1]
-        labels = eval_preds.label_ids[:, 1:]
-
         acc_count = 0
         total_num = 0
         dic = {token_id: {"acc": 0, "total": 0} for token_id in id2token}
 
         first_token_total_count, first_token_correct_count = 0, 0
-        prediction_list, label_list = (
-            predictions.flatten().tolist(),
-            labels.flatten().tolist(),
-        )
         first_token_label_dic = {}
-
+        
         for i in range(len(prediction_list)):
             pred, label = prediction_list[i], label_list[i]
             if i > 0 and label_list[i - 1] == -100 and label != -100:  # first token
@@ -419,12 +410,7 @@ def train():
                 if label == pred:
                     dic[label]["acc"] += 1
 
-        # Calculate perplexity
-        loss = eval_preds.predictions[1].tolist()
-        loss = sum(loss) / len(loss)
-        perplexity = math.exp(loss)
-
-        metrics = {"accuracy": acc_count / total_num, "perplexity": perplexity}
+        metrics = {"accuracy": acc_count / total_num}
         metrics = {
             "accuracy_first_token": first_token_correct_count / first_token_total_count,
             "total_number_first_token": first_token_total_count,
@@ -446,6 +432,25 @@ def train():
             metrics[f"accuracy_{token}"] = acc
             metrics[f"accuracy_total_num_{token}"] = total_num
 
+        return metrics
+
+    def compute_metrics(eval_preds):
+        """Computes next-token accuracy and perplexity metrics for evaluation"""
+        predictions = eval_preds.predictions[0][:, :-1]
+        added_labels = eval_preds.predictions[2]
+        labels = added_labels[: , 1:]
+
+        prediction_list, label_list = (
+            predictions.flatten().tolist(),
+            labels.flatten().tolist(),
+        )
+        # Calculate perplexity
+        loss = eval_preds.predictions[1].tolist()
+        loss = sum(loss) / len(loss)
+        perplexity = math.exp(loss)
+
+        metrics = {"perplexity": perplexity}
+        metrics.update(compute_accuracy_metrics(prediction_list, label_list))
         return metrics
 
     def collate_examples(features):
@@ -474,24 +479,67 @@ def train():
         result["image_sizes"] = image_sizes
         return result
 
+    
+    class CustomizedTrainer(Trainer):
+        def compute_loss(self, model, inputs, return_outputs=False):
+            """
+            How the loss is computed by Trainer. By default, all models return the loss in the first element.
+
+            Subclass and override for custom behavior.
+            """
+            if self.label_smoother is not None and "labels" in inputs:
+                labels = inputs.pop("labels")
+            else:
+                labels = None
+            outputs = model(**inputs)
+            loss = outputs.loss
+            logits = outputs.logits["logits"]
+            
+            # gather logits from all devices
+            logits = self.accelerator.pad_across_processes(logits, dim=1, pad_index=-100)
+            logits = self.gather_function((logits))
+            
+            labels = outputs.logits["labels"]
+            labels = self.accelerator.pad_across_processes(labels, dim=1, pad_index=-100)
+            labels = self.gather_function((labels))
+            
+            pred_ids = torch.argmax(logits, dim=-1)
+            
+            # compute the metrics
+            predictions = pred_ids[:, :-1]
+            labels = labels[: , 1:]
+
+            prediction_list, label_list = (
+                predictions.flatten().tolist(),
+                labels.flatten().tolist(),
+            )
+            metrics = compute_accuracy_metrics(prediction_list, label_list)
+            
+            # Log to wandb
+            self.log(metrics)
+            return (loss, outputs) if return_outputs else loss
+
+    
     if training_args.do_eval:
-        trainer = Trainer(
+        trainer = CustomizedTrainer(
             model=model,
             tokenizer=tokenizer,
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            compute_metrics=None,
-            preprocess_logits_for_metrics=None,
+            compute_metrics=compute_metrics,
+            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
             data_collator=collate_examples,
         )
     else:
-        trainer = Trainer(
+        trainer = CustomizedTrainer(
             model=model,
             tokenizer=tokenizer,
             args=training_args,
             train_dataset=train_dataset,
             data_collator=collate_examples,
+            compute_metrics=compute_metrics,
+            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
         )
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
