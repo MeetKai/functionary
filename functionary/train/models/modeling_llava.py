@@ -12,6 +12,7 @@ class FixedLlavaLlamaForCausalLM(LlavaLlamaForCausalLM):
     
     def prepare_inputs_labels_for_multimodal(self, input_ids, position_ids, attention_mask, past_key_values, labels, images, image_sizes=None):
         vision_tower = self.get_vision_tower()
+        original_sequence_length = input_ids.shape[-1]
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
             return input_ids, position_ids, attention_mask, past_key_values, None, labels
 
@@ -105,15 +106,17 @@ class FixedLlavaLlamaForCausalLM(LlavaLlamaForCausalLM):
         new_input_embeds = []
         new_labels = []
         cur_image_idx = 0
+        #add assert total number of image in batch == the number of image in input_ids
+        assert sum([(cur_input_ids == IMAGE_TOKEN_INDEX).sum() for cur_input_ids in input_ids]) == len(image_features)
         for batch_idx, cur_input_ids in enumerate(input_ids):
             num_images = (cur_input_ids == IMAGE_TOKEN_INDEX).sum()
             if num_images == 0:
-                cur_image_features = image_features[cur_image_idx]
+                # cur_image_features = image_features[cur_image_idx]
                 cur_input_embeds_1 = self.get_model().embed_tokens(cur_input_ids)
-                cur_input_embeds = torch.cat([cur_input_embeds_1, cur_image_features[0:0]], dim=0)
-                new_input_embeds.append(cur_input_embeds)
+                # cur_input_embeds = torch.cat([cur_input_embeds_1, cur_image_features[0:0]], dim=0)
+                new_input_embeds.append(cur_input_embeds_1)
                 new_labels.append(labels[batch_idx])
-                cur_image_idx += 1
+                # cur_image_idx += 1
                 continue
 
             image_token_indices = [-1] + torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]]
@@ -146,6 +149,8 @@ class FixedLlavaLlamaForCausalLM(LlavaLlamaForCausalLM):
             new_input_embeds.append(cur_new_input_embeds)
             new_labels.append(cur_new_labels)
 
+        # one more time, make sure that all images were used
+        assert cur_image_idx == len(image_features)
         # Truncate sequences to max length as image embeddings can make the sequence longer
         tokenizer_model_max_length = getattr(self.config, "tokenizer_model_max_length", None)
         if tokenizer_model_max_length is not None:
@@ -154,6 +159,9 @@ class FixedLlavaLlamaForCausalLM(LlavaLlamaForCausalLM):
 
         # Combine them
         max_len = max(x.shape[0] for x in new_input_embeds)
+        if original_sequence_length == tokenizer_model_max_length: # If originally, the data points were padded to max_length, keep the original max_length
+            max_len = original_sequence_length
+            
         batch_size = len(new_input_embeds)
 
         new_input_embeds_padded = []
@@ -212,7 +220,6 @@ class FixedLlavaLlamaForCausalLM(LlavaLlamaForCausalLM):
 
         if inputs_embeds is None:
             (input_ids, position_ids, attention_mask, past_key_values, inputs_embeds, labels) = self.prepare_inputs_labels_for_multimodal(input_ids, position_ids, attention_mask, past_key_values, labels, images, image_sizes)
-
         result = super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,

@@ -470,10 +470,12 @@ def train():
             images.extend(feature["images"])
 
         image_sizes = [image.size for image in images]
-
-        image_tensor = process_images(images, image_processor, model.config)
-        if type(image_tensor) is not list:
-            image_tensor = image_tensor.to(model.dtype)
+        if len(images) > 0:
+            image_tensor = process_images(images, image_processor, model.config)
+        else:
+            image_tensor = None
+        #if type(image_tensor) is not list:
+        #    image_tensor = image_tensor.to(model.dtype)
 
         result["images"] = image_tensor
         result["image_sizes"] = image_sizes
@@ -487,36 +489,36 @@ def train():
 
             Subclass and override for custom behavior.
             """
-            if self.label_smoother is not None and "labels" in inputs:
-                labels = inputs.pop("labels")
-            else:
-                labels = None
             outputs = model(**inputs)
             loss = outputs.loss
             logits = outputs.logits["logits"]
-            
-            # gather logits from all devices
-            logits = self.accelerator.pad_across_processes(logits, dim=1, pad_index=-100)
-            logits = self.gather_function((logits))
-            
             labels = outputs.logits["labels"]
-            labels = self.accelerator.pad_across_processes(labels, dim=1, pad_index=-100)
-            labels = self.gather_function((labels))
             
             pred_ids = torch.argmax(logits, dim=-1)
             
             # compute the metrics
             predictions = pred_ids[:, :-1]
+            
+            self.gather_function = self.accelerator.gather_for_metrics
+            
+            predictions = self.accelerator.pad_across_processes(predictions, dim=1, pad_index=-100)
+            predictions = self.gather_function((predictions))
+            
+            
             labels = labels[: , 1:]
+            labels = self.accelerator.pad_across_processes(labels, dim=1, pad_index=-100)
+            labels = self.gather_function((labels))
 
             prediction_list, label_list = (
                 predictions.flatten().tolist(),
                 labels.flatten().tolist(),
             )
             metrics = compute_accuracy_metrics(prediction_list, label_list)
-            
+            prefix_metrics = {}
+            for key in metrics:
+                prefix_metrics[f"train_{key}"] = metrics[key]
             # Log to wandb
-            self.log(metrics)
+            self.log(prefix_metrics)
             return (loss, outputs) if return_outputs else loss
 
     
