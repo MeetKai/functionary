@@ -27,7 +27,6 @@ from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.entrypoints.openai.protocol import (
-    LogProbs,
     ModelCard,
     ModelList,
     ModelPermission,
@@ -52,30 +51,6 @@ async def show_available_models():
         ModelCard(id=served_model, root=served_model, permission=[ModelPermission()])
     ]
     return ModelList(data=model_cards)
-
-
-def create_logprobs(
-    token_ids: List[int],
-    id_logprobs: List[Dict[int, float]],
-    initial_text_offset: int = 0,
-) -> LogProbs:
-    """Create OpenAI-style logprobs."""
-    logprobs = LogProbs()
-    last_token_len = 0
-    for token_id, id_logprob in zip(token_ids, id_logprobs):
-        token = tokenizer.convert_ids_to_tokens(token_id)
-        logprobs.tokens.append(token)
-        logprobs.token_logprobs.append(id_logprob[token_id])
-        if len(logprobs.text_offset) == 0:
-            logprobs.text_offset.append(initial_text_offset)
-        else:
-            logprobs.text_offset.append(logprobs.text_offset[-1] + last_token_len)
-        last_token_len = len(token)
-
-        logprobs.top_logprobs.append(
-            {tokenizer.convert_ids_to_tokens(i): p for i, p in id_logprob.items()}
-        )
-    return logprobs
 
 
 @app.post("/v1/chat/completions")
@@ -119,14 +94,6 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--allowed-headers", type=json.loads, default=["*"], help="allowed headers"
-    )
-    parser.add_argument(
-        "--served-model-name",
-        type=str,
-        default=None,
-        help="The model name used in the API. If not "
-        "specified, the model name will be the same as "
-        "the huggingface name.",
     )
     parser.add_argument(
         "--enable-grammar-sampling",

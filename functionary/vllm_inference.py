@@ -6,6 +6,7 @@ from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Un
 from fastapi import BackgroundTasks, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from vllm.entrypoints.openai.protocol import ErrorResponse
+from vllm.inputs import TokensPrompt
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
 from vllm.utils import random_uuid
@@ -203,20 +204,18 @@ async def process_chat_completion(
 
     if enable_grammar_sampling:
         result_generator = engine.generate(
-            prompt=None,
+            inputs=TokensPrompt(prompt_token_ids=prompt_token_ids),
             sampling_params=sampling_params,
             request_id=request_id,
-            prompt_token_ids=prompt_token_ids,
             tools_or_functions=tools_or_functions,
             prompt_template_cls=prompt_template,
             tool_choice=tool_func_choice,
         )
     else:
         result_generator = engine.generate(
-            prompt=None,
+            inputs=TokensPrompt(prompt_token_ids=prompt_token_ids),
             sampling_params=sampling_params,
             request_id=request_id,
-            prompt_token_ids=prompt_token_ids,
         )
 
     async def abort_request() -> None:
