@@ -26,11 +26,7 @@ import uvicorn
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from vllm.engine.arg_utils import AsyncEngineArgs
-from vllm.entrypoints.openai.protocol import (
-    ModelCard,
-    ModelList,
-    ModelPermission,
-)
+from vllm.entrypoints.openai.protocol import ModelCard, ModelList, ModelPermission
 from vllm.logger import init_logger
 from vllm.transformers_utils.tokenizer import get_tokenizer
 
