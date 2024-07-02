@@ -105,11 +105,26 @@ async def check_length(request, input_ids, model_config):
     else:
         context_len = 4096
 
+    # Scale the context_len if rope scaling is provided
+    # Currently only supports ["linear", "dynamic", "yarn"], not yet for "su"/"longrope"
+    if (
+        hasattr(model_config.hf_config, "rope_scaling")
+        and model_config.hf_config.rope_scaling is not None
+    ):
+        # From vLLM's code, it seems like only YaRN requires
+        # "original_max_position_embeddings" in rope_scaling dict
+        # https://github.com/vllm-project/vllm/blob/main/vllm/config.py#L1458-L1460
+        if model_config.hf_config.rope_scaling["type"] == "yarn":
+            context_len = model_config.hf_config.rope_scaling[
+                "original_max_position_embeddings"
+            ]
+        context_len *= model_config.hf_config.rope_scaling["factor"]
+
     token_num = len(input_ids)
 
     if token_num + request.max_tokens > context_len:
         return create_error_response(
-            status=HTTPStatus.BAD_REQUEST,
+            status_code=HTTPStatus.BAD_REQUEST,
             message=(
                 f"This model's maximum context length is {context_len} tokens. "
                 f"However, you requested {request.max_tokens + token_num} tokens "
