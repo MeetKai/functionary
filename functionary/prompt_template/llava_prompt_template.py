@@ -309,14 +309,8 @@ class LlavaLlama(PromptTemplate):
         )
 
         if role == "user":  # Check if contain uploaded image or not
-            if "metainfo" in message and "img_path" in message["metainfo"]:
-                image_paths = message["metainfo"]["img_path"]
-                if image_paths is not None:
-                    if type(image_paths) is str:
-                        content = f"{self.image_token}\n{content}"
-                        # print("*******************FOUND IMAGE")
-                    else:  # TODO implement multiple-images uploading
-                        pass
+            if type(content) is list:
+                content = prompt_utils.get_content_str_from_multi_modal_input(message["content"], self.image_token)
 
         if role in ["user", "system", "tool"]:
             return prompt_template.format(text=content)

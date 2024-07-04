@@ -1,7 +1,11 @@
 import random
 import string
 from typing import Dict, List, Optional, Union
-
+from PIL import Image
+from io import BytesIO
+import os 
+import base64
+import requests
 import torch
 from transformers import LlamaTokenizer
 
@@ -203,3 +207,51 @@ def reorder_tool_messages_by_tool_call_ids(messages: List[Dict]) -> List[Dict]:
         else:
             index += 1
     return result
+
+
+def get_content_str_from_multi_modal_input(content: List[Dict], image_token: str) -> str:
+    result = ""
+    for item in content:
+        if item["type"] == "text":
+            result += item["text"]
+        elif item["type"] == "image_url":
+            result += image_token
+    return result
+
+
+def get_images_from_messages(messages: List[Dict]) -> List:
+    result = []
+    for message in messages:
+        if message["role"] == "user":
+            if type(message["content"]) is list:
+                result.extend(get_images_from_content(message["content"]))
+    return result
+
+
+def get_images_from_content(content: List[Dict]) -> List:
+    result = []
+    for item in content:
+        if item["type"] == "image_url":
+            img = read_image_from_image_url(item["image_url"])
+            result.append(img)
+    return result
+    
+
+def read_image_from_image_url(image_url: str):
+    base64_prefix = "data:image/jpg;base64,"
+    file_prefix = "file://"
+    url_prefix = "url://"
+    if image_url.startswith(base64_prefix):
+        encoded_data = image_url[len(base64_prefix): ]
+        return Image.open(BytesIO(base64.b64decode(encoded_data)))
+    
+    elif image_url.startswith(file_prefix):
+        img_path = image_url[len(file_prefix): ].strip()
+        return Image.open(open(img_path, "rb"))
+    
+    elif image_url.startswith(url_prefix):
+        url = image_url[len(url_prefix): ].strip()
+        return Image.open(requests.get(url, stream=True).raw)
+    
+    else:
+        raise(f"image not found, image_url must startswith one of: '{base64_prefix}'; '{file_prefix}', '{url_prefix}'")

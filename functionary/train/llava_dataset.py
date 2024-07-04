@@ -4,9 +4,10 @@ from typing import Dict, Any, Optional
 import torch
 from PIL import Image
 import random
-
 random.seed(100)
+
 from functionary.train.custom_datasets import prepare_training_inputs
+from functionary.prompt_template import prompt_utils
 
 IMAGE_TOKEN_INDEX = -200
 
@@ -81,13 +82,7 @@ class LazyVisionDataset(Dataset):
             keep_assistant_prefix=False,
         )
         example = self.raw_data[i]
-        img_paths = []
-        images, image_sizes = [], []
-        if "metainfo" in example and "img_path" in example["metainfo"]:
-            img_path = example["metainfo"]["img_path"]
-            img_paths.append(img_path)
-            image = Image.open(open(img_path, "rb"))
-            images.append(image)
+        images = prompt_utils.get_images_from_messages(example["messages"])
 
         if (
             len(images) == 0 and self.pad_img
