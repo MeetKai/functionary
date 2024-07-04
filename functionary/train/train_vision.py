@@ -15,7 +15,9 @@ import transformers
 from aenum import extend_enum
 
 from torch.optim.lr_scheduler import LambdaLR
-from functionary.train.models.modeling_llava import FixedLlavaLlamaForCausalLM as LlavaLlamaForCausalLM
+from functionary.train.models.modeling_llava import (
+    FixedLlavaLlamaForCausalLM as LlavaLlamaForCausalLM,
+)
 from llava.model.language_model.llava_llama import LlavaConfig
 from functionary.train.llava_dataset import LazyVisionDataset
 from PIL import Image
@@ -80,6 +82,9 @@ class ModelArguments:
 
 @dataclass
 class DataArguments:
+    pad_img_path: str = field(
+        default=None, metadata={"help": "pad image in case the data is text-only"}
+    )
     train_data_path: str = field(
         default=None, metadata={"help": "Path to the training data."}
     )
@@ -125,9 +130,12 @@ class TrainingArguments(transformers.TrainingArguments):
             "help": "Whether to mask the assistant prefix `<|from|>assistant\n<|recipient|>` during training"
         },
     )
-
     prompt_template_version: str = field(
         default="v2", metadata={"help": "choose prompt template to use for training"}
+    )
+    log_train_metrics: bool = field(
+        default=False,
+        metadata={"help": "set this true to log training metrics during training"},
     )
 
 
@@ -216,45 +224,14 @@ def extract_unmasked_chunks(labels: List[int], masked_value) -> List[List[int]]:
     return chunks
 
 
-def print_some_examples(ds, tokenizer):
-    data_loader = DataLoader(ds, batch_size=3)
-    count = 0
-    for batch in data_loader:
-        if count == 0:
-            print_rank0("keys in batch: ", batch.keys())
-        print_rank0("--------------****Example data point****---------------")
-        print_rank0("device: ", batch["input_ids"].device)
-        print_rank0("shape of input_ids: ", batch["input_ids"].shape)  # B x L
-        print_rank0("shape of labels: ", batch["labels"].shape)
-        print_rank0("shape of attention_mask: ", batch["attention_mask"].shape)
-        # print_rank0('input_ids: ', batch["input_ids"].tolist())
-        # print_rank0('labels: ', batch["labels"].tolist())
-        print_rank0("attention mask: ", batch["attention_mask"])
-        batch["input_ids"][0][batch["input_ids"][0] == -200] = tokenizer.encode(
-            "<|reserved_special_token_250|>", add_special_tokens=False
-        )[0]
-        input_ids = batch["input_ids"][0].tolist()
-        input_chunk = extract_unmasked_chunks(input_ids, tokenizer.pad_token_id)
-        # assert len(input_chunk) == 1  # padding at left or right only --> pad_token_id = eos_token_id --> wrong
-        print_rank0("+ inputs: ")
-        print_rank0(tokenizer.decode(input_chunk[0]))
-        labels = batch["labels"][0].tolist()
-        label_chunks = extract_unmasked_chunks(labels, -100)
-        print_rank0("----------")
-        for chunk in label_chunks:
-            print_rank0("+ chunk: ")
-            print_rank0(tokenizer.decode(chunk))
-        count += 1
-        if count == 5:
-            break
-
-
 def train():
     argument_parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments)
     )
     model_args, data_args, training_args = argument_parser.parse_args_into_dataclasses()
+    # this is a must
     training_args.remove_unused_columns = False
+    # this is a must
     training_args.prompt_template_version = "v3.llava_llama"
     print(
         "---------------------training_args.remove_unused_columns: ",
@@ -328,9 +305,7 @@ def train():
     with open(data_args.train_data_path, "r") as f:
         raw_train_ds = [json.loads(line) for line in f]
 
-    train_dataset = LazyVisionDataset(
-        raw_train_ds, tokenizer
-    )
+    train_dataset = LazyVisionDataset(raw_train_ds, tokenizer, data_args.pad_img_path)
     if torch.distributed.get_rank() == 0:
         print(f"Training Data Loaded: #{len(train_dataset)}")
 
@@ -338,9 +313,7 @@ def train():
         with open(data_args.eval_data_path, "r") as f:
             raw_eval_ds = [json.loads(line) for line in f]
 
-        eval_dataset = LazyVisionDataset(
-            raw_eval_ds, tokenizer
-        )
+        eval_dataset = LazyVisionDataset(raw_eval_ds, tokenizer, data_args.pad_img_path)
 
         if torch.distributed.get_rank() == 0:
             print(f"Eval Data Loaded: #{len(eval_dataset)}")
@@ -365,7 +338,9 @@ def train():
             correct_logits = logits["logits"]
             added_labels = logits["labels"]
             labels = added_labels
-            print(f"shape of labels: {added_labels.shape}, shape of logits: {correct_logits.shape}")
+            print(
+                f"shape of labels: {added_labels.shape}, shape of logits: {correct_logits.shape}"
+            )
 
         pred_ids = torch.argmax(correct_logits, dim=-1)
 
@@ -378,7 +353,7 @@ def train():
         loss = torch.mean(loss.view(correct_logits.shape[0], -1), dim=-1)
 
         return pred_ids, loss, added_labels
-    
+
     def compute_accuracy_metrics(prediction_list, label_list):
         """Computes next-token accuracy and perplexity metrics for evaluation"""
         acc_count = 0
@@ -387,7 +362,7 @@ def train():
 
         first_token_total_count, first_token_correct_count = 0, 0
         first_token_label_dic = {}
-        
+
         for i in range(len(prediction_list)):
             pred, label = prediction_list[i], label_list[i]
             if i > 0 and label_list[i - 1] == -100 and label != -100:  # first token
@@ -438,7 +413,7 @@ def train():
         """Computes next-token accuracy and perplexity metrics for evaluation"""
         predictions = eval_preds.predictions[0][:, :-1]
         added_labels = eval_preds.predictions[2]
-        labels = added_labels[: , 1:]
+        labels = added_labels[:, 1:]
 
         prediction_list, label_list = (
             predictions.flatten().tolist(),
@@ -474,14 +449,13 @@ def train():
             image_tensor = process_images(images, image_processor, model.config)
         else:
             image_tensor = None
-        #if type(image_tensor) is not list:
+        # if type(image_tensor) is not list:
         #    image_tensor = image_tensor.to(model.dtype)
 
         result["images"] = image_tensor
         result["image_sizes"] = image_sizes
         return result
 
-    
     class CustomizedTrainer(Trainer):
         def compute_loss(self, model, inputs, return_outputs=False):
             """
@@ -493,21 +467,21 @@ def train():
             loss = outputs.loss
             logits = outputs.logits["logits"]
             labels = outputs.logits["labels"]
-            
+
             pred_ids = torch.argmax(logits, dim=-1)
-            
+
             # compute the metrics
             predictions = pred_ids[:, :-1]
-            
-            self.gather_function = self.accelerator.gather_for_metrics
-            
-            predictions = self.accelerator.pad_across_processes(predictions, dim=1, pad_index=-100)
-            predictions = self.gather_function((predictions))
-            
-            
-            labels = labels[: , 1:]
-            labels = self.accelerator.pad_across_processes(labels, dim=1, pad_index=-100)
-            labels = self.gather_function((labels))
+            predictions = self.accelerator.pad_across_processes(
+                predictions, dim=1, pad_index=-100
+            )
+            predictions = self.accelerator.gather_for_metrics((predictions))
+
+            labels = labels[:, 1:]
+            labels = self.accelerator.pad_across_processes(
+                labels, dim=1, pad_index=-100
+            )
+            labels = self.accelerator.gather_for_metrics((labels))
 
             prediction_list, label_list = (
                 predictions.flatten().tolist(),
@@ -521,9 +495,11 @@ def train():
             self.log(prefix_metrics)
             return (loss, outputs) if return_outputs else loss
 
-    
+    # if set log_train_metrics=true will compute the metrics after each training step
+    trainer_class = CustomizedTrainer if training_args.log_train_metrics else Trainer
+
     if training_args.do_eval:
-        trainer = CustomizedTrainer(
+        trainer = trainer_class(
             model=model,
             tokenizer=tokenizer,
             args=training_args,
@@ -534,7 +510,7 @@ def train():
             data_collator=collate_examples,
         )
     else:
-        trainer = CustomizedTrainer(
+        trainer = trainer_class(
             model=model,
             tokenizer=tokenizer,
             args=training_args,
