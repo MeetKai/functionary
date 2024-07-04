@@ -83,7 +83,7 @@ class ModelArguments:
 @dataclass
 class DataArguments:
     pad_img_path: str = field(
-        default=None, metadata={"help": "pad image in case the data is text-only"}
+        default="functionary/train/pad_img.png", metadata={"help": "pad image in case the data is text-only"}
     )
     train_data_path: str = field(
         default=None, metadata={"help": "Path to the training data."}
