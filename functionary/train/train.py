@@ -11,7 +11,6 @@ import torch
 import torch.distributed
 import transformers
 from aenum import extend_enum
-
 from torch.optim.lr_scheduler import LambdaLR
 
 extend_enum(
@@ -407,8 +406,9 @@ def train():
         loss = sum(loss) / len(loss)
         perplexity = math.exp(loss)
 
-        metrics = {"accuracy": acc_count / total_num, "perplexity": perplexity}
         metrics = {
+            "accuracy": acc_count / total_num, 
+            "perplexity": perplexity,
             "accuracy_first_token": first_token_correct_count / first_token_total_count,
             "total_number_first_token": first_token_total_count,
         }
