@@ -31,7 +31,7 @@ class Tool(BaseModel):
 class ChatMessage(BaseModel):
     role: Optional[str] = None
     tool_call_id: Optional[str] = None
-    content: Optional[str] = None
+    content: Union[None, str, List[Dict]] = None
     name: Optional[str] = None
     function_call: Optional[FunctionCall] = None
     tool_calls: Optional[List[ToolCall]] = None
@@ -72,6 +72,7 @@ class ChatInput(BaseModel):
     tools: Optional[List[Tool]] = None
     temperature: float = 0.9
     stream: bool = False
+    max_new_tokens: int = 1024
 
 
 class Choice(BaseModel):

@@ -18,19 +18,7 @@ from vllm.sampling_params import LogitsProcessor
 from functionary.openai_types import ChatMessage, Function, FunctionCall, Tool
 from functionary.prompt_template import get_prompt_template_from_tokenizer
 from functionary.prompt_template.prompt_utils import prepare_messages_for_inference
-
-
-class StopWordsCriteria(StoppingCriteria):
-    def __init__(self, stops=[]):
-        StoppingCriteria.__init__(self)
-        self.stops = stops
-
-    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor):
-        inputs = input_ids[0].tolist()
-        for stop in self.stops:
-            if len(inputs) >= len(stop) and inputs[-len(stop) :] == stop:
-                return True
-        return False
+from functionary.inference_utils import StopWordsCriteria
 
 
 def tokenize(message: ChatMessage, tokenizer: LlamaTokenizer, device="cuda:0"):

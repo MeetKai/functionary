@@ -15,11 +15,11 @@ import transformers
 from aenum import extend_enum
 
 from torch.optim.lr_scheduler import LambdaLR
-from functionary.train.models.modeling_llava import (
+from functionary.train_vision.models.modeling_llava import (
     FixedLlavaLlamaForCausalLM as LlavaLlamaForCausalLM,
 )
 from llava.model.language_model.llava_llama import LlavaConfig
-from functionary.train.llava_dataset import LazyVisionDataset
+from functionary.train_vision.llava_dataset import LazyVisionDataset
 from PIL import Image
 from llava.mm_utils import process_images
 
@@ -65,7 +65,7 @@ from transformers import AutoConfig, AutoTokenizer, Trainer
 from typing import Union
 
 from functionary.prompt_template import PromptTemplate, get_prompt_template_by_version
-from functionary.train.llava_dataset import LazyVisionDataset
+from functionary.train_vision.llava_dataset import LazyVisionDataset
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
@@ -83,7 +83,7 @@ class ModelArguments:
 @dataclass
 class DataArguments:
     pad_img_path: str = field(
-        default="functionary/train/pad_img.png", metadata={"help": "pad image in case the data is text-only"}
+        default="functionary/train_vision/pad_img.png", metadata={"help": "pad image in case the data is text-only"}
     )
     train_data_path: str = field(
         default=None, metadata={"help": "Path to the training data."}

@@ -1,7 +1,7 @@
-from functionary.train.models.modeling_llava import (
+from functionary.train_vision.models.modeling_llava import (
     FixedLlavaLlamaForCausalLM as LlavaLlamaForCausalLM,
 )
-from functionary.train.llava_dataset import LazyVisionDataset
+from functionary.train_vision.llava_dataset import LazyVisionDataset
 from functionary.prompt_template import get_prompt_template_by_version
 from transformers import AutoTokenizer
 import random
