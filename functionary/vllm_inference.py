@@ -6,6 +6,7 @@ from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Un
 from fastapi import BackgroundTasks, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from vllm.entrypoints.openai.protocol import ErrorResponse
+from vllm.inputs import TokensPrompt
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
 from vllm.utils import random_uuid
@@ -105,11 +106,26 @@ async def check_length(request, input_ids, model_config):
     else:
         context_len = 4096
 
+    # Scale the context_len if rope scaling is provided
+    # Currently only supports ["linear", "dynamic", "yarn"], not yet for "su"/"longrope"
+    if (
+        hasattr(model_config.hf_config, "rope_scaling")
+        and model_config.hf_config.rope_scaling is not None
+    ):
+        # From vLLM's code, it seems like only YaRN requires
+        # "original_max_position_embeddings" in rope_scaling dict
+        # https://github.com/vllm-project/vllm/blob/main/vllm/config.py#L1458-L1460
+        if model_config.hf_config.rope_scaling["type"] == "yarn":
+            context_len = model_config.hf_config.rope_scaling[
+                "original_max_position_embeddings"
+            ]
+        context_len *= model_config.hf_config.rope_scaling["factor"]
+
     token_num = len(input_ids)
 
     if token_num + request.max_tokens > context_len:
         return create_error_response(
-            status=HTTPStatus.BAD_REQUEST,
+            status_code=HTTPStatus.BAD_REQUEST,
             message=(
                 f"This model's maximum context length is {context_len} tokens. "
                 f"However, you requested {request.max_tokens + token_num} tokens "
@@ -190,20 +206,18 @@ async def process_chat_completion(
 
     if enable_grammar_sampling:
         result_generator = engine.generate(
-            prompt=None,
+            inputs=TokensPrompt(prompt_token_ids=prompt_token_ids),
             sampling_params=sampling_params,
             request_id=request_id,
-            prompt_token_ids=prompt_token_ids,
             tools_or_functions=tools_or_functions,
             prompt_template_cls=prompt_template,
             tool_choice=tool_func_choice,
         )
     else:
         result_generator = engine.generate(
-            prompt=None,
+            inputs=TokensPrompt(prompt_token_ids=prompt_token_ids),
             sampling_params=sampling_params,
             request_id=request_id,
-            prompt_token_ids=prompt_token_ids,
         )
 
     async def abort_request() -> None:
