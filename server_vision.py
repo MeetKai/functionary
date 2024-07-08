@@ -8,22 +8,27 @@ import uvicorn
 from fastapi import FastAPI
 
 from transformers import AutoTokenizer
-from functionary.train_vision.models.modeling_llava import FixedLlavaLlamaForCausalLM as LlavaLlamaForCausalLM
+
+# from functionary.train_vision.models.modeling_llava import FixedLlavaLlamaForCausalLM as LlavaLlamaForCausalLM
+from llava.model.language_model.llava_llama import LlavaLlamaForCausalLM
 from functionary.inference_vision import generate_message
-from functionary.openai_types import (ChatCompletion, ChatCompletionChunk,
-                                      ChatInput, Choice, StreamChoice)
+from functionary.openai_types import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionRequest,
+    Choice,
+    StreamChoice,
+)
 
 app = FastAPI(title="Functionary API")
 
 
 @app.post("/v1/chat/completions")
-async def chat_endpoint(chat_input: ChatInput):
+async def chat_endpoint(chat_input: ChatCompletionRequest):
     request_id = str(uuid.uuid4())
     if not chat_input.stream:
         response_message = generate_message(
-            model=model,  # type: ignore
-            tokenizer=tokenizer,  
-            request=chat_input      
+            model=model, tokenizer=tokenizer, request=chat_input  # type: ignore
         )
         finish_reason = "stop"
         if response_message.function_call is not None:
@@ -57,8 +62,9 @@ if __name__ == "__main__":
         args.model,
         torch_dtype=torch.bfloat16 if args.device == "cpu" else torch.float16,
         use_flash_attention_2=True,
-        device_map=args.device
+        device_map=args.device,
     )
+    model.eval()
     tokenizer = AutoTokenizer.from_pretrained(args.model, legacy=True)
     print(tokenizer)
 

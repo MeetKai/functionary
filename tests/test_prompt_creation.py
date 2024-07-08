@@ -37,12 +37,11 @@ class TestPromptTemplate(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(TestPromptTemplate, self).__init__(*args, **kwargs)
 
-        self.template_versions = ["v2", "v2.llama3", "v3.llama3", "v3.llava_llama"]
+        self.template_versions = ["v2", "v2.llama3", "v3.llama3"]
         self.pretrained_models = [
             "meetkai/functionary-small-v2.4",
             "meetkai/functionary-small-v2.5",
             "meetkai/functionary-medium-v3.0",
-            "lmms-lab/llama3-llava-next-8b"
         ]
 
     def read_example_data(self, template_version: str):

@@ -13,7 +13,7 @@ PYTHON_RUN_SYS_MSG = "When you send a message containing Python code to python, 
 
 
 class PromptTemplate:
-    _instance = None
+    _instances = {}
 
     @abstractmethod
     def get_start_of_function_call_token(self) -> str:
@@ -287,7 +287,6 @@ class PromptTemplate:
 
     @classmethod
     def get_prompt_template(cls):
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
-        return cls._instance
+        if cls._instances.get(cls, None) is None:
+            cls._instances[cls] = cls()
+        return cls._instances[cls]
