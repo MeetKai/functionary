@@ -13,6 +13,7 @@ PYTHON_RUN_SYS_MSG = "When you send a message containing Python code to python, 
 
 
 class PromptTemplate:
+    # Mapping from class --> instance to create singleton instance
     _instances = {}
 
     @abstractmethod
