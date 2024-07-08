@@ -68,7 +68,7 @@ def get_prompt_template_from_tokenizer(tokenizer: Any) -> PromptTemplate:
 
     token_ids = tokenizer.encode(p3.function_separator, add_special_tokens=False)
     if len(token_ids) == 1 and token_ids[0] == 128254:  # based on llama3
-        if "img_path" in tokenizer.chat_template and ">>>" in tokenizer.chat_template:
+        if "image_url" in tokenizer.chat_template and ">>>" in tokenizer.chat_template:
             return p5
         elif p3.function_separator in tokenizer.chat_template:
             return p3

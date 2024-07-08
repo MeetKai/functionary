@@ -61,12 +61,20 @@ class LlavaLlama(Llama3TemplateV3):
 
     def get_chat_template_jinja(self) -> str:
         chat_template = """{% for message in messages %}
-        {% if message['role'] == 'user' or message['role'] == 'system' %}
-            {% if 'metainfo' in message and 'img_path' in message['metainfo'] %}
-                {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n<|reserved_special_token_250|>\n' + message['content'] + '<|eot_id|>' }}<br>
+        {% if message['role'] == 'user'%}
+            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' }}<br>
+            {% if message['content'] is iterable and (message['content'] is not string and message['content'] is not mapping) %}
+                {% for content_item in message['content'] %}
+                    {% if content_item['type'] == 'image_url' %}
+                        {{ '<|reserved_special_token_250|>' }}<br>
+                    {% else %}
+                        {{ content_item['text'] }}<br>
+                    {% endif %}
+                {% endfor %}
             {% else %}
                 {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}<br>
-        {% elif message['role'] == 'tool' %}
+            {% endif %}
+        {% elif message['role'] == 'tool' or message['role'] == 'system' %}
             {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}<br>
         {% else %}
             {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'}}<br>
