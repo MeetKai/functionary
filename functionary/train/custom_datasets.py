@@ -2,7 +2,9 @@ import datetime
 import json
 import os
 import pickle
+import string
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
@@ -13,8 +15,6 @@ from functionary.prompt_template import (
     PromptTemplate,
     get_prompt_template_from_tokenizer,
 )
-import string
-from pathlib import Path
 
 
 def get_batch_indices(size: int, batch_size: int) -> List[Tuple[int, int]]:

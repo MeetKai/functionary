@@ -13,6 +13,9 @@ import transformers
 from aenum import extend_enum
 from torch.optim.lr_scheduler import LambdaLR
 
+from functionary.train.yarn.monkey_patch_configuration_llama import LlamaConfig
+from functionary.train.yarn.monkey_patch_yarn import LlamaForCausalLM
+
 extend_enum(
     transformers.trainer_utils.SchedulerType,
     "CUSTOMIZED_SCHEDULER",
@@ -153,6 +156,7 @@ def initialize_tokenizer(
         cache_dir=cache_dir,
         model_max_length=model_max_length,
         padding_side=padding_side,
+        truncation_side="left",
         legacy=True,
     )
 
@@ -245,14 +249,18 @@ def train():
     model_args, data_args, training_args = argument_parser.parse_args_into_dataclasses()
 
     # Set RoPE scaling factor
-    config = transformers.AutoConfig.from_pretrained(
+    # config = transformers.AutoConfig.from_pretrained(
+    #     model_args.model_name_or_path,
+    #     cache_dir=training_args.cache_dir,
+    # )
+    config = LlamaConfig.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
     )
     orig_ctx_len = getattr(config, "max_position_embeddings", None)
     if orig_ctx_len and training_args.model_max_length > orig_ctx_len:
         scaling_factor = float(math.ceil(training_args.model_max_length / orig_ctx_len))
-        config.rope_scaling = {"type": "linear", "factor": scaling_factor}
+        config.rope_scaling = {"type": "yarn", "factor": scaling_factor}
         print_rank0("Rope scaling enabled")
     config.use_cache = False
     config.sliding_window = training_args.model_max_length
@@ -270,7 +278,14 @@ def train():
         else (torch.bfloat16 if training_args.bf16 else torch.float32)
     )
 
-    model = transformers.AutoModelForCausalLM.from_pretrained(
+    # model = transformers.AutoModelForCausalLM.from_pretrained(
+    #     model_args.model_name_or_path,
+    #     torch_dtype=compute_dtype,
+    #     config=config,
+    #     cache_dir=training_args.cache_dir,
+    #     use_flash_attention_2=True,
+    # )
+    model = LlamaForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         torch_dtype=compute_dtype,
         config=config,
@@ -407,7 +422,7 @@ def train():
         perplexity = math.exp(loss)
 
         metrics = {
-            "accuracy": acc_count / total_num, 
+            "accuracy": acc_count / total_num,
             "perplexity": perplexity,
             "accuracy_first_token": first_token_correct_count / first_token_total_count,
             "total_number_first_token": first_token_total_count,
