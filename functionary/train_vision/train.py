@@ -23,6 +23,7 @@ from functionary.train_vision.llava_dataset import LazyVisionDataset
 from functionary.train_vision.models.modeling_llava import (
     FixedLlavaLlamaForCausalLM as LlavaLlamaForCausalLM,
 )
+from functionary.train import train_utils
 
 # set this so we can reproduce
 random.seed(100)
@@ -418,6 +419,30 @@ def train():
                 acc = dic[token_id]["acc"] / total_num
             metrics[f"accuracy_{token}"] = acc
             metrics[f"accuracy_total_num_{token}"] = total_num
+
+        # Add metrics for accuracy of first tokens in arguments
+        # only implemented for v3
+        if "v3" in prompt_template.version:
+            first_arguments_token_correct = 0
+            first_arguments_token_total = 0
+
+            unmasked_chunk_pairs = train_utils.extract_unmasked_chunks(
+                label_list, prediction_list
+            )
+            for label_chunk, pred_chunk in unmasked_chunk_pairs:
+                indices = train_utils.extract_indices_of_first_tokens_of_param_values_in_assistant_response(
+                    tokenizer, label_chunk
+                )
+                for index in indices:
+                    if label_chunk[index] == pred_chunk[index]:
+                        first_arguments_token_correct += 1
+                    first_arguments_token_total += 1
+            metrics["accuracy_first_token_arguments"] = (
+                first_arguments_token_correct / first_arguments_token_total
+            )
+            metrics["accuracy_first_token_arguments_total"] = (
+                first_arguments_token_total
+            )
 
         return metrics
 
