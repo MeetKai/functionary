@@ -11,7 +11,7 @@ from transformers import AutoTokenizer
 
 # from functionary.train_vision.models.modeling_llava import FixedLlavaLlamaForCausalLM as LlavaLlamaForCausalLM
 from llava.model.language_model.llava_llama import LlavaLlamaForCausalLM
-from functionary.inference_vision import generate_message
+from functionary.inference_vision import generate
 from functionary.openai_types import (
     ChatCompletion,
     ChatCompletionChunk,
@@ -27,7 +27,7 @@ app = FastAPI(title="Functionary API")
 async def chat_endpoint(chat_input: ChatCompletionRequest):
     request_id = str(uuid.uuid4())
     if not chat_input.stream:
-        response_message = generate_message(
+        response_message = generate(
             model=model, tokenizer=tokenizer, request=chat_input  # type: ignore
         )
         finish_reason = "stop"

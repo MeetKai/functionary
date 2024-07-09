@@ -208,9 +208,7 @@ def reorder_tool_messages_by_tool_call_ids(messages: List[Dict]) -> List[Dict]:
     return result
 
 
-def get_content_str_from_multi_modal_input(
-    content: List[Dict], image_token: str
-) -> str:
+def stringify_content_with_images(content: List[Dict], image_token: str) -> str:
     result = ""
     for item in content:
         if item["type"] == "text":
@@ -220,25 +218,25 @@ def get_content_str_from_multi_modal_input(
     return result
 
 
-def get_images_from_messages(messages: List[Dict]) -> List:
+def extract_images_from_messages(messages: List[Dict]) -> List:
     result = []
     for message in messages:
         if message["role"] == "user":
             if type(message["content"]) is list:
-                result.extend(get_images_from_content(message["content"]))
+                result.extend(extract_images_from_content(message["content"]))
     return result
 
 
-def get_images_from_content(content: List[Dict]) -> List:
+def extract_images_from_content(content: List[Dict]) -> List:
     result = []
     for item in content:
         if item["type"] == "image_url":
-            img = read_image_from_image_url(item["image_url"]["url"])
+            img = download_image_from_image_url(item["image_url"]["url"])
             result.append(img)
     return result
 
 
-def read_image_from_image_url(image_url: str):
+def download_image_from_image_url(image_url: str):
     base64_prefix = "data:image/jpg;base64,"
     file_prefix = "file://"
     url_prefix = "url://"

@@ -14,50 +14,13 @@ class LlavaLlama(Llama3TemplateV3):
         role = message["role"]
         content = message.get("content", None)
 
-        # comment this as currently the Llama-70b was trained using this
-        # if role == "tool":
-        #     tool_name = message["name"]
-        #     content = f"name={tool_name}\n{content}"
-
-        prompt_template = (
-            f"{self.start_header}{role}{self.end_header}\n\n"
-            + "{text}"
-            + self.eos_token
-        )
-
-        if role == "user":  # Check if contain uploaded image or not
-            if type(content) is list:
-                content = prompt_utils.get_content_str_from_multi_modal_input(
-                    message["content"], self.image_token
-                )
-
-        if role in ["user", "system", "tool"]:
-            return prompt_template.format(text=content)
-
-        assert role == "assistant", f"role must be assistant, but: {role}"
-        tool_calls = message.get("tool_calls", [])
-        if tool_calls is None:
-            tool_calls = []
-
-        if content is None and len(tool_calls) == 0:  # inference time
-            return f"{self.start_header}{role}{self.end_header}\n\n{self.function_separator}"
-
-        if content is not None:  # text-only
-            tool_calls = [
-                {"function": {"name": "all", "arguments": content}}
-            ] + tool_calls
-
-        tool_call_prompts = []
-        for tool_call in tool_calls:
-            arguments = tool_call["function"]["arguments"]
-            tool_name = tool_call["function"]["name"]
-            tool_prompt = f"{tool_name}\n{arguments}"
-            tool_call_prompts.append(tool_prompt)
-
-        total_content = self.function_separator + self.function_separator.join(
-            tool_call_prompts
-        )
-        return prompt_template.format(text=total_content)
+        # handle the case when user uploads images (content is a list)
+        if role == "user" and type(content) is list:
+            text_content = prompt_utils.stringify_content_with_images(
+                message["content"], self.image_token
+            )
+            return f"{self.start_header}{role}{self.end_header}\n\n{text_content}{self.eos_token}"
+        return super().convert_message_to_prompt(message)
 
     def get_chat_template_jinja(self) -> str:
         chat_template = """{% for message in messages %}

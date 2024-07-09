@@ -72,7 +72,7 @@ class ChatInput(BaseModel):
     tools: Optional[List[Tool]] = None
     temperature: float = 0.9
     stream: bool = False
-    max_new_tokens: int = 1024
+    max_tokens: int = 1024
 
 
 class Choice(BaseModel):

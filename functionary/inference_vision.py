@@ -8,7 +8,7 @@ from functionary.openai_types import (
 from functionary.prompt_template import get_prompt_template_from_tokenizer
 from functionary.prompt_template.prompt_utils import (
     prepare_messages_for_inference,
-    get_images_from_messages,
+    extract_images_from_messages,
 )
 from typing import Any, List, Optional
 from llava.mm_utils import process_images
@@ -16,7 +16,7 @@ import torch
 from functionary.inference_utils import analyze_tools_and_tool_choice
 
 
-def generate_message(
+def generate(
     *, model: Any, tokenizer: Any, request: ChatCompletionRequest
 ) -> ChatMessage:
     tools_or_functions, tool_func_choice = analyze_tools_and_tool_choice(request)
@@ -37,7 +37,9 @@ def generate_message(
     )[0]
     prompt_token_ids[prompt_token_ids == img_token_id] = -200
 
-    images = get_images_from_messages([message.dict() for message in request.messages])
+    images = extract_images_from_messages(
+        [message.dict() for message in request.messages]
+    )
     image_tensor, image_sizes = None, None
     image_processor = model.get_vision_tower().image_processor
     if images:

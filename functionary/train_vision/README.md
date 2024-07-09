@@ -1,6 +1,6 @@
 # Install Dependencies
 ```shell
-pip install accelerate==0.27.2 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 deepspeed==0.14.2 typer==0.9.0 tensorboard==2.15.1 wheel==0.42.0 aenum==3.1.15 transformers==4.42.3 flash-attn git+https://github.com/LLaVA-VL/LLaVA-NeXT.git
+pip install accelerate==0.27.2 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 deepspeed==0.14.2 typer==0.9.0 tensorboard==2.15.1 wheel==0.42.0 aenum==3.1.15 transformers==4.42.3 flash-attn==v2.5.9.post1 git+https://github.com/LLaVA-VL/LLaVA-NeXT.git
 ```
 
 Example script:
@@ -24,11 +24,11 @@ deepspeed functionary/train_vision/train.py \
     --save_total_limit 3 \
     --logging_steps 1 \
     --learning_rate 1e-5 \
-    --weight_decay 0. \
+    --weight_decay 0.01 \
     --warmup_ratio 0.03 \
     --lr_scheduler_type "cosine" \
     --tf32 True \
-    --model_max_length 4096 \
+    --model_max_length 8192 \
     --gradient_checkpointing True \
     --packing False\
     --optim "paged_adamw_32bit" \

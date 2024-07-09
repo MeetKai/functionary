@@ -14,7 +14,16 @@ from typing import Optional, List, Union, Tuple
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 
+# This is copied and modified from: https://github.com/LLaVA-VL/LLaVA-NeXT/blob/inference/llava/model/language_model/llava_llama.py
 class FixedLlavaLlamaForCausalLM(LlavaLlamaForCausalLM):
+    """This class modify 2 things compared with original implementation:
+    *) overwrite ``prepare_inputs_labels_for_multimodal``: Fix the bug from the original implementation to also support text-only data points (no uploaded images), also padding to the max-length
+        to make sure that all data points would be padded to max-length instead of dynamic length
+    *) Overwrite ``forward``: change the logits to also include information about the true labels for computing the metrics during training
+
+    Args:
+        LlavaLlamaForCausalLM (_type_): _description_
+    """
 
     def prepare_inputs_labels_for_multimodal(
         self,

@@ -1,13 +1,12 @@
-from torch.utils.data import Dataset, Sampler
-import transformers
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 import torch
 from PIL import Image
-import random
-random.seed(100)
+from torch.utils.data import Dataset, Sampler
 
-from functionary.train.custom_datasets import prepare_training_inputs
+import transformers
 from functionary.prompt_template import prompt_utils
+from functionary.train.custom_datasets import prepare_training_inputs
 
 IMAGE_TOKEN_INDEX = -200
 
@@ -82,7 +81,7 @@ class LazyVisionDataset(Dataset):
             keep_assistant_prefix=False,
         )
         example = self.raw_data[i]
-        images = prompt_utils.get_images_from_messages(example["messages"])
+        images = prompt_utils.extract_images_from_messages(example["messages"])
 
         if (
             len(images) == 0 and self.pad_img

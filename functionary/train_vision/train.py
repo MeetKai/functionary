@@ -5,23 +5,27 @@ import pathlib
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
+import random
 from dataclasses import dataclass, field
 from typing import List, Optional
 
 import numpy as np
 import torch
 import torch.distributed
-import transformers
 from aenum import extend_enum
-
+from llava.mm_utils import process_images
+from llava.model.language_model.llava_llama import LlavaConfig
+from PIL import Image
 from torch.optim.lr_scheduler import LambdaLR
+
+import transformers
+from functionary.train_vision.llava_dataset import LazyVisionDataset
 from functionary.train_vision.models.modeling_llava import (
     FixedLlavaLlamaForCausalLM as LlavaLlamaForCausalLM,
 )
-from llava.model.language_model.llava_llama import LlavaConfig
-from functionary.train_vision.llava_dataset import LazyVisionDataset
-from PIL import Image
-from llava.mm_utils import process_images
+
+# set this so we can reproduce
+random.seed(100)
 
 
 extend_enum(
@@ -58,14 +62,14 @@ transformers.optimization.TYPE_TO_SCHEDULER_FUNCTION["customized_scheduler"] = (
     get_scheduler
 )
 
+from typing import Union
+
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
-from transformers import AutoConfig, AutoTokenizer, Trainer
-
-from typing import Union
 
 from functionary.prompt_template import PromptTemplate, get_prompt_template_by_version
 from functionary.train_vision.llava_dataset import LazyVisionDataset
+from transformers import AutoConfig, AutoTokenizer, Trainer
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
@@ -120,7 +124,7 @@ class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
     optim: str = field(default="adamw_8bit")
     model_max_length: int = field(
-        default=4096,
+        default=8192,
         metadata={
             "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
         },
@@ -183,7 +187,7 @@ def initialize_tokenizer(
     tokenizer.chat_template = prompt_template.get_chat_template_jinja()
     print("tokenizer: ", tokenizer)
 
-    # Resize embedding
+    # Resize embedding if in the prompt template we add new tokens
     model.resize_token_embeddings(len(tokenizer))
     if num_new_tokens > 0:
         input_embeddings = model.get_input_embeddings().weight.data
@@ -319,12 +323,6 @@ def train():
         if torch.distributed.get_rank() == 0:
             print(f"Eval Data Loaded: #{len(eval_dataset)}")
 
-    print_rank0("***** HERE ARE SOME EXAMPLES FROM TRAINING ****")
-    # print_some_examples(train_dataset, tokenizer)
-
-    print_rank0("***** HERE ARE SOME EXAMPLES FROM EVALUATION ***")
-    # print_some_examples(eval_dataset, tokenizer)
-
     def preprocess_logits_for_metrics(logits, labels):
         """Preprocesses the logits during evaluation by computing the greedy token predictions for
         accuracy calculation and loss values for perplexity calculation. Both pred_ids and loss are
@@ -388,16 +386,29 @@ def train():
 
         metrics = {"accuracy": acc_count / total_num}
         metrics = {
-            "accuracy_first_token": first_token_correct_count / first_token_total_count,
-            "total_number_first_token": first_token_total_count,
+            "accuracy_recipient_token": first_token_correct_count
+            / first_token_total_count,
+            "total_number_recipient_token": first_token_total_count,
         }
 
         for token_id, stat in sorted(
             first_token_label_dic.items(), key=lambda x: -x[1]["total"]
         )[:5]:
             token = tokenizer.decode([token_id])
-            metrics[f"accuracy_first_token_{token}"] = stat["correct"] / stat["total"]
-            metrics[f"accuracy_first_token_{token}_total"] = stat["total"]
+            metrics[f"accuracy_recipient_token_{token}"] = (
+                stat["correct"] / stat["total"]
+            )
+            metrics[f"accuracy_recipient_token_{token}_total"] = stat["total"]
+
+        # add accuracy for token: "all" if it is out of top-5
+        if f"accuracy_recipient_token_all" not in metrics:
+            all_token_id = tokenizer.encode("all", add_special_tokens=False)[0]
+            if all_token_id in first_token_label_dic:
+                stat = first_token_label_dic[all_token_id]
+                metrics[f"accuracy_recipient_token_all"] = (
+                    stat["correct"] / stat["total"]
+                )
+                metrics[f"accuracy_recipient_token_all_total"] = stat["total"]
 
         for token_id in dic:
             token = id2token[token_id]
@@ -457,12 +468,19 @@ def train():
         result["image_sizes"] = image_sizes
         return result
 
-    class CustomizedTrainer(Trainer):
+    class FunctionAccuracyTrackingTrainer(Trainer):
+        """This trainer will also log the metrics for each training step
+
+        Args:
+            Trainer (_type_): _description_
+        """
+
         def compute_loss(self, model, inputs, return_outputs=False):
             """
             How the loss is computed by Trainer. By default, all models return the loss in the first element.
 
             Subclass and override for custom behavior.
+            Besides return the loss, this function also compute the metrics for each training step
             """
             outputs = model(**inputs)
             loss = outputs.loss
@@ -497,7 +515,9 @@ def train():
             return (loss, outputs) if return_outputs else loss
 
     # if set log_train_metrics=true will compute the metrics after each training step
-    trainer_class = CustomizedTrainer if training_args.log_train_metrics else Trainer
+    trainer_class = (
+        FunctionAccuracyTrackingTrainer if training_args.log_train_metrics else Trainer
+    )
 
     if training_args.do_eval:
         trainer = trainer_class(
