@@ -90,7 +90,10 @@
         },
         {
             "role": "user",
-            "content": "what's the weather like in Hanoi?"
+            "content": "what's the weather like in Hanoi?",
+            "metainfo": {
+                "img_path": "IMG_PATH"
+            }
         },
         {
             "role": "assistant",

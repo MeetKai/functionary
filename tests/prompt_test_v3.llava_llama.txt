@@ -1,0 +1,78 @@
+<|start_header_id|>system<|end_header_id|>
+
+You are capable of executing available function(s) if required.
+Only execute function(s) when absolutely necessary.
+Ask for the required input to:recipient==all
+Use JSON for function arguments.
+Respond in this format:
+>>>${recipient}
+${content}
+Available functions:
+// Supported function definitions that should be called when necessary.
+namespace functions {
+
+// Get the price of a particular car model
+type get_car_price = (_: {
+// The name of the car model.
+car_name: string,
+}) => any;
+
+// get the weather of a location
+type get_weather = (_: {
+// where to get weather.
+location: string,
+}) => any;
+
+} // namespace functions<|eot_id|><|start_header_id|>system<|end_header_id|>
+
+When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files.<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+who is the CEO of Meetkai<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>>>all
+James Kaplan is the Co-Founder and CEO of MeetKai Inc.<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+is the car Song more expensive than car Tang?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>>>all
+I will get the price of 2 cars and compare>>>get_car_price
+{"car_name": "Song"}>>>get_car_price
+{"car_name": "Tang"}<|eot_id|><|start_header_id|>tool<|end_header_id|>
+
+{"price": {"price": "$25000"}}<|eot_id|><|start_header_id|>tool<|end_header_id|>
+
+{"price": {"price": "$20000"}}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>>>all
+No, the car Tang is less expensive than the car Song. The car Song is priced at $25,000, while the car Tang is priced at $20,000.<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+<|reserved_special_token_250|>
+what's the weather like in Hanoi?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>>>get_weather
+{"location": "Hanoi"}<|eot_id|><|start_header_id|>tool<|end_header_id|>
+
+{"result": {"temperature": 10}}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>>>all
+The temperature in Hanoi is: 10 degree Celcious<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+Given the list: 0,1,2,3,4,5 remove the number in the list that is close to 3.6 the most<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>>>all
+I will use code interpreter to handle this>>>python
+l=[0,1,2,3,4,5]
+l.remove(3.6)<|eot_id|><|start_header_id|>tool<|end_header_id|>
+
+ValueError: list.remove(x): x not in list<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>>>all
+I will fix the code>>>python
+l=[0,1,2,3,4,5]
+l.remove(4)
+l<|eot_id|><|start_header_id|>tool<|end_header_id|>
+
+[0,1,2,3,5,]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>>>all
+The final list is: 0,1,2,3,5<|eot_id|>

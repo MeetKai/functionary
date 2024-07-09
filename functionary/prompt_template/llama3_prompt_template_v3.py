@@ -323,6 +323,7 @@ class Llama3TemplateV3(PromptTemplate):
                 {"function": {"name": "all", "arguments": content}}
             ] + tool_calls
 
+        # list of text representing function calls: {function_name}\n{arguments}
         tool_call_prompts = []
         for tool_call in tool_calls:
             arguments = tool_call["function"]["arguments"]
@@ -330,6 +331,7 @@ class Llama3TemplateV3(PromptTemplate):
             tool_prompt = f"{tool_name}\n{arguments}"
             tool_call_prompts.append(tool_prompt)
 
+        # join all function calls
         total_content = self.function_separator + self.function_separator.join(
             tool_call_prompts
         )

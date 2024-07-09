@@ -68,7 +68,7 @@ class TestPromptTemplate(unittest.TestCase):
             created_prompt = prompt_template.get_prompt_from_messages(
                 test_case["messages"], tools_or_functions
             )
-
+            print(created_prompt)
             self.assertEqual(
                 final_prompt.strip(),
                 created_prompt.strip(),
@@ -112,7 +112,7 @@ class TestPromptTemplate(unittest.TestCase):
             padding="longest",
             max_length=1024,
             return_tensor=False,
-            verbose=verbose,
+            verbose=True,
             keep_assistant_prefix=keep_assistant_prefix,
         )
         input_ids = inputs["inputs"]["input_ids"]
