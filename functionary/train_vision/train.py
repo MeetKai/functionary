@@ -23,7 +23,10 @@ from functionary.train_vision.llava_dataset import LazyVisionDataset
 from functionary.train_vision.models.modeling_llava import (
     FixedLlavaLlamaForCausalLM as LlavaLlamaForCausalLM,
 )
-from functionary.train import train_utils
+from functionary.train.metrics import (
+    extract_indices_of_first_tokens_of_param_values_in_assistant_response,
+    extract_unmasked_chunks,
+)
 
 # set this so we can reproduce
 random.seed(100)
@@ -205,29 +208,6 @@ def initialize_tokenizer(
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
 
     return tokenizer
-
-
-def extract_unmasked_chunks(labels: List[int], masked_value) -> List[List[int]]:
-    """This function is used to extract unmasked chunks of integer
-    For example, labels = [-100, -100, 1, 2, 3, -100, -100, 4, 5] --> chunks = [[1,2,3], [4,5]]
-    Args:
-        labels (List[int]): list of integer containing token_id and -100
-
-    Returns:
-        List[List[int]]: list of chunk, for example: [[1,2,3], [4,5]]
-    """
-    chunks = []
-    chunk = []
-    for token_id in labels:
-        if token_id != masked_value:
-            chunk.append(token_id)
-        else:
-            if len(chunk) > 0:
-                chunks.append(chunk)
-                chunk = []
-    if len(chunk) > 0:
-        chunks.append(chunk)
-    return chunks
 
 
 def train():
@@ -423,13 +403,11 @@ def train():
             first_arguments_token_correct = 0
             first_arguments_token_total = 0
 
-            unmasked_chunk_pairs = train_utils.extract_unmasked_chunks(
-                label_list, prediction_list
-            )
+            unmasked_chunk_pairs = extract_unmasked_chunks(label_list, prediction_list)
             for label_chunk, pred_chunk in unmasked_chunk_pairs:
                 # label_chunk_text = tokenizer.decode(label_chunk)
                 # print_rank0(f"handle label_chunk:{label_chunk_text}")
-                indices = train_utils.extract_indices_of_first_tokens_of_param_values_in_assistant_response(
+                indices = extract_indices_of_first_tokens_of_param_values_in_assistant_response(
                     tokenizer, label_chunk
                 )
                 # if len(indices) > 0:

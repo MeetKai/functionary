@@ -73,6 +73,8 @@ def extract_indices_of_first_tokens_of_param_values(
             start, end = entry.value_start.position, entry.value_end.position
             if argument_text[start] == '"':
                 start += 1
+            if verbose:
+                print(f"find first token of param: {start}")
             token_index = find_first_token_value(start, token_indices)
             if token_index:
                 result.append(token_index)
