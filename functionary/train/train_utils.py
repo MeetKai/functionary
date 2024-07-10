@@ -18,10 +18,21 @@ def find_first_token_value(index: int, token_indices: List) -> int:
     return None
 
 
-def find_index_of_element_in_list(element: Any, alist: List) -> int:
-    if element not in alist:
-        return -1
-    return alist.index(element)
+def find_index_of_token_contain_breakline(token_ids, tokenizer):
+    """Find index of token that contains breakline, token is not always: '\n' sometimes: '__\n'
+
+    Args:
+        token_ids (_type_): _description_
+        tokenizer (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    for i in range(len(token_ids)):
+        tok = tokenizer.decode([token_ids[i]])
+        if "\n" in tok:
+            return i
+    return None
 
 
 def extract_indices_of_first_tokens_of_param_values(
@@ -31,6 +42,8 @@ def extract_indices_of_first_tokens_of_param_values(
     token_strings = [tokenizer.decode(token_id) for token_id in arguments_token_ids]
     token_indices = []
     pos = 0
+
+    # print(f"argument_text: {argument_text}")
 
     for token_index, token_str in enumerate(token_strings):
         start = argument_text.find(token_str, pos)
@@ -45,7 +58,12 @@ def extract_indices_of_first_tokens_of_param_values(
     if verbose:
         print("token_indices: ", token_indices)
     # locate the key in the dictionary
-    field_dic = calculate(argument_text)
+    try:
+        # this can run into error if argument_text is not a valid json because of being truncated
+        field_dic = calculate(argument_text)
+    except Exception as e:
+        return []
+
     result = []
     for field in field_dic:
         if len(field) > 0:
@@ -81,6 +99,7 @@ def extract_indices_of_first_tokens_of_param_values_in_assistant_response(
     brk_line_token_id = tokenizer.encode(break_line, add_special_tokens=False)[0]
     # print(f"function_sep_id: {function_sep_id}; brk_line_token_id:{brk_line_token_id}")
     sep_indices = [-1]
+    # print([tokenizer.decode([tok]) for tok in token_ids])
     for i in range(len(token_ids)):
         if token_ids[i] == function_sep_id:
             sep_indices.append(i - 1)
@@ -89,8 +108,8 @@ def extract_indices_of_first_tokens_of_param_values_in_assistant_response(
         print("sep_indices: ", sep_indices)
     result = []
     for i, sep_index in enumerate(sep_indices):
-        brk_index = find_index_of_element_in_list(
-            brk_line_token_id, token_ids[sep_index + 1 :]
+        brk_index = find_index_of_token_contain_breakline(
+            token_ids[sep_index + 1 :], tokenizer
         )
         if brk_index >= 0:
             brk_index += sep_index + 1
@@ -101,6 +120,9 @@ def extract_indices_of_first_tokens_of_param_values_in_assistant_response(
                 if i != len(sep_indices) - 1:
                     end_index = sep_indices[i + 1]
                 start_argument_index = brk_index + 1
+                # print(
+                #     f"sep_index={sep_index}; start_argument_index={start_argument_index}; end_index={end_index + 1}"
+                # )
                 # = brk_index + 1, end_index
                 # token_ids[brk_index + 1: ] --> {"car_name": "Tang"}
                 token_indices = extract_indices_of_first_tokens_of_param_values(
