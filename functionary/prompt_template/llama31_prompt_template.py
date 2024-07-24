@@ -1,10 +1,10 @@
+import datetime
 import json
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.openai_types import Function, Tool
 from functionary.prompt_template import prompt_utils
 from functionary.prompt_template.base_template import PromptTemplate
-import datetime
 
 
 def get_system_prompt_for_custom_tools(custom_tools: List) -> str:
@@ -164,7 +164,7 @@ class Llama31Template(PromptTemplate):
         tool_call_prompts = []
         for tool_call in tool_calls:
             arguments = tool_call["function"]["arguments"]
-            assert arguments is str
+            assert isinstance(arguments, str)
             tool_name = tool_call["function"]["name"]
             tool_prompt = f"<function={tool_name}>{arguments}</function>"
             tool_call_prompts.append(tool_prompt)
