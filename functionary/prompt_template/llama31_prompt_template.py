@@ -18,8 +18,15 @@ You have access to the following functions:
 
 {custom_tool_params}
 Think very carefully before calling functions.
-If a you choose to call a function ONLY reply in the following format with no prefix or suffix:
+If a you choose to call a function ONLY reply in the following format:
+<{{start_tag}}={{function_name}}>{{parameters}}{{end_tag}}
+where
 
+start_tag => `<function`
+parameters => a JSON dict with the function argument name as key and function argument value as value.
+end_tag => `</function>`
+
+Here is an example,
 <function=example_function_name>{{"example_name": "example_value"}}</function>
 
 Reminder:
