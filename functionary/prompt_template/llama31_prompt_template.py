@@ -148,13 +148,12 @@ class Llama31Template(PromptTemplate):
         content = message.get("content", None)
 
         prompt_template = (
-            f"{self.start_header}{role}{self.end_header}\n\n"
-            + "{text}"
-            + self.eos_token
+            f"{self.start_header}{role}{self.end_header}\n\n" + "{text}{eot_content}"
         )
+        eot_content = self.eos_token
 
         if role in ["user", "system", "ipython"]:
-            return prompt_template.format(text=content)
+            return prompt_template.format(text=content, eot_content=eot_content)
 
         assert role == "assistant", f"role must be assistant, but: {role}"
 
@@ -173,13 +172,17 @@ class Llama31Template(PromptTemplate):
             arguments = tool_call["function"]["arguments"]
             assert isinstance(arguments, str)
             tool_name = tool_call["function"]["name"]
-            tool_prompt = f"<function={tool_name}>{arguments}</function>"
+            if tool_name == "python":
+                tool_prompt = f"<|python_tag|>{arguments}"
+            else:
+                tool_prompt = f"<function={tool_name}>{arguments}</function>"
             tool_call_prompts.append(tool_prompt)
 
         # join all function calls
         if tool_call_prompts:
-            total_content += "".join(tool_call_prompts) + self.eof_message
-        return prompt_template.format(text=total_content)
+            total_content += "".join(tool_call_prompts)
+            eot_content = self.eof_message
+        return prompt_template.format(text=total_content, eot_content=eot_content)
 
     def parse_assistant_response(
         self, llm_output: str, tool_choice: Any = None
@@ -199,8 +202,25 @@ class Llama31Template(PromptTemplate):
 
         func_prefix = "<function="
         end_func = "</function>"
+        python_tag = "<|python_tag|>"
+
         while len(llm_output) > 0:
-            if llm_output.startswith(func_prefix):
+            if llm_output.startswith(python_tag):  # check if use code interpreter
+                code = llm_output[len(python_tag) :]
+                function_call = {
+                    "name": "python",
+                    "arguments": code,
+                }
+
+                tool_calls.append(
+                    {
+                        "type": "function",
+                        "id": prompt_utils.get_random_tool_call_id(),
+                        "function": function_call,
+                    }
+                )
+                llm_output = ""
+            elif llm_output.startswith(func_prefix):  # Check if function_call
                 end_index = llm_output.find(end_func)
                 if end_index >= 0:
                     function_call_text = llm_output[len(func_prefix) : end_index]
@@ -218,7 +238,7 @@ class Llama31Template(PromptTemplate):
                     # TODO cannot find close function call
                     text_response += llm_output
                     break
-            else:
+            else:  # If text-response
                 text_response += llm_output[0]
                 llm_output = llm_output[1:]
 
@@ -234,3 +254,12 @@ class Llama31Template(PromptTemplate):
 
     def get_chat_template_jinja(self):
         return super().get_chat_template_jinja()
+
+    def get_force_function_call_prefix(self, function_name: str):
+        return f"<function={function_name}>"
+
+    def get_force_text_generation_prefix(self):
+        return f""
+
+    def get_tool_choice_required_prefix(self):
+        return "<function="
