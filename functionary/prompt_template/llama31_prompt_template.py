@@ -219,10 +219,14 @@ class Llama31Template(PromptTemplate):
                     text_response += llm_output
                     break
             else:
-                text_response += llm_output
-                break
+                text_response += llm_output[0]
+                llm_output = llm_output[1:]
+
         if not text_response:
             text_response = None
+        elif len(text_response.strip()) == 0:
+            text_response = None
+
         if not tool_calls:
             tool_calls = None
 
