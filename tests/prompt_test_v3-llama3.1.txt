@@ -3,7 +3,6 @@
 Environment: ipython
 
 Cutting Knowledge Date: December 2023
-Today Date: 25 July 2024
 
 
 You have access to the following functions:

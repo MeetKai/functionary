@@ -60,8 +60,7 @@ def get_system_message_for_tools(tools: List[Dict], use_code_interpreter) -> Lis
     current_date = datetime.datetime.now()
     formatted_date = current_date.strftime("%d %B %Y")
     date_str = f"""
-Cutting Knowledge Date: December 2023
-Today Date: {formatted_date}\n\n"""
+Cutting Knowledge Date: December 2023\n\n"""
     content += date_str
 
     if tools:
