@@ -2,7 +2,6 @@ from PIL import Image
 from torchvision.transforms.functional import InterpolationMode
 import torchvision.transforms as T
 import torch
-from intermlm.modeling_internvl_chat import InternVLChatModel
 from transformers import AutoTokenizer
 import transformers
 from typing import Optional, Dict

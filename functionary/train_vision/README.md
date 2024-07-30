@@ -1,6 +1,6 @@
 # Install Dependencies
 ```shell
-pip install accelerate==0.27.2 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 deepspeed==0.14.2 typer==0.9.0 tensorboard==2.15.1 wheel==0.42.0 aenum==3.1.15 transformers==4.42.3 flash-attn==v2.5.9.post1 git+https://github.com/LLaVA-VL/LLaVA-NeXT.git
+pip install accelerate==0.27.2 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 deepspeed==0.14.2 typer==0.9.0 tensorboard==2.15.1 wheel==0.42.0 aenum==3.1.15 transformers==4.42.3 flash-attn==v2.5.9.post1 git+https://github.com/LLaVA-VL/LLaVA-NeXT.git timm==1.0.8
 ```
 
 Example script:

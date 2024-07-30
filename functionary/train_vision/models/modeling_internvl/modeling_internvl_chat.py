@@ -222,17 +222,17 @@ class InternVLChatModel(PreTrainedModel):
 
         input_ids = input_ids.reshape(B * N)
         selected = input_ids == self.img_context_token
+        
+        vit_embeds = vit_embeds.reshape(-1, C)
         try:
-            input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds.reshape(
-                -1, C
-            )
+            input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds
         except Exception as e:
-            vit_embeds = vit_embeds.reshape(-1, C)
             print(
                 f"warning: {e}, input_embeds[selected].shape={input_embeds[selected].shape}, "
                 f"vit_embeds.shape={vit_embeds.shape}"
             )
             n_token = selected.sum()
+            # Need to check this when batch_size_per_device > 1
             input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds[:n_token]
 
         input_embeds = input_embeds.reshape(B, N, C)
