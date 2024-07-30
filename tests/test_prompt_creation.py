@@ -37,12 +37,13 @@ class TestPromptTemplate(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(TestPromptTemplate, self).__init__(*args, **kwargs)
 
-        self.template_versions = ["v2", "v2.llama3", "v3.llama3", "v3-llama3.1"][-1: ]
+        self.template_versions = ["v2", "v2.llama3", "v3.llama3", "v3-llama3.1", "internlm2-chat"][-1: ]
         self.pretrained_models = [
             "meetkai/functionary-small-v2.4",
             "meetkai/functionary-small-v2.5",
             "meetkai/functionary-medium-v3.0",
-            "meta-llama/Meta-Llama-3.1-8B-Instruct"
+            "meta-llama/Meta-Llama-3.1-8B-Instruct",
+            "OpenGVLab/InternVL2-8B"
         ][-1: ]
 
     def read_example_data(self, template_version: str):
@@ -96,7 +97,7 @@ class TestPromptTemplate(unittest.TestCase):
     ):
         """this function is used to test function: prepare_training_inputs"""
         # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
-        tokenizer = AutoTokenizer.from_pretrained(pretrained, legacy=True)
+        tokenizer = AutoTokenizer.from_pretrained(pretrained, legacy=True, trust_remote_code=True)
         tokenizer.pad_token = tokenizer.eos_token
         # first we add stop_tokens to the tokenizer
         prompt_template = get_prompt_template_by_version(template_version)

@@ -161,9 +161,9 @@ async def process_chat_completion(
         tool_choice=tool_func_choice,
     ).tolist()[0]
 
-    error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
-    if error_check_ret is not None:
-        return error_check_ret
+    # error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
+    # if error_check_ret is not None:
+    #     return error_check_ret
 
     model_name = request.model
     request_id = f"cmpl-{random_uuid()}"
