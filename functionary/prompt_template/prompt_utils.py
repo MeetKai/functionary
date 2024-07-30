@@ -246,6 +246,7 @@ def download_image_from_image_url(image_url: str):
 
     elif image_url.startswith(file_prefix):
         img_path = image_url[len(file_prefix) :].strip()
+        # image = Image.open(image_file).convert('RGB')
         return Image.open(open(img_path, "rb"))
 
     elif image_url.startswith(url_prefix):

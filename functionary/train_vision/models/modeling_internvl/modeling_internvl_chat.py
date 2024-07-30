@@ -112,11 +112,11 @@ class InternVLChatModel(PreTrainedModel):
             cur_input_ids[cur_attention_mask]
             for cur_input_ids, cur_attention_mask in zip(input_ids, bool_attention_mask)
         ]
-        
+
         labels = ori_labels
         if labels is None:
             labels = torch.full_like(input_ids, -100)
-        
+
         batch_labels = [
             cur_labels[cur_attention_mask]
             for cur_labels, cur_attention_mask in zip(labels, bool_attention_mask)
@@ -129,7 +129,7 @@ class InternVLChatModel(PreTrainedModel):
         index = 0
 
         new_batch_input_ids, new_batch_labels = [], []
-        
+
         for c_input_ids, c_labels in zip(batch_input_ids, batch_labels):
             img_num = (c_input_ids == self.img_place_holder_token).sum()
             sub_num_patches_list = num_patches_list[index : index + img_num]
@@ -137,7 +137,7 @@ class InternVLChatModel(PreTrainedModel):
                 num_patches * self.num_image_token
                 for num_patches in sub_num_patches_list
             ]
-            
+            # print("img_token_size_list: ", img_token_size_list)
             new_input_ids, new_labels = fill_image_tokens(
                 c_input_ids.tolist(),
                 c_labels.tolist(),
@@ -148,32 +148,36 @@ class InternVLChatModel(PreTrainedModel):
                 self.img_place_holder_token,
             )
             # make sure that after filling image tokens, length won't exceed original_max_length
-            new_input_ids = new_input_ids[: original_max_length]
-            new_labels = new_labels[: original_max_length]
-            
+            new_input_ids = new_input_ids[:original_max_length]
+            new_labels = new_labels[:original_max_length]
+
             new_batch_input_ids.append(new_input_ids)
             new_batch_labels.append(new_labels)
-        
+
         new_input_length = max([len(item) for item in new_batch_input_ids])
         # Only pad if the model is being trained
         if self.training:
             new_input_length = original_max_length
-        
-        final_input_ids, final_labels, final_attention_masks = [], [],  []
+
+        final_input_ids, final_labels, final_attention_masks = [], [], []
         for c_input_ids, c_labels in zip(new_batch_input_ids, new_batch_labels):
             pad_length = new_input_length - len(c_input_ids)
             final_input_ids.append(c_input_ids + [0 for _ in range(pad_length)])
             final_labels.append(c_labels + [-100 for _ in range(pad_length)])
-            n_attention_mask = [1 for _ in range(len(c_input_ids))] + [0 for _ in range(pad_length)]
+            n_attention_mask = [1 for _ in range(len(c_input_ids))] + [
+                0 for _ in range(pad_length)
+            ]
             final_attention_masks.append(n_attention_mask)
-        
+
         final_input_ids = torch.tensor(final_input_ids).to(device=input_ids.device)
         if ori_labels is not None:
             final_labels = torch.tensor(final_labels).to(device=ori_labels.device)
         else:
             final_labels = None
-            
-        final_attention_masks = torch.tensor(final_attention_masks).to(device=attention_mask.device)
+
+        final_attention_masks = torch.tensor(final_attention_masks).to(
+            device=attention_mask.device
+        )
         return final_input_ids, final_attention_masks, final_labels, pixel_values
 
     def forward(
@@ -195,10 +199,17 @@ class InternVLChatModel(PreTrainedModel):
         )
         # make sure that number of images == number of place holders
         assert len(images) == (input_ids == self.img_place_holder_token).sum()
-        
-        input_ids, attention_mask, labels, pixel_values = self.expand_input_ids(input_ids, labels, attention_mask, images)
-        input_embeds = self.language_model.get_input_embeddings()(input_ids)
 
+        input_ids, attention_mask, labels, pixel_values = self.expand_input_ids(
+            input_ids, labels, attention_mask, images
+        )
+        input_embeds = self.language_model.get_input_embeddings()(input_ids)
+        # print("input_ids shape: ", input_ids.shape)
+        # print("input_ids: ", input_ids.tolist())
+        loss_count = (labels != -100).sum()
+        # print("loss_count: ", loss_count)
+        # print("attention_mask: ", attention_mask.sum())
+        # print("part of pixel: ", pixel_values[0][0][0][: 10])
         vit_embeds = self.extract_feature(pixel_values)
         # vit_embeds = vit_embeds[image_flags == 1]
         vit_batch_size = pixel_values.shape[0]
@@ -255,13 +266,15 @@ class InternVLChatModel(PreTrainedModel):
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
 
-        return CausalLMOutputWithPast(
+        result = CausalLMOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+        result.logits = {"logits": logits, "labels": labels}
+        return result
 
     def pixel_shuffle(self, x, scale_factor=0.5):
         n, w, h, c = x.size()

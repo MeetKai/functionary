@@ -108,26 +108,24 @@ def fill_image_tokens(
     img_end_token: int,
     image_placeholder_token: int,
 ):
-    print("inside fill image_tokens: ")
-    print("input_ids: ", input_ids)
-    print("img_token_size_list: ", img_token_size_list)
-    print("image_placeholder_token: ", image_placeholder_token)
     new_input_ids, new_labels = [], []
     img_index = 0
-    for i in range(len(input_ids)):
-        index = len(input_ids) - 1 - i
+    for index in range(len(input_ids)):
+        # if this token is not in image
         if input_ids[index] != image_placeholder_token:
-            new_input_ids = [input_ids[index]] + new_input_ids
-            new_labels = [labels[index]] + new_labels
+            new_input_ids.append(input_ids[index])
+            new_labels.append(labels[index])
         else:
+            num_tokens = img_token_size_list[img_index]
             replaced_list = (
                 [img_start_token]
-                + [context_img_token for _ in range(img_token_size_list[img_index])]
+                + [context_img_token for _ in range(num_tokens)]
                 + [img_end_token]
             )
-            new_input_ids = replaced_list + new_input_ids
-            new_labels = [-100 for _ in range(len(replaced_list))] + new_labels
+            new_input_ids.extend(replaced_list)
+            new_labels.extend([-100 for _ in range(len(replaced_list))])
             img_index += 1
+
     assert img_index == len(img_token_size_list)
 
     return new_input_ids, new_labels

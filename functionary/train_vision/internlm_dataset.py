@@ -1,13 +1,13 @@
 from PIL import Image
 from torchvision.transforms.functional import InterpolationMode
 import torchvision.transforms as T
-import torch 
+import torch
 from intermlm.modeling_internvl_chat import InternVLChatModel
-from transformers import AutoTokenizer 
+from transformers import AutoTokenizer
 import transformers
 from typing import Optional, Dict
 from torch.utils.data import Dataset
-from functionary.prompt_template  import get_prompt_template_from_tokenizer
+from functionary.prompt_template import get_prompt_template_from_tokenizer
 from functionary.prompt_template import prompt_utils
 from functionary.train.custom_datasets import prepare_training_inputs
 
@@ -15,19 +15,22 @@ from functionary.train.custom_datasets import prepare_training_inputs
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
+
 def build_transform(input_size):
     MEAN, STD = IMAGENET_MEAN, IMAGENET_STD
-    transform = T.Compose([
-        T.Lambda(lambda img: img.convert('RGB') if img.mode != 'RGB' else img),
-        T.Resize((input_size, input_size), interpolation=InterpolationMode.BICUBIC),
-        T.ToTensor(),
-        T.Normalize(mean=MEAN, std=STD)
-    ])
+    transform = T.Compose(
+        [
+            T.Lambda(lambda img: img.convert("RGB") if img.mode != "RGB" else img),
+            T.Resize((input_size, input_size), interpolation=InterpolationMode.BICUBIC),
+            T.ToTensor(),
+            T.Normalize(mean=MEAN, std=STD),
+        ]
+    )
     return transform
 
 
 def find_closest_aspect_ratio(aspect_ratio, target_ratios, width, height, image_size):
-    best_ratio_diff = float('inf')
+    best_ratio_diff = float("inf")
     best_ratio = (1, 1)
     area = width * height
     for ratio in target_ratios:
@@ -42,19 +45,26 @@ def find_closest_aspect_ratio(aspect_ratio, target_ratios, width, height, image_
     return best_ratio
 
 
-def dynamic_preprocess(image, min_num=1, max_num=12, image_size=448, use_thumbnail=False):
+def dynamic_preprocess(
+    image, min_num=1, max_num=12, image_size=448, use_thumbnail=False
+):
     orig_width, orig_height = image.size
     aspect_ratio = orig_width / orig_height
 
     # calculate the existing image aspect ratio
     target_ratios = set(
-        (i, j) for n in range(min_num, max_num + 1) for i in range(1, n + 1) for j in range(1, n + 1) if
-        i * j <= max_num and i * j >= min_num)
+        (i, j)
+        for n in range(min_num, max_num + 1)
+        for i in range(1, n + 1)
+        for j in range(1, n + 1)
+        if i * j <= max_num and i * j >= min_num
+    )
     target_ratios = sorted(target_ratios, key=lambda x: x[0] * x[1])
 
     # find the closest aspect ratio to the target
     target_aspect_ratio = find_closest_aspect_ratio(
-        aspect_ratio, target_ratios, orig_width, orig_height, image_size)
+        aspect_ratio, target_ratios, orig_width, orig_height, image_size
+    )
 
     # calculate the target width and height
     target_width = image_size * target_aspect_ratio[0]
@@ -69,7 +79,7 @@ def dynamic_preprocess(image, min_num=1, max_num=12, image_size=448, use_thumbna
             (i % (target_width // image_size)) * image_size,
             (i // (target_width // image_size)) * image_size,
             ((i % (target_width // image_size)) + 1) * image_size,
-            ((i // (target_width // image_size)) + 1) * image_size
+            ((i // (target_width // image_size)) + 1) * image_size,
         )
         # split the image
         split_img = resized_img.crop(box)
@@ -82,18 +92,31 @@ def dynamic_preprocess(image, min_num=1, max_num=12, image_size=448, use_thumbna
 
 
 def load_image(image_file, input_size=448, max_num=12):
-    image = Image.open(image_file).convert('RGB')
+    image = Image.open(image_file).convert("RGB")
     transform = build_transform(input_size=input_size)
-    images = dynamic_preprocess(image, image_size=input_size, use_thumbnail=True, max_num=max_num)
+    images = dynamic_preprocess(
+        image, image_size=input_size, use_thumbnail=True, max_num=max_num
+    )
     pixel_values = [transform(image) for image in images]
     pixel_values = torch.stack(pixel_values)
     return pixel_values
 
 
-def fill_img_tokens_to_prompt(prompt, num_patches_list, num_image_token, img_start_token, img_context_token, img_end_token):
+def fill_img_tokens_to_prompt(
+    prompt,
+    num_patches_list,
+    num_image_token,
+    img_start_token,
+    img_context_token,
+    img_end_token,
+):
     for num_patches in num_patches_list:
-        image_tokens = img_start_token + img_context_token * num_image_token * num_patches + img_end_token
-        prompt = prompt.replace('<image>', image_tokens, 1)
+        image_tokens = (
+            img_start_token
+            + img_context_token * num_image_token * num_patches
+            + img_end_token
+        )
+        prompt = prompt.replace("<image>", image_tokens, 1)
     return prompt
 
 
@@ -137,7 +160,6 @@ class LazyVisionDataset(Dataset):
         )
         example = self.raw_data[i]
         images = prompt_utils.extract_images_from_messages(example["messages"])
-        images = [img.convert("RBG") for img in images]
         # if (
         #     len(images) == 0 and self.pad_img
         # ):  # add pad_img_token to make sure that the graph is fixed
@@ -152,7 +174,7 @@ class LazyVisionDataset(Dataset):
             "input_ids": ret["inputs"]["input_ids"],
             "labels": ret["inputs"]["labels"],
             "attention_mask": ret["inputs"]["attention_mask"],
-            "images": images
+            "images": images,
         }
 
         self.cached_data_dict[i] = ret

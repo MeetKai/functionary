@@ -86,6 +86,7 @@ def load_image(image_file, input_size=448, max_num=12):
 
 def fill_img_tokens_to_prompt(prompt, num_patches_list, num_image_token, img_start_token, img_context_token, img_end_token):
     for num_patches in num_patches_list:
+        print("add: ", num_image_token * num_patches)
         image_tokens = img_start_token + img_context_token * num_image_token * num_patches + img_end_token
         prompt = prompt.replace('<image>', image_tokens, 1)
     return prompt
@@ -135,6 +136,7 @@ What are the similarities and differences between these two images.<|im_end|><|i
     model_inputs = tokenizer(full_prompt, return_tensors='pt')
     input_ids = model_inputs['input_ids'].cuda()
     print("input_ids: ", input_ids.tolist())
+    print("input_ids shape: ", input_ids.shape)
     labels = torch.clone(input_ids)
     labels[labels == img_start] = -100
     labels[labels == img_end] = -100

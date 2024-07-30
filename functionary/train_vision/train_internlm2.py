@@ -13,8 +13,6 @@ import numpy as np
 import torch
 import torch.distributed
 from aenum import extend_enum
-from llava.mm_utils import process_images
-from llava.model.language_model.llava_llama import LlavaConfig
 from PIL import Image
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -66,7 +64,6 @@ from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 
 from functionary.prompt_template import PromptTemplate, get_prompt_template_by_version
-from functionary.train_vision.llava_dataset import LazyVisionDataset
 from transformers import AutoConfig, AutoTokenizer, Trainer
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
@@ -150,6 +147,20 @@ def trainer_save_model_safe(trainer: transformers.Trainer):
     trainer.save_model()
 
 
+def print_parameters_info(model):
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print_rank0(f"trainable: {name}")
+        else:
+            print_rank0(f"freezed: {name}")
+
+
+def freeze_vision_model(model):
+    for name, param in model.named_parameters():
+        if name.startswith("vision_model"):
+            param.requires_grad = False
+
+
 def initialize_tokenizer(
     *,
     model: transformers.AutoModelForCausalLM,
@@ -173,6 +184,7 @@ def initialize_tokenizer(
         model_max_length=model_max_length,
         padding_side=padding_side,
         legacy=True,
+        trust_remote_code=True
     )
 
     # Add special tokens
@@ -184,10 +196,10 @@ def initialize_tokenizer(
     # add chat_template for tokenizer
     tokenizer.chat_template = prompt_template.get_chat_template_jinja()
     print("tokenizer: ", tokenizer)
-
-    # Resize embedding if in the prompt template we add new tokens
-    model.resize_token_embeddings(len(tokenizer))
+    
     if num_new_tokens > 0:
+        # Resize embedding if in the prompt template we add new tokens
+        model.resize_token_embeddings(len(tokenizer))
         input_embeddings = model.get_input_embeddings().weight.data
         output_embeddings = model.get_output_embeddings().weight.data
 
@@ -259,7 +271,16 @@ def train():
 
     model = InternVLChatModel.from_pretrained(
         model_args.model_name_or_path,
-        torch_dtype=compute_dtype, use_flash_attention_2=True)
+        torch_dtype=compute_dtype, use_flash_attention_2=True, trust_remote_code=True)
+    
+    model.config.use_cache = False
+    
+    setattr(model.config, "hidden_size", model.language_model.config.hidden_size)
+    model.supports_gradient_checkpointing = True
+    
+    freeze_vision_model(model)
+    
+    print_parameters_info(model)
 
     print_rank0("Prompt template to use: ", training_args.prompt_template_version)
     prompt_template = get_prompt_template_by_version(
@@ -271,7 +292,7 @@ def train():
         model_name_or_path=model_args.model_name_or_path,
         prompt_template=prompt_template,
         model_max_length=training_args.model_max_length,
-        cache_dir=training_args.cache_dir,
+        cache_dir=training_args.cache_dir
     )
 
     if LOCAL_RANK == 0:
