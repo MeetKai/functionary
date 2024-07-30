@@ -297,6 +297,7 @@ class Llama31Template(PromptTemplate):
                 "call_id": None,  # call_id of the current tool
                 "gen_empty_text": True,  # if first_time we return an tempty delta with role=assistant
                 "first_time_func": True,
+                "text_to_func_buffer": [],
             }
             if tool_choice == "none":
                 current_state["state_name"] = state_gen_text
@@ -318,11 +319,38 @@ class Llama31Template(PromptTemplate):
             )
 
         if current_state["state_name"] == state_gen_preliminary:
-            if current_state["current_text"].endswith("<"):
+            # if delta_text == current_state["current_text"]:
+            #     if current_state["current_text"].endswith("<"):
+            #         current_state["state_name"] = state_gen_function_name
+            #     else:
+            #         current_state["state_name"] = state_gen_text
+            #     return current_state, None
+            if current_state["current_text"].startswith("<"):
                 current_state["state_name"] = state_gen_function_name
+                return current_state, None
             else:
+                responses = []
+                if current_state["gen_empty_text"]:
+                    empty_response = prompt_utils.get_text_delta_response(
+                        "", True, finish_reason
+                    )
+                    current_state["gen_empty_text"] = False
+                    responses.append(empty_response)
+                if delta_text != current_state["current_text"]:
+                    responses.append(
+                        prompt_utils.get_text_delta_response(
+                            current_state["current_text"][: -len(delta_text)],
+                            True,
+                            finish_reason,
+                        )
+                    )
+                responses.append(
+                    prompt_utils.get_text_delta_response(
+                        delta_text, True, finish_reason
+                    )
+                )
                 current_state["state_name"] = state_gen_text
-            return current_state, None
+                return current_state, responses
         elif current_state["state_name"] == state_gen_function_name:
             pattern = r"<function=[^>]+>"
             match = re.search(pattern, current_state["current_text"])
@@ -334,7 +362,6 @@ class Llama31Template(PromptTemplate):
                 current_state["current_text"] = delta_args
             return current_state, None
         elif current_state["state_name"] == state_gen_arguments:
-            breakpoint()
             if "</" in current_state["current_text"]:
                 if "</" in delta_text:
                     delta_args = delta_text.removesuffix("</")
@@ -345,9 +372,12 @@ class Llama31Template(PromptTemplate):
                     else:
                         return current_state, None
                 else:
-                    if current_state["current_text"].endswith("</function>"):
+                    if "</function>" in current_state["current_text"]:
                         current_state["state_name"] = state_gen_preliminary
-                        current_state["current_text"] = ""
+                        current_state["current_text"] = current_state["current_text"][
+                            current_state["current_text"].rindex("</function>")
+                            + len("</function>") :
+                        ]
                     return current_state, None
             else:
                 responses = []
@@ -368,6 +398,12 @@ class Llama31Template(PromptTemplate):
                     )
                 )
                 return current_state, responses
+        else:
+            breakpoint()
+            # if current_state["text_to_func_buffer"] + [delta_text]
+            return current_state, prompt_utils.get_text_delta_response(
+                delta_text, True, finish_reason
+            )
 
     def get_chat_template_jinja(self):
         return super().get_chat_template_jinja()
