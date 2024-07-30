@@ -1,5 +1,6 @@
 import datetime
 import json
+import re
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.openai_types import Function, Tool
@@ -81,10 +82,12 @@ def parse_function_call_from_text(function_call_text: str) -> Optional[Dict]:
 
 class Llama31Template(PromptTemplate):
     version = "v3-llama3.1"
+    function_separator = "<function="
     start_header = "<|start_header_id|>"
     end_header = "<|end_header_id|>"
     eos_token = "<|eot_id|>"
     eof_message = "<|eom_id|>"
+    fn_param_sep_token = '>{"'
 
     def get_additional_tokens(self) -> List[str]:
         return []
@@ -250,6 +253,121 @@ class Llama31Template(PromptTemplate):
             tool_calls = None
 
         return {"role": "assistant", "content": text_response, "tool_calls": tool_calls}
+
+    def update_state_for_function(self, current_state: Dict, func_name: str):
+        """update the state when a function is going to be called
+
+        Args:
+            current_state (_type_): _description_
+        """
+        current_state["func_name"] = func_name
+        current_state["func_index"] += 1
+        current_state["call_id"] = prompt_utils.get_random_tool_call_id()
+        current_state["first_time_func"] = True
+
+    def update_response_state_from_delta_text(
+        self,
+        *,
+        current_state: Dict[str, Any],
+        delta_text: str,
+        finish_reason: str | None,
+        tool_choice: Any,
+    ) -> Tuple[Dict[str, Any] | None | Dict | List[Dict]]:
+        """This function is used for streaming
+
+        Args:
+            current_state (Dict[str, Any]):  a dictionary containing the state of the streaming: such as current function_name,
+            delta_text: new token generated
+            finish_reason: if finished or not
+
+        Returns:
+            Tuple[Dict[str, Any], Optional[Dict]]: updated state, response: can be None, a dictionary: {} or a list of dictionary: [{}, ..., {}]
+        """
+        state_gen_preliminary = "gen_preliminary"
+        state_gen_function_name = "gen_function_name"
+        state_gen_text = "gen_text"
+        state_gen_arguments = "gen_arguments"
+
+        if len(current_state) == 0:
+            current_state = {
+                "state_name": state_gen_preliminary,  # can be normal text or a function call
+                "current_text": "",  # the concatenation of all tokens so far
+                "func_name": None,  # function_name of the current tool, if the response requires to use tool
+                "func_index": -1,  # index of the tool in tool_calls
+                "call_id": None,  # call_id of the current tool
+                "gen_empty_text": True,  # if first_time we return an tempty delta with role=assistant
+                "first_time_func": True,
+            }
+            if tool_choice == "none":
+                current_state["state_name"] = state_gen_text
+            elif type(tool_choice) is not str and tool_choice is not None:
+                current_state["state_name"] = state_gen_arguments
+                function_name = (
+                    tool_choice.function.name
+                    if isinstance(tool_choice, Tool)
+                    else tool_choice.name
+                )
+
+        current_state["current_text"] += delta_text
+
+        if finish_reason is not None:  # handle if finish
+            if current_state["state_name"] == state_gen_arguments:
+                finish_reason = "tool_calls"
+            return current_state, prompt_utils.get_text_delta_response(
+                None, False, finish_reason
+            )
+
+        if current_state["state_name"] == state_gen_preliminary:
+            if current_state["current_text"].endswith("<"):
+                current_state["state_name"] = state_gen_function_name
+            else:
+                current_state["state_name"] = state_gen_text
+            return current_state, None
+        elif current_state["state_name"] == state_gen_function_name:
+            pattern = r"<function=[^>]+>"
+            match = re.search(pattern, current_state["current_text"])
+            if match:
+                func_name = match.group(0).removeprefix("<function=").removesuffix(">")
+                self.update_state_for_function(current_state, func_name)
+                current_state["state_name"] = state_gen_arguments
+                delta_args = current_state["current_text"].removeprefix(match.group(0))
+                current_state["current_text"] = delta_args
+            return current_state, None
+        elif current_state["state_name"] == state_gen_arguments:
+            breakpoint()
+            if "</" in current_state["current_text"]:
+                if "</" in delta_text:
+                    delta_args = delta_text.removesuffix("</")
+                    if len(delta_args) > 0:
+                        return current_state, prompt_utils.get_function_delta_response(
+                            current_state, delta_args, False, False, finish_reason
+                        )
+                    else:
+                        return current_state, None
+                else:
+                    if current_state["current_text"].endswith("</function>"):
+                        current_state["state_name"] = state_gen_preliminary
+                        current_state["current_text"] = ""
+                    return current_state, None
+            else:
+                responses = []
+                if current_state["first_time_func"]:
+                    current_state["first_time_func"] = False
+                    first_function_response = prompt_utils.get_function_delta_response(
+                        current_state, "", True, False, finish_reason
+                    )
+                    responses.append(first_function_response)
+                    delta_args = current_state["current_text"].removesuffix(delta_text)
+                    first_arg_response = prompt_utils.get_function_delta_response(
+                        current_state, delta_args, False, False, finish_reason
+                    )
+                    responses.append(first_arg_response)
+                responses.append(
+                    prompt_utils.get_function_delta_response(
+                        current_state, delta_text, False, False, finish_reason
+                    )
+                )
+                return current_state, responses
 
     def get_chat_template_jinja(self):
         return super().get_chat_template_jinja()
