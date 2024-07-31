@@ -336,17 +336,21 @@ def train():
         of shape (batch_size x seq_len)"""
         correct_logits = logits
         added_labels = None
+        
         if (
             type(logits) is tuple
         ):  # in mixtral logits is a tuple, correct logits is at the second index
-            correct_logits = logits[1]
+            logits_dic_result = logits[0]
+            if type(logits_dic_result) is dict:
+                correct_logits = logits_dic_result["logits"]
+                added_labels = logits_dic_result["labels"]
+                labels = added_labels
+            else:
+                correct_logits = logits[1]
         elif type(logits) is dict:
             correct_logits = logits["logits"]
             added_labels = logits["labels"]
             labels = added_labels
-            print(
-                f"shape of labels: {added_labels.shape}, shape of logits: {correct_logits.shape}"
-            )
 
         pred_ids = torch.argmax(correct_logits, dim=-1)
 
