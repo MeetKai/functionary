@@ -301,6 +301,9 @@ class Llama31Template(PromptTemplate):
             }
             if tool_choice == "none":
                 current_state["state_name"] = state_gen_text
+            elif tool_choice == "required":
+                current_state["state_name"] = state_gen_function_name
+                current_state["current_text"] = "<function="
             elif type(tool_choice) is not str and tool_choice is not None:
                 current_state["state_name"] = state_gen_arguments
                 function_name = (
@@ -308,6 +311,7 @@ class Llama31Template(PromptTemplate):
                     if isinstance(tool_choice, Tool)
                     else tool_choice.name
                 )
+                self.update_state_for_function(current_state, function_name)
 
         current_state["current_text"] += delta_text
 
@@ -319,12 +323,6 @@ class Llama31Template(PromptTemplate):
             )
 
         if current_state["state_name"] == state_gen_preliminary:
-            # if delta_text == current_state["current_text"]:
-            #     if current_state["current_text"].endswith("<"):
-            #         current_state["state_name"] = state_gen_function_name
-            #     else:
-            #         current_state["state_name"] = state_gen_text
-            #     return current_state, None
             if current_state["current_text"].startswith("<"):
                 current_state["state_name"] = state_gen_function_name
                 return current_state, None
@@ -399,11 +397,34 @@ class Llama31Template(PromptTemplate):
                 )
                 return current_state, responses
         else:
-            breakpoint()
-            # if current_state["text_to_func_buffer"] + [delta_text]
-            return current_state, prompt_utils.get_text_delta_response(
-                delta_text, True, finish_reason
+            responses = []
+            text_in_buffer = "".join(
+                current_state["text_to_func_buffer"] + [delta_text]
             )
+            if "<" in text_in_buffer and "<function".startswith(
+                text_in_buffer[text_in_buffer.index("<") :]
+            ):
+                if text_in_buffer[text_in_buffer.index("<") :] == "<function":
+                    current_state["state_name"] = state_gen_function_name
+                    current_state["current_text"] = "<function"
+                else:
+                    current_state["text_to_func_buffer"].append(delta_text)
+                return current_state, None
+            else:
+                while len(current_state["text_to_func_buffer"]) > 0:
+                    delta_text_to_stream = current_state["text_to_func_buffer"][0]
+                    responses.append(
+                        prompt_utils.get_text_delta_response(
+                            delta_text_to_stream, True, finish_reason
+                        )
+                    )
+                    current_state["text_to_func_buffer"] = current_state[
+                        "text_to_func_buffer"
+                    ][1:]
+            responses.append(
+                prompt_utils.get_text_delta_response(delta_text, True, finish_reason)
+            )
+            return current_state, responses
 
     def get_chat_template_jinja(self):
         return super().get_chat_template_jinja()

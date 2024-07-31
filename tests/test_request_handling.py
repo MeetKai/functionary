@@ -16,10 +16,11 @@ from functionary.openai_types import (
 )
 from functionary.prompt_template import (
     Llama3Template,
+    Llama3TemplateV3,
+    Llama31Template,
+    LlavaLlama,
     PromptTemplate,
     PromptTemplateV2,
-    Llama3TemplateV3,
-    LlavaLlama,
     get_available_prompt_template_versions,
 )
 from functionary.prompt_template.prompt_utils import (
@@ -183,6 +184,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
             PromptTemplateV2: "meetkai/functionary-small-v2.4",
             Llama3Template: "meetkai/functionary-small-v2.5",
             Llama3TemplateV3: "meetkai/functionary-medium-v3.0",
+            Llama31Template: "meetkai/functionary-small-llama-3.1",
             LlavaLlama: "lmms-lab/llama3-llava-next-8b",
         }
         self.default_text_str = "Normal text generation"
