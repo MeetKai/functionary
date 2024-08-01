@@ -148,8 +148,9 @@ class InternVLChatModel(PreTrainedModel):
                 self.img_place_holder_token,
             )
             # make sure that after filling image tokens, length won't exceed original_max_length
-            new_input_ids = new_input_ids[:original_max_length]
-            new_labels = new_labels[:original_max_length]
+            if self.training:
+                new_input_ids = new_input_ids[:original_max_length]
+                new_labels = new_labels[:original_max_length]
 
             new_batch_input_ids.append(new_input_ids)
             new_batch_labels.append(new_labels)
@@ -222,7 +223,7 @@ class InternVLChatModel(PreTrainedModel):
 
         input_ids = input_ids.reshape(B * N)
         selected = input_ids == self.img_context_token
-        
+
         vit_embeds = vit_embeds.reshape(-1, C)
         try:
             input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds
@@ -475,7 +476,7 @@ class InternVLChatModel(PreTrainedModel):
         **generate_kwargs,
     ) -> torch.LongTensor:
 
-        assert self.img_context_token_id is not None
+        assert self.img_context_token is not None
         if pixel_values is not None:
             if visual_features is not None:
                 vit_embeds = visual_features
@@ -486,7 +487,7 @@ class InternVLChatModel(PreTrainedModel):
             input_embeds = input_embeds.reshape(B * N, C)
 
             input_ids = input_ids.reshape(B * N)
-            selected = input_ids == self.img_context_token_id
+            selected = input_ids == self.img_context_token
             assert selected.sum() != 0
             input_embeds[selected] = vit_embeds.reshape(-1, C).to(input_embeds.device)
 

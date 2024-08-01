@@ -17,42 +17,49 @@ logger = logging.get_logger(__name__)
 
 
 class InternVLChatConfig(PretrainedConfig):
-    model_type = 'internvl_chat'
+    model_type = "internvl_chat"
     is_composition = True
 
     def __init__(
-            self,
-            vision_config=None,
-            llm_config=None,
-            use_backbone_lora=0,
-            use_llm_lora=0,
-            select_layer=-1,
-            force_image_size=None,
-            downsample_ratio=0.5,
-            template=None,
-            dynamic_image_size=False,
-            use_thumbnail=False,
-            ps_version='v1',
-            min_dynamic_patch=1,
-            max_dynamic_patch=6,
-            **kwargs):
+        self,
+        vision_config=None,
+        llm_config=None,
+        use_backbone_lora=0,
+        use_llm_lora=0,
+        select_layer=-1,
+        force_image_size=None,
+        downsample_ratio=0.5,
+        template=None,
+        dynamic_image_size=False,
+        use_thumbnail=False,
+        ps_version="v1",
+        min_dynamic_patch=1,
+        max_dynamic_patch=6,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
 
         if vision_config is None:
             vision_config = {}
-            logger.info('vision_config is None. Initializing the InternVisionConfig with default values.')
+            logger.info(
+                "vision_config is None. Initializing the InternVisionConfig with default values."
+            )
 
         if llm_config is None:
             llm_config = {}
-            logger.info('llm_config is None. Initializing the LlamaConfig config with default values (`LlamaConfig`).')
+            logger.info(
+                "llm_config is None. Initializing the LlamaConfig config with default values (`LlamaConfig`)."
+            )
 
         self.vision_config = InternVisionConfig(**vision_config)
-        if llm_config['architectures'][0] == 'LlamaForCausalLM':
+        if llm_config["architectures"][0] == "LlamaForCausalLM":
             self.llm_config = LlamaConfig(**llm_config)
-        elif llm_config['architectures'][0] == 'InternLM2ForCausalLM':
+        elif llm_config["architectures"][0] == "InternLM2ForCausalLM":
             self.llm_config = InternLM2Config(**llm_config)
         else:
-            raise ValueError('Unsupported architecture: {}'.format(llm_config['architectures'][0]))
+            raise ValueError(
+                "Unsupported architecture: {}".format(llm_config["architectures"][0])
+            )
         self.use_backbone_lora = use_backbone_lora
         self.use_llm_lora = use_llm_lora
         self.select_layer = select_layer
@@ -65,10 +72,10 @@ class InternVLChatConfig(PretrainedConfig):
         self.min_dynamic_patch = min_dynamic_patch
         self.max_dynamic_patch = max_dynamic_patch
 
-        logger.info(f'vision_select_layer: {self.select_layer}')
-        logger.info(f'ps_version: {self.ps_version}')
-        logger.info(f'min_dynamic_patch: {self.min_dynamic_patch}')
-        logger.info(f'max_dynamic_patch: {self.max_dynamic_patch}')
+        logger.info(f"vision_select_layer: {self.select_layer}")
+        logger.info(f"ps_version: {self.ps_version}")
+        logger.info(f"min_dynamic_patch: {self.min_dynamic_patch}")
+        logger.info(f"max_dynamic_patch: {self.max_dynamic_patch}")
 
     def to_dict(self):
         """
@@ -78,19 +85,19 @@ class InternVLChatConfig(PretrainedConfig):
             `Dict[str, any]`: Dictionary of all the attributes that make up this configuration instance,
         """
         output = copy.deepcopy(self.__dict__)
-        output['vision_config'] = self.vision_config.to_dict()
-        output['llm_config'] = self.llm_config.to_dict()
-        output['model_type'] = self.__class__.model_type
-        output['use_backbone_lora'] = self.use_backbone_lora
-        output['use_llm_lora'] = self.use_llm_lora
-        output['select_layer'] = self.select_layer
-        output['force_image_size'] = self.force_image_size
-        output['downsample_ratio'] = self.downsample_ratio
-        output['template'] = self.template
-        output['dynamic_image_size'] = self.dynamic_image_size
-        output['use_thumbnail'] = self.use_thumbnail
-        output['ps_version'] = self.ps_version
-        output['min_dynamic_patch'] = self.min_dynamic_patch
-        output['max_dynamic_patch'] = self.max_dynamic_patch
+        output["vision_config"] = self.vision_config.to_dict()
+        output["llm_config"] = self.llm_config.to_dict()
+        output["model_type"] = self.__class__.model_type
+        output["use_backbone_lora"] = self.use_backbone_lora
+        output["use_llm_lora"] = self.use_llm_lora
+        output["select_layer"] = self.select_layer
+        output["force_image_size"] = self.force_image_size
+        output["downsample_ratio"] = self.downsample_ratio
+        output["template"] = self.template
+        output["dynamic_image_size"] = self.dynamic_image_size
+        output["use_thumbnail"] = self.use_thumbnail
+        output["ps_version"] = self.ps_version
+        output["min_dynamic_patch"] = self.min_dynamic_patch
+        output["max_dynamic_patch"] = self.max_dynamic_patch
 
         return output

@@ -127,5 +127,4 @@ def fill_image_tokens(
             img_index += 1
 
     assert img_index == len(img_token_size_list)
-
     return new_input_ids, new_labels
