@@ -48,7 +48,7 @@ def generate_internvl_chat(
     images = extract_images_from_messages(
         [message.dict() for message in request.messages]
     )
-    input_ids, attention_mask, _, pixel_values = model.expand_input_ids(
+    input_ids, attention_mask, _, pixel_values, _ = model.expand_input_ids(
         input_ids, None, attention_mask, images
     )
 

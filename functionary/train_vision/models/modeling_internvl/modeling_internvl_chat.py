@@ -19,7 +19,11 @@ from .configuration_internvl_chat import InternVLChatConfig
 from .conversation import get_conv_template
 from .modeling_intern_vit import InternVisionModel
 from .modeling_internlm2 import InternLM2ForCausalLM
-from .model_utility import fill_image_tokens, load_pixel_values_from_image
+from .model_utility import (
+    fill_image_tokens,
+    load_pixel_values_from_image,
+    get_aggregated_mask_after_truncation,
+)
 from PIL import Image
 
 logger = logging.get_logger(__name__)
@@ -129,7 +133,11 @@ class InternVLChatModel(PreTrainedModel):
         index = 0
 
         new_batch_input_ids, new_batch_labels = [], []
-        image_flags = []
+        # We use a mask for masking image tokens that would be truncated by exceeding the max_length in the training
+        # for example, we have 3 images in this batch: image1 (3 tokens, 1 was truncated); image2 (5 tokens, no tokens was truncated); image3 (4 tokens, 2 token was truncated)
+        # aggregated_truncated_img_masks = [1, 1, 1, 0] + [1, 1, 1, 1, 1] + [1, 1, 0, 0]
+        # we aggregate the mask because when we compute the representation of images, they would be aggregated
+        aggregated_truncated_img_masks = []
         for c_input_ids, c_labels in zip(batch_input_ids, batch_labels):
             img_num = (c_input_ids == self.img_place_holder_token).sum()
             sub_num_patches_list = num_patches_list[index : index + img_num]
@@ -138,7 +146,7 @@ class InternVLChatModel(PreTrainedModel):
                 for num_patches in sub_num_patches_list
             ]
             # print("img_token_size_list: ", img_token_size_list)
-            new_input_ids, new_labels = fill_image_tokens(
+            new_input_ids, new_labels, img_masks = fill_image_tokens(
                 c_input_ids.tolist(),
                 c_labels.tolist(),
                 img_token_size_list,
@@ -148,9 +156,17 @@ class InternVLChatModel(PreTrainedModel):
                 self.img_place_holder_token,
             )
             # make sure that after filling image tokens, length won't exceed original_max_length
-            if self.training:
+            if self.training and len(new_input_ids) > original_max_length:
                 new_input_ids = new_input_ids[:original_max_length]
                 new_labels = new_labels[:original_max_length]
+                aggregated_truncated_img_masks.extend(
+                    get_aggregated_mask_after_truncation(img_masks, original_max_length)
+                )
+            else:
+                # no image tokens are truncated
+                aggregated_truncated_img_masks.extend(
+                    [1 for _ in range(sum(img_masks))]
+                )
 
             new_batch_input_ids.append(new_input_ids)
             new_batch_labels.append(new_labels)
@@ -179,7 +195,17 @@ class InternVLChatModel(PreTrainedModel):
         final_attention_masks = torch.tensor(final_attention_masks).to(
             device=attention_mask.device
         )
-        return final_input_ids, final_attention_masks, final_labels, pixel_values
+        aggregated_truncated_img_masks = torch.tensor(aggregated_truncated_img_masks)
+        assert (
+            final_input_ids == self.img_context_token
+        ).sum() == aggregated_truncated_img_masks.sum()
+        return (
+            final_input_ids,
+            final_attention_masks,
+            final_labels,
+            pixel_values,
+            aggregated_truncated_img_masks,
+        )
 
     def forward(
         self,
@@ -201,13 +227,17 @@ class InternVLChatModel(PreTrainedModel):
         # make sure that number of images == number of place holders
         assert len(images) == (input_ids == self.img_place_holder_token).sum()
 
-        input_ids, attention_mask, labels, pixel_values = self.expand_input_ids(
-            input_ids, labels, attention_mask, images
-        )
+        (
+            input_ids,
+            attention_mask,
+            labels,
+            pixel_values,
+            aggregated_truncated_img_masks,
+        ) = self.expand_input_ids(input_ids, labels, attention_mask, images)
         input_embeds = self.language_model.get_input_embeddings()(input_ids)
         # print("input_ids shape: ", input_ids.shape)
         # print("input_ids: ", input_ids.tolist())
-        loss_count = (labels != -100).sum()
+        # loss_count = (labels != -100).sum()
         # print("loss_count: ", loss_count)
         # print("attention_mask: ", attention_mask.sum())
         # print("part of pixel: ", pixel_values[0][0][0][: 10])
@@ -225,16 +255,22 @@ class InternVLChatModel(PreTrainedModel):
         selected = input_ids == self.img_context_token
 
         vit_embeds = vit_embeds.reshape(-1, C)
-        try:
-            input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds
-        except Exception as e:
-            print(
-                f"warning: {e}, input_embeds[selected].shape={input_embeds[selected].shape}, "
-                f"vit_embeds.shape={vit_embeds.shape}"
-            )
-            n_token = selected.sum()
-            # Need to check this when batch_size_per_device > 1
-            input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds[:n_token]
+        vit_embeds = vit_embeds[
+            aggregated_truncated_img_masks == 1
+        ]  # remove image tokens that were truncated
+
+        assert selected.sum() == vit_embeds.shape[0]
+        input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds
+        # try:
+        #     input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds
+        # except Exception as e:
+        #     print(
+        #         f"warning: {e}, input_embeds[selected].shape={input_embeds[selected].shape}, "
+        #         f"vit_embeds.shape={vit_embeds.shape}"
+        #     )
+        #     n_token = selected.sum()
+        #     # Need to check this when batch_size_per_device > 1
+        #     input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds[:n_token]
 
         input_embeds = input_embeds.reshape(B, N, C)
 

@@ -99,6 +99,19 @@ def load_image(image_file, input_size=448, max_num=12):
     return load_pixel_values_from_image(image, input_size=input_size, max_num=max_num)
 
 
+def get_aggregated_mask_after_truncation(
+    img_mask: List[int], max_length: int
+) -> List[int]:
+    result = []
+    for i, item in enumerate(img_mask):
+        if item == 1:
+            if i < max_length:  # this token is not truncated
+                result.append(1)
+            else:  # this token is truncated
+                result.append(0)
+    return result
+
+
 def fill_image_tokens(
     input_ids: List[int],
     labels: List[int],
@@ -110,7 +123,7 @@ def fill_image_tokens(
 ):
     new_input_ids, new_labels = [], []
     img_index = 0
-    img_masks = []
+    img_masks = []  # 0: non-image token; 1: image token
     for index in range(len(input_ids)):
         # if this token is not in image
         if input_ids[index] != image_placeholder_token:
@@ -126,7 +139,7 @@ def fill_image_tokens(
             )
             new_input_ids.extend(replaced_list)
             new_labels.extend([-100 for _ in range(len(replaced_list))])
-            img_masks.extend([0] + [img_index + 1 for _ in range(num_tokens)] + [0])
+            img_masks.extend([0] + [1 for _ in range(num_tokens)] + [0])
             img_index += 1
 
     assert img_index == len(img_token_size_list)
