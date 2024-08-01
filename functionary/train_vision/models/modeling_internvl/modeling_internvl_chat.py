@@ -129,7 +129,7 @@ class InternVLChatModel(PreTrainedModel):
         index = 0
 
         new_batch_input_ids, new_batch_labels = [], []
-
+        image_flags = []
         for c_input_ids, c_labels in zip(batch_input_ids, batch_labels):
             img_num = (c_input_ids == self.img_place_holder_token).sum()
             sub_num_patches_list = num_patches_list[index : index + img_num]
