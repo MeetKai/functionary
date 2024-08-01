@@ -13,16 +13,14 @@ from transformers import AutoTokenizer, AutoConfig
 # from functionary.train_vision.models.modeling_llava import FixedLlavaLlamaForCausalLM as LlavaLlamaForCausalLM
 from functionary.inference_vision import generate, ModelType
 from functionary.openai_types import (
-    ChatCompletion,
-    ChatCompletionChunk,
     ChatCompletionRequest,
-    Choice,
-    StreamChoice,
+    ChatCompletionResponseChoice,
     ChatCompletionResponse,
 )
 from functionary.prompt_template import get_prompt_template_from_tokenizer
 from typing import Any, Dict
 import math
+import time
 
 app = FastAPI(title="Functionary API")
 
@@ -37,9 +35,23 @@ async def chat_endpoint(chat_input: ChatCompletionRequest):
         finish_reason = "stop"
         if response_message.tool_calls is not None:
             finish_reason = "tool_calls"  # need to add this to follow the format of openAI function calling
-        result = ChatCompletion(
+
+        model_name = chat_input.model
+        request_id = f"cmpl-{str(uuid.uuid4().hex)}"
+        created_time = int(time.time())
+
+        result = ChatCompletionResponse(
             id=request_id,
-            choices=[Choice.from_message(response_message, finish_reason)],
+            created=created_time,
+            model=model_name,
+            choices=[
+                ChatCompletionResponseChoice(
+                    index=0,
+                    message=response_message,
+                    finish_reason=finish_reason,
+                )
+            ],
+            usage=usage,
         )
         return result.dict(exclude_none=True)
     else:
