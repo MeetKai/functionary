@@ -15,6 +15,7 @@ Documentation and more examples: [functionary.meetkai.com](https://functionary.m
 
   <summary>Changelog: (click to expand)</summary>
 
+  + [2024/07] We release **new vision function calling models**: 
   + [2024/06/14] We release [meetkai/functionary-medium-v3.0](https://huggingface.co/meetkai/functionary-medium-v3.0) (based on [meta-llama/Meta-Llama-3-70B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-70B-Instruct)) with better capability for function calling
   + [2024/05/17] We release [meetkai/functionary-small-v2.5](https://huggingface.co/meetkai/functionary-small-v2.5) with better capability for function calling and code interpreter compared with [functionary-small-v2.4](https://huggingface.co/meetkai/functionary-small-v2.4)
   + [2024/05/06] Streaming support for functionary v2 to v2.4 models is released in [llama-cpp-python](https://github.com/abetlen/llama-cpp-python)!
@@ -24,7 +25,7 @@ Documentation and more examples: [functionary.meetkai.com](https://functionary.m
 
 </details>
 
-### Setup
+### Setup 
 
 To install the required dependencies, run:
 
@@ -107,8 +108,34 @@ you can start your environment like this:
 sudo docker run --gpus all -it --ipc=host --name functionary -v ${PWD}/functionary_workspace:/workspace -p 8000:8000 nvcr.io/nvidia/pytorch:23.10-py3
 ```
 
+
+### Setup For Vision Function Calling Models
+
+To install the required dependencies, run:
+
+```shell
+pip install -r vision_requirements.txt
+```
+
+Note that, for vision function calling models, we use Transformers Inference instead of Vllm inference
+
+**Small Model:**
+```shell
+python3 server_vision.py --model meetkai/functionary-vision-small-v0.1
+```
+
+**Medium Model:**
+```shell
+python3 server_vision.py --model meetkai/functionary-vision-medium-v0.1
+```
+
+You need to have 4xA6000 (or A40) or 2xA100 to run medium model.
+  
+</details>
+
 ### OpenAI Compatible Usage
 
+**For text only:**
 ```python
 from openai import OpenAI
 
@@ -140,7 +167,66 @@ client.chat.completions.create(
 )
 ```
 
+**For Including Image**
+```python
+from openai import OpenAI
+import base64
 
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
+
+def encode_image(image_path: str):
+    # check if the image exists
+    if not os.path.exists(image_path):
+        raise FileNotFoundError(f"Image file not found: {image_path}")
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode("utf-8")
+
+encoded_img = "assets/example.png"
+client.chat.completions.create(
+    model="meetkai/functionary-vision-small-v0.1",
+    messages=messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpg;base64,{encoded_img}"},
+                },
+                {
+                    "type": "text",
+                    "text": "can you translate the text in the image to Japanese",
+                },
+            ],
+        }
+    ],
+    tools=[{
+        "type": "function",
+        "function": {
+            "name": "translate",
+            "description": "translate text from language to language",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "src_language": {
+                        "type": "string",
+                        "description": "The source language, for example: en, vi, ja, ...",
+                    },
+                    "target_language": {
+                        "type": "string",
+                        "description": "The target language, for example: en, vi, ja, ...",
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "The text of source language to translate"
+                    }
+                },
+                "required": ["src_language", "text", "target_language"],
+            },
+        },
+    }],
+    tool_choice="auto"
+)
+```
 
 ### Raw Usage:
 
@@ -192,17 +278,19 @@ print(response.text)
 
 
 ## Models Available
-| Model                                                                                | Description                                                                                                                         | VRAM FP16 |
-|:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:------|
-| [functionary-medium-v3.0](https://huggingface.co/meetkai/functionary-medium-v3.0) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v3.0-GGUF) | 8k context, based on [meta-llama/Meta-Llama-3-70B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-70B-Instruct) | 160GB |
-| [functionary-small-v2.5](https://huggingface.co/meetkai/functionary-small-v2.5) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.5-GGUF) | 8k context, code interpreter | 24GB |
-| [functionary-small-v2.4](https://huggingface.co/meetkai/functionary-small-v2.4) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.4-GGUF) | 8k context, code interpreter | 24GB |
-| [functionary-medium-v2.4](https://huggingface.co/meetkai/functionary-medium-v2.4) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v2.4-GGUF) | 8k context, code interpreter, better accuracy | 90GB |
-| [functionary-small-v2.2](https://huggingface.co/meetkai/functionary-small-v2.2) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.2-GGUF) | 8k context | 24GB |
-| [functionary-medium-v2.2](https://huggingface.co/meetkai/functionary-medium-v2.2) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v2.2-GGUF) | 8k context| 90GB |
-| [functionary-7b-v2.1](https://huggingface.co/meetkai/functionary-7b-v2.1) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2.1-GGUF)            | 8k context | 24GB |
-| [functionary-7b-v2](https://huggingface.co/meetkai/functionary-7b-v2) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2-GGUF)                | Parallel function call support.   | 24GB |
-| [functionary-7b-v1.4](https://huggingface.co/meetkai/functionary-7b-v1.4) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF)            | 4k context, better accuracy (deprecated) | 24GB |
+| Model                                                                                | Model Type| Description                                                                                                                         | VRAM FP16 |
+|:-------------------------------------------------------------------------------------|---|:--------------------------------------------------------------------------------------------------------------------------------------|:------|
+| [meetkai/functionary-vision-medium-v0.1](https://huggingface.co/meetkai/functionary-vision-medium-v0.1) | Vision | 8k context| 160GB |
+| [meetkai/functionary-vision-small-v0.1](https://huggingface.co/meetkai/functionary-vision-small-v0.1) | Vision | 8k context| 24GB |
+| [functionary-medium-v3.0](https://huggingface.co/meetkai/functionary-medium-v3.0) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v3.0-GGUF)| Text-only | 8k context, based on [meta-llama/Meta-Llama-3-70B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-70B-Instruct) | 160GB |
+| [functionary-small-v2.5](https://huggingface.co/meetkai/functionary-small-v2.5) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.5-GGUF)| Text-only | 8k context, code interpreter | 24GB |
+| [functionary-small-v2.4](https://huggingface.co/meetkai/functionary-small-v2.4) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.4-GGUF)| Text-only | 8k context, code interpreter | 24GB |
+| [functionary-medium-v2.4](https://huggingface.co/meetkai/functionary-medium-v2.4) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v2.4-GGUF)| Text-only | 8k context, code interpreter, better accuracy | 90GB |
+| [functionary-small-v2.2](https://huggingface.co/meetkai/functionary-small-v2.2) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.2-GGUF)| Text-only | 8k context | 24GB |
+| [functionary-medium-v2.2](https://huggingface.co/meetkai/functionary-medium-v2.2) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v2.2-GGUF)| Text-only | 8k context| 90GB |
+| [functionary-7b-v2.1](https://huggingface.co/meetkai/functionary-7b-v2.1) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2.1-GGUF)| Text-only            | 8k context | 24GB |
+| [functionary-7b-v2](https://huggingface.co/meetkai/functionary-7b-v2) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2-GGUF)| Text-only                | Parallel function call support.   | 24GB |
+| [functionary-7b-v1.4](https://huggingface.co/meetkai/functionary-7b-v1.4) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF)| Text-only            | 4k context, better accuracy (deprecated) | 24GB |
 | [functionary-7b-v1.1](https://huggingface.co/meetkai/functionary-7b-v1.1)            | 4k context (deprecated)                                                                                                         | 24GB | 
 | functionary-7b-v0.1            | 2k context (deprecated) Not recommended, use 2.1 onwards                                                                                                  | 24GB |
 
