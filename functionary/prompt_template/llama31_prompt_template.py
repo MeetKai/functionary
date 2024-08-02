@@ -286,6 +286,7 @@ class Llama31Template(PromptTemplate):
         state_gen_preliminary = "gen_preliminary"
         state_gen_function_name = "gen_function_name"
         state_gen_text = "gen_text"
+        state_gen_code = "gen_code"
         state_gen_arguments = "gen_arguments"
 
         if len(current_state) == 0:
@@ -316,7 +317,7 @@ class Llama31Template(PromptTemplate):
         current_state["current_text"] += delta_text
 
         if finish_reason is not None:  # handle if finish
-            if current_state["state_name"] == state_gen_arguments:
+            if current_state["state_name"] in [state_gen_arguments, state_gen_code]:
                 finish_reason = "tool_calls"
             return current_state, prompt_utils.get_text_delta_response(
                 None, False, finish_reason
@@ -324,7 +325,10 @@ class Llama31Template(PromptTemplate):
 
         if current_state["state_name"] == state_gen_preliminary:
             if current_state["current_text"].startswith("<"):
-                current_state["state_name"] = state_gen_function_name
+                if current_state["current_text"] == "<|python_tag|>":
+                    current_state["state_name"] = state_gen_code
+                else:
+                    current_state["state_name"] = state_gen_function_name
                 return current_state, None
             else:
                 responses = []
@@ -396,6 +400,21 @@ class Llama31Template(PromptTemplate):
                     )
                 )
                 return current_state, responses
+        elif current_state["state_name"] == state_gen_code:
+            responses = []
+            if current_state["first_time_func"]:
+                self.update_state_for_function(current_state, "python")
+                current_state["first_time_func"] = False
+                first_function_response = prompt_utils.get_function_delta_response(
+                    current_state, "", True, False, finish_reason
+                )
+                responses.append(first_function_response)
+            responses.append(
+                prompt_utils.get_function_delta_response(
+                    current_state, delta_text, False, False, finish_reason
+                )
+            )
+            return current_state, responses
         else:
             responses = []
             text_in_buffer = "".join(
@@ -409,6 +428,10 @@ class Llama31Template(PromptTemplate):
                     current_state["current_text"] = "<function"
                 else:
                     current_state["text_to_func_buffer"].append(delta_text)
+                return current_state, None
+            elif text_in_buffer == "<|python_tag|>":
+                current_state["state_name"] = state_gen_code
+                current_state["current_text"] = "<|python_tag|>"
                 return current_state, None
             else:
                 while len(current_state["text_to_func_buffer"]) > 0:
