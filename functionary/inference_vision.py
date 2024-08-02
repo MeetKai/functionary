@@ -49,7 +49,7 @@ def generate_internvl_chat(
         [message.dict() for message in request.messages]
     )
     input_ids, attention_mask, _, pixel_values, _ = model.expand_input_ids(
-        input_ids, None, attention_mask, images
+        input_ids, None, attention_mask, images, training=False
     )
 
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)

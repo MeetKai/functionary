@@ -108,7 +108,8 @@ class InternVLChatModel(PreTrainedModel):
         input_ids: torch.LongTensor,
         ori_labels: Optional[torch.LongTensor],
         attention_mask: torch.Tensor,
-        images,
+        images: List,
+        training: bool = False,
     ):
         original_max_length = input_ids.shape[-1]
         bool_attention_mask = attention_mask.bool()
@@ -130,7 +131,6 @@ class InternVLChatModel(PreTrainedModel):
 
         pixel_values = torch.cat(imgs, dim=0).to(dtype=self.dtype, device=self.device)
         num_patches_list = [img.size(0) for img in imgs]
-        # print("num_patches_list: ", num_patches_list)
         index = 0
 
         new_batch_input_ids, new_batch_labels = [], []
@@ -158,7 +158,7 @@ class InternVLChatModel(PreTrainedModel):
                 self.img_place_holder_token,
             )
             # make sure that after filling image tokens, length won't exceed original_max_length
-            if len(new_input_ids) > original_max_length:
+            if training and len(new_input_ids) > original_max_length:
                 # print(f"truncate because input with image tokens exceeds: {len(new_input_ids)} > {original_max_length}")
                 new_input_ids = new_input_ids[:original_max_length]
                 new_labels = new_labels[:original_max_length]
@@ -234,7 +234,9 @@ class InternVLChatModel(PreTrainedModel):
             labels,
             pixel_values,
             aggregated_truncated_img_masks,
-        ) = self.expand_input_ids(input_ids, labels, attention_mask, images)
+        ) = self.expand_input_ids(
+            input_ids, labels, attention_mask, images, training=True
+        )
 
         # print("aggregated_truncated_img_masks: ", aggregated_truncated_img_masks.tolist())
 
