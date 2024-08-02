@@ -1,3 +1,4 @@
+# This file was copied and modifed from https://huggingface.co/OpenGVLab/InternVL2-2B/tree/main
 # Copyright (c) The InternLM team and The HuggingFace Inc. team. All rights reserved.
 #
 # This code is based on transformers/src/transformers/models/llama/tokenization_llama_fast.py

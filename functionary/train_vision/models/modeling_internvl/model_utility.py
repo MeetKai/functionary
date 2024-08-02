@@ -1,3 +1,4 @@
+# This file was copied and modifed from https://huggingface.co/OpenGVLab/InternVL2-2B/tree/main
 from PIL import Image
 from torchvision.transforms.functional import InterpolationMode
 import torchvision.transforms as T

@@ -1,3 +1,4 @@
+# This file was copied and modifed from https://huggingface.co/OpenGVLab/InternVL2-2B/tree/main
 """
 Conversation prompt templates.
 
