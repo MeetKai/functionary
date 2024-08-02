@@ -291,7 +291,7 @@ class _AsyncLLMEngine(LLMEngine):
                     )
                 ]
             elif (
-                gen_state["stage"] == "pre-function"
+                gen_state["stage"] != "parameter"
                 and seq_group_metadata_list[i].sampling_params.logits_processors
                 is not None
             ):

@@ -449,6 +449,215 @@ class Llama31Template(PromptTemplate):
             )
             return current_state, responses
 
+    def initialize_grammar_sampling_gen_state(
+        self,
+        tool_choice: Optional[Any],
+        curr_text: str,
+        curr_tokens: List[int],
+        add_code_interpreter: bool,
+    ) -> Dict:
+        """Initializes grammar-sampling state
+
+        Args:
+            tool_choice (str): tool_choice provided by user
+            curr_text (str): Text to initialize in gen_state
+            curr_tokens (List[int]): Corresponding tokens of curr_text
+            add_code_interpreter (bool): Flag indicating whether to add "python" tool in options in "function" stage.
+        Returns:
+            Dict: generation state
+        """
+        # To force a text response ("tool_choice"="none")
+        if tool_choice == "none":
+            stage = "text-gen"
+        # Normal generation (function name first) (tool_choice="required")
+        elif tool_choice == "required":
+            stage = "function"
+        # To force a function call (tool_choice={"type": "function", "function": {...}})
+        elif tool_choice != "":
+            stage = "parameter"
+        # Normal generation
+        else:
+            stage = "preliminary"
+
+        return {
+            "stage": stage,
+            "curr_tokens": curr_tokens,
+            "curr_text": curr_text,
+            "func_name": tool_choice,
+            "add_code_interpreter": add_code_interpreter,
+        }
+
+    def grammar_sample(
+        self,
+        gen_state: Dict,
+        tools_or_functions: List,
+        delta_token_ids: List,
+        model_sampled_token_id: int,
+        tokenizer: Any,
+    ) -> Tuple[int, str]:
+        """Applies grammar-sampling to the token generation and returns a
+        newly sampled token.
+
+        For function name, the list of token ids sorted in descending order by
+        log probabilities will be looped through until the token that fits the
+        function names is reached. The grammar-sampled token replaces the
+        output token if it is different from the model-sampled token.
+
+        For parameter name, the lm-format-enforcer package is used to generate
+        the parameters in JSON format, obeying the schema of the tool.
+
+        Args:
+            gen_state (Dict): The current generation state
+            options (List): The list of available function/parameter names depending on gen_state["stage"]
+            delta_token_ids (List): The list of delta token ids sorted in descending order by log probabilities
+            model_sampled_token_id (int): The token id of the token sampled by model
+            tokenizer (Any): The tokenizer object passed in from Transformers, vLLM, etc.
+        Returns:
+            Tuple[int, str]: Tuple of grammar-sampled token id and grammar-sampled token in str format
+        """
+        grammar_sampled_token_id, grammar_sampled_token = None, None
+
+        # No grammar sampling needed for the following stages
+        if gen_state["stage"] in [
+            "preliminary",
+            "text-gen",  # Normal text
+            "code-interpreter",  # Code
+        ]:
+            grammar_sampled_token_id = model_sampled_token_id
+            grammar_sampled_token = tokenizer.decode([model_sampled_token_id])
+
+        options = []
+        if gen_state["stage"] == "function":
+            options = [
+                f"<function={tool_or_func['name']}>"
+                for tool_or_func in tools_or_functions
+            ]
+        elif gen_state["stage"] == "post-function":
+            options = ["</function>"]
+
+        if grammar_sampled_token_id is None:
+            for i, sampled_token_ind in enumerate(delta_token_ids):
+                sampled_token = tokenizer.decode(
+                    [sampled_token_ind], add_special_tokens=False
+                )
+                new_curr_tokens_id = gen_state["curr_tokens"] + [sampled_token_ind]
+                new_curr_tokens = tokenizer.decode(new_curr_tokens_id)
+
+                if gen_state["stage"] == "function":
+                    options_mask = [
+                        (
+                            True
+                            if option.startswith(new_curr_tokens.lstrip(" "))
+                            else False
+                        )
+                        for option in options
+                    ]
+
+                    # Use the token as long as 1 option is True
+                    # - Reject the whitespace (" ") and empty ("") tokens
+                    if any(options_mask) and sampled_token.strip(" ") != "":
+                        grammar_sampled_token_id = sampled_token_ind
+                        grammar_sampled_token = sampled_token
+                        break
+                if gen_state["stage"] == "parameter":
+                    if sampled_token.startswith("}"):
+                        if "\r" not in sampled_token and "\n" not in sampled_token:
+                            grammar_sampled_token_id = sampled_token_ind
+                            grammar_sampled_token = sampled_token
+                            break
+                    else:
+                        grammar_sampled_token_id = sampled_token_ind
+                        grammar_sampled_token = sampled_token
+                        break
+                if gen_state["stage"] == "post-function":
+                    options_mask = [
+                        (
+                            True
+                            if option.startswith(new_curr_tokens.lstrip(" "))
+                            else False
+                        )
+                        for option in options
+                    ]
+                    if any(options_mask) and sampled_token.strip(" ") != "":
+                        grammar_sampled_token_id = sampled_token_ind
+                        grammar_sampled_token = sampled_token
+                        break
+
+        # Update gen_state
+        return (
+            grammar_sampled_token_id,
+            grammar_sampled_token,
+            self.update_grammar_sampling_gen_state(
+                gen_state=gen_state,
+                new_token_id=grammar_sampled_token_id,
+                options=options,
+                tokenizer=tokenizer,
+            ),
+        )
+
+    def update_grammar_sampling_gen_state(
+        self,
+        gen_state: Dict,
+        new_token_id: int,
+        options: Optional[List],
+        tokenizer: Any,
+    ) -> Dict:
+        """Receives a generation state, updates and returns it. This is only used when
+        grammar sampling is enabled in inference. This functions parses the generated
+        tokens and identifies the stage of generation (pre-function, function, parameter,
+        etc.)
+        Args:
+            gen_state (Dict): The current generation state. It contains the following:
+            - stage: one of the following:
+              - preliminary: the generation prior to function or text generation
+              - function: when the model is generating a function name
+              - pre-parameter: when the model is generating the part between function name and parameter
+              - parameter: when the model is generating parameters
+              - text-gen: when the model is generating content
+              - code-interpreter: when the model is generating code
+            - curr_tokens: all the tokens for the current stage being generated
+            - curr_text: curr_tokens but in string text form
+            - func_name: the function name, if any
+            new_token_id (int): The token id of the newly sampled token
+            options (List): All available function/param names depending on the stage of gen_state
+            tokenizer (Any): The tokenizer class passed in from Transformers or vLLM
+        Returns:
+            dict: The updated gen_state
+        """
+        # Update curr_tokens and curr_text
+        gen_state["curr_tokens"].append(new_token_id)
+        gen_state["curr_text"] = tokenizer.decode(gen_state["curr_tokens"])
+
+        if gen_state["stage"] == "preliminary":
+            if gen_state["curr_text"].startswith("<"):
+                gen_state["stage"] = "function"
+            else:
+                gen_state["stage"] = "text-gen"
+        elif gen_state["stage"] == "function":
+            pattern = r"<function=([a-zA-Z_][a-zA-Z0-9_]*)>"
+            for option in options:
+                if option in gen_state["curr_text"]:
+                    match = re.search(pattern, gen_state["curr_text"])
+                    if match:
+                        gen_state["func_name"] = match.group(1)
+                        gen_state["curr_text"], gen_state["curr_tokens"] = "", []
+                        gen_state["stage"] = "parameter"
+                        break
+        elif gen_state["stage"] == "parameter":
+            latest_param_str = gen_state["curr_text"]
+            try:
+                _ = json.loads(latest_param_str)
+                gen_state["stage"] = "post-function"
+                gen_state["curr_text"], gen_state["curr_tokens"] = "", []
+            except:
+                pass
+        elif gen_state["stage"] == "post-function":
+            if any([gen_state["curr_text"] == option for option in options]):
+                gen_state["stage"] = "preliminary"
+                gen_state["curr_text"], gen_state["curr_tokens"] = "", []
+
+        return gen_state
+
     def get_chat_template_jinja(self):
         return super().get_chat_template_jinja()
 
