@@ -272,7 +272,7 @@ class Llama31Template(PromptTemplate):
         delta_text: str,
         finish_reason: Optional[str],
         tool_choice: Any,
-    ) -> Tuple[Dict[str, Any] | None | Dict | List[Dict]]:
+    ) -> Tuple[Dict[str, Any], Union[None, Dict, List[Dict]]]:
         """This function is used for streaming
 
         Args:
