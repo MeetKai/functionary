@@ -1,4 +1,4 @@
-#transformers==4.40.1
+transformers==4.40.1
 accelerate~=0.21.0
 sentencepiece~=0.1.99
 fastapi~=0.111.0
@@ -9,5 +9,6 @@ jsonref~=1.1.0
 requests~=2.31.0
 PyYAML~=6.0.1
 protobuf==3.20.0
-#tokenizers==0.19.1
+tokenizers==0.19.1
 vllm==0.5.0; sys_platform != "darwin"
+json_source_map==1.0.5
