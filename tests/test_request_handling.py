@@ -16,10 +16,11 @@ from functionary.openai_types import (
 )
 from functionary.prompt_template import (
     Llama3Template,
+    Llama3TemplateV3,
+    Llama31Template,
+    LlavaLlama,
     PromptTemplate,
     PromptTemplateV2,
-    Llama3TemplateV3,
-    LlavaLlama,
     get_available_prompt_template_versions,
 )
 from functionary.prompt_template.prompt_utils import (
@@ -123,17 +124,32 @@ def get_token_ids_from_request(
 
 def generate_raw_response(
     gen_text: bool,
+    gen_code: bool,
     num_tool_calls: Optional[int],
     tool_func_choice: Union[str, Tool, Function],
     default_text_str: str,
     default_tool_call_name: str,
     default_tool_call_args: List[str],
+    default_code_args: str,
     prompt_template: PromptTemplate,
 ):
     message = {"role": "assistant"}
     if gen_text:
         message["content"] = default_text_str
-    if num_tool_calls is not None:
+
+    if gen_code:
+        default_tool_call_name = "python"
+        tool_calls = [
+            {
+                "type": "function",
+                "function": {
+                    "name": default_tool_call_name,
+                    "arguments": default_code_args,
+                },
+            }
+        ]
+        message["tool_calls"] = tool_calls
+    elif num_tool_calls is not None:
         tool_calls = []
         for tool_call_args in default_tool_call_args[:num_tool_calls]:
             tool_calls.append(
@@ -178,11 +194,13 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
         self.default_tools = [
             {"type": "function", "function": self.default_functions[0]}
         ]
+        self.default_python_args = "from datetime import date\n# Find today's date\ntoday = date.today()\ntoday"
         self.test_prompt_templates = get_available_prompt_template_versions()
         self.prompt_template_to_tokenizer_name_mapping = {
             PromptTemplateV2: "meetkai/functionary-small-v2.4",
             Llama3Template: "meetkai/functionary-small-v2.5",
             Llama3TemplateV3: "meetkai/functionary-medium-v3.0",
+            Llama31Template: "meetkai/functionary-small-llama-3.1",
             LlavaLlama: "lmms-lab/llama3-llava-next-8b",
         }
         self.default_text_str = "Normal text generation"
@@ -197,6 +215,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                 "tools_or_functions": "tools",
                 "tool_func_choice": "auto",
                 "gen_text": True,
+                "gen_code": False,
                 "num_tool_calls": None,
                 "expected_result": ChatMessage(
                     role="assistant", content=self.default_text_str
@@ -208,6 +227,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                 "tools_or_functions": "tools",
                 "tool_func_choice": "auto",
                 "gen_text": False,
+                "gen_code": False,
                 "num_tool_calls": 1,
                 "expected_result": ChatMessage(
                     role="assistant",
@@ -228,6 +248,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                 "tools_or_functions": "functions",
                 "tool_func_choice": "auto",
                 "gen_text": False,
+                "gen_code": False,
                 "num_tool_calls": 1,
                 "expected_result": ChatMessage(
                     role="assistant",
@@ -243,6 +264,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                 "tools_or_functions": "tools",
                 "tool_func_choice": "auto",
                 "gen_text": False,
+                "gen_code": False,
                 "num_tool_calls": 2,
                 "expected_result": ChatMessage(
                     role="assistant",
@@ -270,6 +292,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                 "tools_or_functions": "functions",
                 "tool_func_choice": "auto",
                 "gen_text": False,
+                "gen_code": False,
                 "num_tool_calls": 2,
                 "expected_result": ChatMessage(
                     role="assistant",
@@ -285,6 +308,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                 "tools_or_functions": "tools",
                 "tool_func_choice": "auto",
                 "gen_text": True,
+                "gen_code": False,
                 "num_tool_calls": 1,
                 "expected_result": ChatMessage(
                     role="assistant",
@@ -306,6 +330,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                 "tools_or_functions": "tools",
                 "tool_func_choice": "none",
                 "gen_text": True,
+                "gen_code": False,
                 "num_tool_calls": None,
                 "expected_result": ChatMessage(
                     role="assistant",
@@ -320,6 +345,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                     function=Function(name=self.default_tool_call_name)
                 ),
                 "gen_text": False,
+                "gen_code": False,
                 "num_tool_calls": 1,
                 "expected_result": ChatMessage(
                     role="assistant",
@@ -340,6 +366,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                 "tools_or_functions": "functions",
                 "tool_func_choice": Function(name=self.default_tool_call_name),
                 "gen_text": False,
+                "gen_code": False,
                 "num_tool_calls": 1,
                 "expected_result": ChatMessage(
                     role="assistant",
@@ -355,6 +382,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                 "tools_or_functions": "tools",
                 "tool_func_choice": "required",
                 "gen_text": False,
+                "gen_code": False,
                 "num_tool_calls": 2,
                 "expected_result": ChatMessage(
                     role="assistant",
@@ -373,6 +401,49 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                                 "arguments": self.default_tool_call_args[1],
                             },
                         },
+                    ],
+                ),
+                "expected_finish_reason": "tool_calls",
+            },
+            {
+                "test_aim": 'code generation using "python" tool',
+                "tools_or_functions": "tools",
+                "tool_func_choice": "auto",
+                "gen_text": False,
+                "gen_code": True,
+                "num_tool_calls": 1,
+                "expected_result": ChatMessage(
+                    role="assistant",
+                    tool_calls=[
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "python",
+                                "arguments": self.default_python_args,
+                            },
+                        }
+                    ],
+                ),
+                "expected_finish_reason": "tool_calls",
+            },
+            {
+                "test_aim": 'Normal text generation (CoT) + code generation using "python" tool',
+                "tools_or_functions": "tools",
+                "tool_func_choice": "auto",
+                "gen_text": True,
+                "gen_code": True,
+                "num_tool_calls": 1,
+                "expected_result": ChatMessage(
+                    role="assistant",
+                    content=self.default_text_str,
+                    tool_calls=[
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "python",
+                                "arguments": self.default_python_args,
+                            },
+                        }
                     ],
                 ),
                 "expected_finish_reason": "tool_calls",
@@ -488,11 +559,13 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
             for test_case in self.request_handling_test_cases:
                 raw_response = generate_raw_response(
                     gen_text=test_case["gen_text"],
+                    gen_code=test_case["gen_code"],
                     num_tool_calls=test_case["num_tool_calls"],
                     tool_func_choice=test_case["tool_func_choice"],
                     default_text_str=self.default_text_str,
                     default_tool_call_name=self.default_tool_call_name,
                     default_tool_call_args=self.default_tool_call_args,
+                    default_code_args=self.default_python_args,
                     prompt_template=prompt_template,
                 )
                 chat_mess = prompt_template.parse_assistant_response(
@@ -579,11 +652,13 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
             for test_case in self.request_handling_test_cases:
                 raw_response = generate_raw_response(
                     gen_text=test_case["gen_text"],
+                    gen_code=test_case["gen_code"],
                     num_tool_calls=test_case["num_tool_calls"],
                     tool_func_choice=test_case["tool_func_choice"],
                     default_text_str=self.default_text_str,
                     default_tool_call_name=self.default_tool_call_name,
                     default_tool_call_args=self.default_tool_call_args,
+                    default_code_args=self.default_python_args,
                     prompt_template=prompt_template,
                 )
                 # Use tokenizer to split raw response into chunks
@@ -651,12 +726,20 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                     for tool_call in tool_calls:
                         self.assertEqual(
                             tool_call["name"],
-                            self.default_tool_call_name,
+                            (
+                                self.default_tool_call_name
+                                if not test_case["gen_code"]
+                                else "python"
+                            ),
                             f"Wrong streamed tool call name for version: {prompt_template.version} | test: `{test_case['test_aim']}`",
                         )
                         self.assertIn(
                             tool_call["arguments"],
-                            self.default_tool_call_args,
+                            (
+                                self.default_tool_call_args
+                                if not test_case["gen_code"]
+                                else self.default_python_args
+                            ),
                             f"Wrong streamed tool call args for version: {prompt_template.version} | test: `{test_case['test_aim']}`",
                         )
                 # Test function_call
