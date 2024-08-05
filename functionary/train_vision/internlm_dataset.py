@@ -31,7 +31,10 @@ class LazyVisionDataset(Dataset):
 
         self.raw_data = raw_data
         self.cached_data_dict = {}
-        self.prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+        prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+        self.img_place_holder_token = tokenizer.convert_tokens_to_ids(
+            prompt_template.start_img_token
+        )
 
         self.pad_img = None
         if pad_img_path:
@@ -51,18 +54,17 @@ class LazyVisionDataset(Dataset):
         )
         example = self.raw_data[i]
         images = prompt_utils.extract_images_from_messages(example["messages"])
-        # if (
-        #     len(images) == 0 and self.pad_img
-        # ):  # add pad_img_token to make sure that the graph is fixed
-        #     images.append(self.pad_img)
-        #     ret["inputs"] = inject_image_token(ret["inputs"], self.rep_token_id)
+        if (
+            len(images) == 0 and self.pad_img
+        ):  # add pad_img_token to make sure that the computing graph is fixed
+            images.append(self.pad_img)
+            ret["inputs"] = prompt_utils.inject_image_token(
+                ret["inputs"], self.img_place_holder_token
+            )
 
-        # input_ids = ret["inputs"]["input_ids"]
-        # input_ids[input_ids == self.rep_token_id] = IMAGE_TOKEN_INDEX
-
-        # assert (input_ids == IMAGE_TOKEN_INDEX).sum() == len(images)
+        input_ids = ret["inputs"]["input_ids"]
         ret = {
-            "input_ids": ret["inputs"]["input_ids"],
+            "input_ids": input_ids,
             "labels": ret["inputs"]["labels"],
             "attention_mask": ret["inputs"]["attention_mask"],
             "images": images,

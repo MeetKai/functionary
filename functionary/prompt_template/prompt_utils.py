@@ -257,3 +257,30 @@ def download_image_from_image_url(image_url: str):
         raise (
             f"image not found, image_url must startswith one of: '{base64_prefix}'; '{file_prefix}', '{url_prefix}'"
         )
+
+
+def inject_image_token(inputs, img_token_id):
+    """This function will replace the last token with image_token at the end of: input_ids and also modify attention_mask, labels accordingly
+
+    Args:
+        inputs (_type_): input_dic containing: input_ids, labels, attention_mask
+        img_token_id (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    input_ids = inputs["input_ids"]
+    label_ids = inputs["labels"]
+    attention_mask = inputs["attention_mask"]
+    # make sure that virtual token is always appended at the end --> won't influence the attention_scores for other tokens
+    input_ids[-1] = img_token_id
+    label_ids[-1] = -100  # make sure that
+    attention_mask[-1] = (
+        1  # allow attend so prepare_inputs_labels_for_multimodal will work
+    )
+
+    return {
+        "input_ids": input_ids,
+        "labels": label_ids,
+        "attention_mask": attention_mask,
+    }

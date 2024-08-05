@@ -3,11 +3,11 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.openai_types import Function, Tool
 from functionary.prompt_template import prompt_utils
-from functionary.prompt_template.base_template import PYTHON_RUN_SYS_MSG, PromptTemplate
+from functionary.prompt_template.llama3_prompt_template_v3 import Llama3TemplateV3
 from functionary.schema import generate_schema_from_functions
 
 
-class InternLMChat(PromptTemplate):
+class InternLMChat(Llama3TemplateV3):
     version = "internlm2-chat"
     start_img_token = "<img>"
     # "<img>", "<IMG_CONTEXT>", "</img>"
@@ -16,7 +16,7 @@ class InternLMChat(PromptTemplate):
     start_of_turn = "<|im_start|>"
     eos_token = "<|im_end|>"
     function_separator = ">>>"
-    
+
     def inject_system_messages_based_on_tools(
         self, messages: List[Dict], tools_or_functions: Optional[List[Dict]] = None
     ) -> List[Dict]:
@@ -29,21 +29,18 @@ class InternLMChat(PromptTemplate):
         Returns:
             List[Dict]: _description_
         """
-        result = super().inject_system_messages_based_on_tools(messages, tools_or_functions)
+        result = super(Llama3TemplateV3, self).inject_system_messages_based_on_tools(
+            messages, tools_or_functions
+        )
         default_system_message = {
             "role": "system",
-            "content": "你是由上海人工智能实验室联合商汤科技开发的书生多模态大模型，英文名叫InternVL, 是一个有用无害的人工智能助手。"
+            "content": "你是由上海人工智能实验室联合商汤科技开发的书生多模态大模型，英文名叫InternVL, 是一个有用无害的人工智能助手。",
         }
         result = [default_system_message] + result
         return result
 
-    def get_additional_tokens(self) -> List[str]:
-        return []
-
     def get_assistant_prefixes(self) -> List[str]:
-        return [
-            f"{self.start_of_turn}assistant\n{self.function_separator}"
-        ]
+        return [f"{self.start_of_turn}assistant\n{self.function_separator}"]
 
     def get_stop_tokens_for_generation(self) -> List[str]:
         return [self.eos_token]
@@ -73,16 +70,12 @@ class InternLMChat(PromptTemplate):
             content = prompt_utils.stringify_content_with_images(
                 message["content"], self.start_img_token
             )
-        
+
         if role == "tool":
             tool_name = message["name"]
             content = f"name={tool_name}\n{content}"
 
-        prompt_template = (
-            f"{self.start_of_turn}{role}\n"
-            + "{text}"
-            + self.eos_token
-        )
+        prompt_template = f"{self.start_of_turn}{role}\n" + "{text}" + self.eos_token
 
         if role in ["user", "system", "tool"]:
             return prompt_template.format(text=content)
@@ -114,55 +107,17 @@ class InternLMChat(PromptTemplate):
         )
         return prompt_template.format(text=total_content)
 
-    def parse_assistant_response(
-        self, llm_output: str, tool_choice: Any = None
-    ) -> Dict:
-        # first remove stop tokens if there exists
-        for stop in self.get_stop_tokens_for_generation():
-            if llm_output.endswith(stop):
-                llm_output = llm_output[: -len(stop)]
-
-        llm_output = (
-            self.get_generation_prefix_for_tool_choice(tool_choice) + llm_output
-        )
-
-        chunks = llm_output.split(self.function_separator)
-        chunks = [chunk.strip() for chunk in chunks if len(chunk.strip()) > 0]
-
-        tool_calls = []
-        text_content = None
-
-        for chunk in chunks:
-            # format: function_name\narguments<end_of_functioncall>
-            index = chunk.find("\n")
-            func_name = chunk[:index].strip()
-            arguments = chunk[index + 1 :].strip()
-            if func_name == "all":
-                text_content = arguments
-            else:
-                tool_calls.append(
-                    {
-                        "function": {"name": func_name, "arguments": arguments},
-                        "id": prompt_utils.get_random_tool_call_id(),
-                        "type": "function",
-                    }
-                )
-        if len(tool_calls) == 0:
-            tool_calls = None
-
-        return {"role": "assistant", "content": text_content, "tool_calls": tool_calls}
-
     def get_force_text_generation_prefix(self):
         return f"all\n"
 
     def get_chat_template_jinja(self) -> str:
         chat_template = """{% for message in messages %}
         {% if message['role'] == 'user' or message['role'] == 'system' %}
-            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}<br>
+            {{ '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' }}<br>
         {% elif message['role'] == 'tool' %}
-            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}<br>
+            {{ '<|im_start|>' + message['role'] + '\nname=' + message['name'] + '\n' + message['content'] + '<|im_end|>' }}<br>
         {% else %}
-            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'}}<br>
+            {{ '<|im_start|>' + message['role'] + '\n'}}<br>
             {% if message['content'] is not none %}
                 {{ '>>>all\n' + message['content'] }}<br>
             {% endif %}
@@ -171,10 +126,10 @@ class InternLMChat(PromptTemplate):
                     {{ '>>>' + tool_call['function']['name'] + '\n' + tool_call['function']['arguments'] }}<br>
                 {% endfor %}
             {% endif %}
-            {{ '<|eot_id|>' }}<br>
+            {{ '<|im_end|>' }}<br>
         {% endif %}
         {% endfor %}
-        {% if add_generation_prompt %}{{ '<|start_header_id|>{role}<|end_header_id|>\n\n' }}{% endif %}
+        {% if add_generation_prompt %}{{ '<|im_start|>{role}\n' }}{% endif %}
         """
         chat_template = chat_template.replace("    ", "")
         chat_template = chat_template.replace("<br>\n", "")

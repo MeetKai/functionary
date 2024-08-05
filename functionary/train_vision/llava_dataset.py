@@ -11,33 +11,6 @@ from functionary.train.custom_datasets import prepare_training_inputs
 IMAGE_TOKEN_INDEX = -200
 
 
-def inject_image_token(inputs, img_token_id):
-    """This function will replace the last token with image_token at the end of: input_ids and also modify attention_mask, labels accordingly
-
-    Args:
-        inputs (_type_): input_dic containing: input_ids, labels, attention_mask
-        img_token_id (_type_): _description_
-
-    Returns:
-        _type_: _description_
-    """
-    input_ids = inputs["input_ids"]
-    label_ids = inputs["labels"]
-    attention_mask = inputs["attention_mask"]
-    # make sure that virtual token is always appended at the end --> won't influence the attention_scores for other tokens
-    input_ids[-1] = img_token_id
-    label_ids[-1] = -100  # make sure that
-    attention_mask[-1] = (
-        1  # allow attend so prepare_inputs_labels_for_multimodal will work
-    )
-
-    return {
-        "input_ids": input_ids,
-        "labels": label_ids,
-        "attention_mask": attention_mask,
-    }
-
-
 class LazyVisionDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
@@ -87,7 +60,9 @@ class LazyVisionDataset(Dataset):
             len(images) == 0 and self.pad_img
         ):  # add pad_img_token to make sure that the graph is fixed
             images.append(self.pad_img)
-            ret["inputs"] = inject_image_token(ret["inputs"], self.rep_token_id)
+            ret["inputs"] = prompt_utils.inject_image_token(
+                ret["inputs"], self.rep_token_id
+            )
 
         input_ids = ret["inputs"]["input_ids"]
         input_ids[input_ids == self.rep_token_id] = IMAGE_TOKEN_INDEX
