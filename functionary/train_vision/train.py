@@ -23,6 +23,10 @@ from functionary.train_vision.llava_dataset import LazyVisionDataset
 from functionary.train_vision.models.modeling_llava import (
     FixedLlavaLlamaForCausalLM as LlavaLlamaForCausalLM,
 )
+from functionary.train.metrics import (
+    extract_indices_of_first_tokens_of_param_values_in_assistant_response,
+    extract_unmasked_chunks,
+)
 
 # set this so we can reproduce
 random.seed(100)
@@ -206,29 +210,6 @@ def initialize_tokenizer(
     return tokenizer
 
 
-def extract_unmasked_chunks(labels: List[int], masked_value) -> List[List[int]]:
-    """This function is used to extract unmasked chunks of integer
-    For example, labels = [-100, -100, 1, 2, 3, -100, -100, 4, 5] --> chunks = [[1,2,3], [4,5]]
-    Args:
-        labels (List[int]): list of integer containing token_id and -100
-
-    Returns:
-        List[List[int]]: list of chunk, for example: [[1,2,3], [4,5]]
-    """
-    chunks = []
-    chunk = []
-    for token_id in labels:
-        if token_id != masked_value:
-            chunk.append(token_id)
-        else:
-            if len(chunk) > 0:
-                chunks.append(chunk)
-                chunk = []
-    if len(chunk) > 0:
-        chunks.append(chunk)
-    return chunks
-
-
 def train():
     argument_parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments)
@@ -337,9 +318,6 @@ def train():
             correct_logits = logits["logits"]
             added_labels = logits["labels"]
             labels = added_labels
-            print(
-                f"shape of labels: {added_labels.shape}, shape of logits: {correct_logits.shape}"
-            )
 
         pred_ids = torch.argmax(correct_logits, dim=-1)
 
@@ -419,6 +397,39 @@ def train():
             metrics[f"accuracy_{token}"] = acc
             metrics[f"accuracy_total_num_{token}"] = total_num
 
+        # Add metrics for accuracy of first tokens in arguments
+        # only implemented for v3
+        if "v3" in prompt_template.version:
+            first_arguments_token_correct = 0
+            first_arguments_token_total = 0
+
+            unmasked_chunk_pairs = extract_unmasked_chunks(label_list, prediction_list)
+            for label_chunk, pred_chunk in unmasked_chunk_pairs:
+                # label_chunk_text = tokenizer.decode(label_chunk)
+                # print_rank0(f"handle label_chunk:{label_chunk_text}")
+                indices = extract_indices_of_first_tokens_of_param_values_in_assistant_response(
+                    tokenizer, label_chunk
+                )
+                # if len(indices) > 0:
+                #     included_tokens_str = ";".join(
+                #         [tokenizer.decode([label_chunk[index]]) for index in indices]
+                #     )
+                #     print_rank0(
+                #         f"label_chunk: {label_chunk_text}\nlabel: {included_tokens_str}"
+                #     )
+                for index in indices:
+                    if label_chunk[index] == pred_chunk[index]:
+                        first_arguments_token_correct += 1
+                    first_arguments_token_total += 1
+
+            if first_arguments_token_total > 0:
+                metrics["accuracy_first_token_arguments"] = (
+                    first_arguments_token_correct / first_arguments_token_total
+                )
+                metrics["accuracy_first_token_arguments_total"] = (
+                    first_arguments_token_total
+                )
+
         return metrics
 
     def compute_metrics(eval_preds):
@@ -484,34 +495,37 @@ def train():
             """
             outputs = model(**inputs)
             loss = outputs.loss
-            logits = outputs.logits["logits"]
-            labels = outputs.logits["labels"]
+            if (
+                model.training
+            ):  # only compute the metrics in the training loop, not eval loop
+                logits = outputs.logits["logits"]
+                labels = outputs.logits["labels"]
 
-            pred_ids = torch.argmax(logits, dim=-1)
+                pred_ids = torch.argmax(logits, dim=-1)
 
-            # compute the metrics
-            predictions = pred_ids[:, :-1]
-            predictions = self.accelerator.pad_across_processes(
-                predictions, dim=1, pad_index=-100
-            )
-            predictions = self.accelerator.gather_for_metrics((predictions))
+                # compute the metrics
+                predictions = pred_ids[:, :-1]
+                predictions = self.accelerator.pad_across_processes(
+                    predictions, dim=1, pad_index=-100
+                )
+                predictions = self.accelerator.gather_for_metrics((predictions))
 
-            labels = labels[:, 1:]
-            labels = self.accelerator.pad_across_processes(
-                labels, dim=1, pad_index=-100
-            )
-            labels = self.accelerator.gather_for_metrics((labels))
+                labels = labels[:, 1:]
+                labels = self.accelerator.pad_across_processes(
+                    labels, dim=1, pad_index=-100
+                )
+                labels = self.accelerator.gather_for_metrics((labels))
 
-            prediction_list, label_list = (
-                predictions.flatten().tolist(),
-                labels.flatten().tolist(),
-            )
-            metrics = compute_accuracy_metrics(prediction_list, label_list)
-            prefix_metrics = {}
-            for key in metrics:
-                prefix_metrics[f"train_{key}"] = metrics[key]
-            # Log to wandb
-            self.log(prefix_metrics)
+                prediction_list, label_list = (
+                    predictions.flatten().tolist(),
+                    labels.flatten().tolist(),
+                )
+                metrics = compute_accuracy_metrics(prediction_list, label_list)
+                prefix_metrics = {}
+                for key in metrics:
+                    prefix_metrics[f"train_{key}"] = metrics[key]
+                # Log to wandb
+                self.log(prefix_metrics)
             return (loss, outputs) if return_outputs else loss
 
     # if set log_train_metrics=true will compute the metrics after each training step

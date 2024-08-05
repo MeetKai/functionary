@@ -11,3 +11,4 @@ PyYAML~=6.0.1
 protobuf==3.20.0
 tokenizers==0.19.1
 vllm==0.5.3.post1; sys_platform != "darwin"
+json_source_map==1.0.5
