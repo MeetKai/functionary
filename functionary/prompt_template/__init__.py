@@ -6,6 +6,7 @@ from functionary.prompt_template.prompt_template_v1 import PromptTemplateV1
 from functionary.prompt_template.prompt_template_v2 import PromptTemplateV2
 from functionary.prompt_template.llama3_prompt_template_v3 import Llama3TemplateV3
 from functionary.prompt_template.llava_prompt_template import LlavaLlama
+from functionary.prompt_template.gemma2_prompte_template import Gemma2PromptTemplate
 
 
 def get_available_prompt_template_versions() -> List[PromptTemplate]:
@@ -65,6 +66,11 @@ def get_prompt_template_from_tokenizer(tokenizer: Any) -> PromptTemplate:
     p3 = _TEMPLATE_DIC[Llama3Template.version]
     p4 = _TEMPLATE_DIC[Llama3TemplateV3.version]
     p5 = _TEMPLATE_DIC[LlavaLlama.version]
+    p7 = _TEMPLATE_DIC[Gemma2PromptTemplate.version]
+
+    token_ids = tokenizer.encode(p7.start_header, add_special_tokens=False)
+    if len(token_ids) == 1 and token_ids[0] == 106:  # gemma 2
+        return p7
 
     token_ids = tokenizer.encode(p3.function_separator, add_special_tokens=False)
     if len(token_ids) == 1 and token_ids[0] == 128254:  # based on llama3
