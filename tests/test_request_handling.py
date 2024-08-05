@@ -200,7 +200,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
             PromptTemplateV2: "meetkai/functionary-small-v2.4",
             Llama3Template: "meetkai/functionary-small-v2.5",
             Llama3TemplateV3: "meetkai/functionary-medium-v3.0",
-            Llama31Template: "meetkai/functionary-small-llama-3.1",
+            Llama31Template: "meta-llama/Meta-Llama-3.1-8B-Instruct",
             LlavaLlama: "lmms-lab/llama3-llava-next-8b",
         }
         self.default_text_str = "Normal text generation"
