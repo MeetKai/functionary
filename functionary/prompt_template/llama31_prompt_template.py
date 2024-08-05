@@ -270,7 +270,7 @@ class Llama31Template(PromptTemplate):
         *,
         current_state: Dict[str, Any],
         delta_text: str,
-        finish_reason: str | None,
+        finish_reason: Optional[str],
         tool_choice: Any,
     ) -> Tuple[Dict[str, Any] | None | Dict | List[Dict]]:
         """This function is used for streaming
