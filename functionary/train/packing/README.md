@@ -1,6 +1,9 @@
 # Packing Inputs Without Cross-Contamination Attention
 
-To speed up training, we have implemented packing without **cross-contamination attention** by monkey-patching ``MistralForCausalLM``, ``LlamaForCausalLM`` and ``MixtralForCausalLM``, ``Qwen2ForCausalLM``. The idea of packing is to merge/pack short inputs into a single input so the number of training data points would be reduced.
+To speed up training, we have implemented packing without **cross-contamination attention** by monkey-patching the function: [``_get_unpad_data`` in ``modeling_flash_attention_utils.py``](https://github.com/huggingface/transformers/blob/main/src/transformers/modeling_flash_attention_utils.py#L33). The idea of packing is to merge/pack short inputs into a single input so the number of training data points would be reduced.
+
+**Supported models: All the models using: modeling_flash_attention_utils.py will be supported, so this monkey-patching method will support almost all models such as: Llama, Mistral, Mixtral, Qwen, Phi, Gemma, ...**
+
 
 Concretely, when we pack inputs, the attention should be only within individual sequences. For example, assume that we are packing 2 inputs: packed input = [input 1] [input 2]. Tokens from **input 1** only attend to tokens from **input 1** and tokens from **input 2** only attend to tokens from **input 2**
 
@@ -23,8 +26,12 @@ Some notes:
 ## How To use
 
 To use Packing in the training we just need to:
++ Upgrade the transformers version to the **newest one**, old transformers versions still work but only for limited number of models.
++ Run the monkey-patch script: 
+  ```
+  monkey_patch_packing.monkey_patch_packing_for_model(pretrained_path)
+  ```
 + Convert original dataset to packed datasets
-+ Use monkey-patched implementation of: ``MistralForCausalLM``, ``LlamaForCausalLM`` or ``MixtralForCausalLM``
 
 ### Convert to Packed Dataset
 The format of packed input (assume that packing n inputs into one)
@@ -75,7 +82,6 @@ model = transformers.AutoModelForCausalLM.from_pretrained(model_path, ...)
 model.config.use_cache = False # In the training, we don't need to use cache, note: must add this or can encounter assertion error
 
 ```
-Note that currently we only support: ``Mistral, Mixtral, Llama, Qwen2``
 
 The implementation is based on the idea of overwriting the function: ``_get_unpad_data`` with a monkey-patched function that can handle ``attentions_mask`` of packed inputs. You can take a look at the file: **monkey_patch_packing.py**
 
@@ -90,9 +96,7 @@ To run the script you need to install:
 ```shell
 # Install Dependencies
 pip install git+https://github.com/huggingface/transformers.git
-pip install accelerate==0.23.0 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 deepspeed==0.11.1 typer==0.9.0
-
-pip install flash-attn==2.3.2 --no-build-isolation
+pip install accelerate==0.33.0 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 typer==0.9.0 flash-attn==2.5.9.post1
 ```
 
 You can run the script to verify that the implementation of monkey-patch is correct:

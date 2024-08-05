@@ -12,6 +12,7 @@ from vllm.sampling_params import SamplingParams
 from vllm.utils import random_uuid
 
 from functionary.inference_stream import generate_openai_format_from_stream_async
+from functionary.inference_utils import analyze_tools_and_tool_choice
 from functionary.openai_types import (
     ChatCompletionChunk,
     ChatCompletionRequest,
@@ -30,7 +31,6 @@ from functionary.prompt_template.prompt_utils import (
     get_random_tool_call_id,
     prepare_messages_for_inference,
 )
-from functionary.inference_utils import analyze_tools_and_tool_choice
 
 
 def create_error_response(
@@ -106,11 +106,12 @@ async def check_length(request, input_ids, model_config):
     else:
         context_len = 4096
 
-    # Scale the context_len if rope scaling is provided
+    # Scale the context_len if rope scaling with "type" is provided
     # Currently only supports ["linear", "dynamic", "yarn"], not yet for "su"/"longrope"
     if (
         hasattr(model_config.hf_config, "rope_scaling")
         and model_config.hf_config.rope_scaling is not None
+        and "type" in model_config.hf_config.rope_scaling
     ):
         # From vLLM's code, it seems like only YaRN requires
         # "original_max_position_embeddings" in rope_scaling dict
@@ -151,7 +152,7 @@ async def process_chat_completion(
     error_check_ret = await check_all_errors(request, served_model)
     if error_check_ret is not None:
         return error_check_ret
-    
+
     tools_or_functions, tool_func_choice = analyze_tools_and_tool_choice(request)
 
     prompt_token_ids = prepare_messages_for_inference(
