@@ -37,13 +37,13 @@ class TestPromptTemplate(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(TestPromptTemplate, self).__init__(*args, **kwargs)
 
-        self.template_versions = ["v2", "v2.llama3", "v3.llama3", "v3-llama3.1"][-1: ]
+        self.template_versions = ["v2", "v2.llama3", "v3.llama3", "v3-llama3.1"]
         self.pretrained_models = [
             "meetkai/functionary-small-v2.4",
             "meetkai/functionary-small-v2.5",
             "meetkai/functionary-medium-v3.0",
-            "meta-llama/Meta-Llama-3.1-8B-Instruct"
-        ][-1: ]
+            "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        ]
 
     def read_example_data(self, template_version: str):
         current_folder = os.path.dirname(os.path.abspath(__file__))
