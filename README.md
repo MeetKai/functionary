@@ -15,6 +15,7 @@ Documentation and more examples: [functionary.meetkai.com](https://functionary.m
 
   <summary>Changelog: (click to expand)</summary>
 
+  + [2024/08/06] We release [meetkai/functionary-small-v3.1](https://huggingface.co/meetkai/functionary-small-v3.1) (based on [meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct))
   + [2024/06/14] We release [meetkai/functionary-medium-v3.0](https://huggingface.co/meetkai/functionary-medium-v3.0) (based on [meta-llama/Meta-Llama-3-70B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-70B-Instruct)) with better capability for function calling
   + [2024/05/17] We release [meetkai/functionary-small-v2.5](https://huggingface.co/meetkai/functionary-small-v2.5) with better capability for function calling and code interpreter compared with [functionary-small-v2.4](https://huggingface.co/meetkai/functionary-small-v2.4)
   + [2024/05/06] Streaming support for functionary v2 to v2.4 models is released in [llama-cpp-python](https://github.com/abetlen/llama-cpp-python)!
@@ -61,7 +62,7 @@ python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len
 ```
 
 Note:
-- Grammar Sampling support is applicable only for the V2 models. There is no such support for V1 models.
+- Grammar Sampling support is applicable only for the V2 and V3.0 models. There is no such support for V1 and V3.1 models.
 - Our vLLM server supports the `tool_choice="required"` feature in OpenAI Chat Completion API exclusively **only when grammar sampling is enabled**.
 
 
