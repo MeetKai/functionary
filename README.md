@@ -62,7 +62,7 @@ python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len
 ```
 
 Note:
-- Grammar Sampling support is applicable only for the V2 models. There is no such support for V1 models.
+- Grammar Sampling support is applicable only for the V2 and V3.0 models. There is no such support for V1 and V3.1 models.
 - Our vLLM server supports the `tool_choice="required"` feature in OpenAI Chat Completion API exclusively **only when grammar sampling is enabled**.
 
 

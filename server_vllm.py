@@ -102,8 +102,9 @@ if __name__ == "__main__":
     parser = AsyncEngineArgs.add_cli_args(parser)
     args = parser.parse_args()
 
-    pattern = r"v1.*$"
-    if re.search(pattern, args.model):
+    v1_pattern = r"v1.*$"
+    v31_pattern = r"v3.1$"
+    if re.search(v1_pattern, args.model) or re.search(v31_pattern, args.model):
         args.grammar_sampling = False
 
     if args.grammar_sampling:
