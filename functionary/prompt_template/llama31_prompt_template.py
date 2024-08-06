@@ -485,6 +485,7 @@ class Llama31Template(PromptTemplate):
             "curr_text": curr_text,
             "func_name": tool_choice,
             "add_code_interpreter": add_code_interpreter,
+            "text_to_func_buffer": [],
         }
 
     def grammar_sample(
@@ -544,14 +545,17 @@ class Llama31Template(PromptTemplate):
                 new_curr_tokens = tokenizer.decode(new_curr_tokens_id)
 
                 if gen_state["stage"] == "function":
-                    options_mask = [
-                        (
-                            True
-                            if option.startswith(new_curr_tokens.lstrip(" "))
-                            else False
-                        )
-                        for option in options
-                    ]
+                    if ">" not in new_curr_tokens:
+                        options_mask = [
+                            (
+                                True
+                                if option.startswith(new_curr_tokens.lstrip(" "))
+                                else False
+                            )
+                            for option in options
+                        ]
+                    else:
+                        options_mask = [new_curr_tokens == option for option in options]
 
                     # Use the token as long as 1 option is True
                     # - Reject the whitespace (" ") and empty ("") tokens
@@ -571,11 +575,7 @@ class Llama31Template(PromptTemplate):
                         break
                 if gen_state["stage"] == "post-function":
                     options_mask = [
-                        (
-                            True
-                            if option.startswith(new_curr_tokens.lstrip(" "))
-                            else False
-                        )
+                        (True if option.startswith(new_curr_tokens) else False)
                         for option in options
                     ]
                     if any(options_mask) and sampled_token.strip(" ") != "":
@@ -629,7 +629,9 @@ class Llama31Template(PromptTemplate):
         gen_state["curr_text"] = tokenizer.decode(gen_state["curr_tokens"])
 
         if gen_state["stage"] == "preliminary":
-            if gen_state["curr_text"].startswith("<"):
+            if gen_state["curr_text"] == "<|python_tag|>":
+                gen_state["stage"] = "code-interpreter"
+            elif gen_state["curr_text"].startswith("<"):
                 gen_state["stage"] = "function"
             else:
                 gen_state["stage"] = "text-gen"
@@ -641,6 +643,7 @@ class Llama31Template(PromptTemplate):
                     if match:
                         gen_state["func_name"] = match.group(1)
                         gen_state["curr_text"], gen_state["curr_tokens"] = "", []
+                        gen_state["text_to_func_buffer"] = []
                         gen_state["stage"] = "parameter"
                         break
         elif gen_state["stage"] == "parameter":
@@ -655,6 +658,26 @@ class Llama31Template(PromptTemplate):
             if any([gen_state["curr_text"] == option for option in options]):
                 gen_state["stage"] = "preliminary"
                 gen_state["curr_text"], gen_state["curr_tokens"] = "", []
+        elif gen_state["stage"] == "text-gen":
+            if gen_state["curr_text"].endswith("<|python_tag|>"):
+                gen_state["stage"] = "code-interpreter"
+                gen_state["curr_text"], gen_state["curr_tokens"] = "", []
+            else:
+                delta_text = tokenizer.decode(new_token_id)
+                text_in_buffer = "".join(
+                    gen_state["text_to_func_buffer"] + [delta_text]
+                )
+                if "<" in text_in_buffer and "<function".startswith(
+                    text_in_buffer[text_in_buffer.index("<") :]
+                ):
+                    if text_in_buffer[text_in_buffer.index("<") :] == "<function":
+                        gen_state["stage"] = "function"
+                        gen_state["curr_text"] = "<function"
+                        gen_state["curr_tokens"] = tokenizer.encode(
+                            "<function", add_special_tokens=False
+                        )
+                    else:
+                        gen_state["text_to_func_buffer"].append(delta_text)
 
         return gen_state
 
@@ -668,4 +691,5 @@ class Llama31Template(PromptTemplate):
         return f""
 
     def get_tool_choice_required_prefix(self):
+        return "<function="
         return "<function="
