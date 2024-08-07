@@ -7,6 +7,7 @@ from functionary.prompt_template.llama31_prompt_template import Llama31Template
 from functionary.prompt_template.llava_prompt_template import LlavaLlama
 from functionary.prompt_template.prompt_template_v1 import PromptTemplateV1
 from functionary.prompt_template.prompt_template_v2 import PromptTemplateV2
+import re
 
 
 def get_available_prompt_template_versions() -> List[PromptTemplate]:
@@ -61,6 +62,18 @@ def get_prompt_template_from_tokenizer(tokenizer: Any) -> PromptTemplate:
     Returns:
         _type_: _description_
     """
+    # find prompt template using jinja chat template first
+    for version in _TEMPLATE_DIC:
+        if _TEMPLATE_DIC[version].get_chat_template_jinja() == tokenizer.chat_template:
+            return _TEMPLATE_DIC[version]
+
+    # find prompt template by searching for version information in jinja tempalte comment, e.g: {# version=abc #}
+    chat_template = tokenizer.chat_template
+    match = re.search("\{\# version=(?P<version_name>.+) \#\}", chat_template)
+    if match:
+        version_name = match.group("version_name").strip()
+        return _TEMPLATE_DIC[version_name]
+
     p1 = PromptTemplateV1.get_prompt_template()
     p2 = _TEMPLATE_DIC[PromptTemplateV2.version]
     p3 = _TEMPLATE_DIC[Llama3Template.version]
