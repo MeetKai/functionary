@@ -231,16 +231,47 @@ async def generate_openai_format_from_stream_async(
     generator: AsyncGenerator[Tuple[str, Optional[str]], None],
     prompt_template: PromptTemplate,
     tool_choice: Any,
+    tools_or_functions: List[dict],
 ) -> AsyncGenerator[Dict, None]:
-    state = {}  # # = function if it is function call; = text if it is chit-chat
+    gen_state = prompt_template.initialize_fsm_gen_state(
+        tool_choice=tool_choice,
+        curr_text="",
+        curr_tokens=None,
+        add_code_interpreter=(
+            True
+            if any(
+                [
+                    "type" in tool_or_func
+                    and tool_or_func["type"] == "code_interpreter"
+                    for tool_or_func in tools_or_functions
+                ]
+            )
+            else False
+        ),
+    )
+
+    new_tools_or_functions = []
+    for tool_or_func in tools_or_functions:
+        if "type" not in tool_or_func:
+            new_tools_or_functions.append(tool_or_func)
+        elif tool_or_func["type"] == "function":
+            new_tools_or_functions.append(tool_or_func["function"])
+
     async for delta_text, finish_reason in generator:
-        # ""print(f"delta_text:{delta_text}, finish_reason: {finish_reason}; response_type:{response_type}")
-        state, response = prompt_template.update_response_state_from_delta_text(
-            current_state=state,
+        gen_state, response = prompt_template.stream_delta_text(
+            gen_state=gen_state,
             delta_text=delta_text,
             finish_reason=finish_reason,
+            tools_or_functions=new_tools_or_functions,
             tool_choice=tool_choice,
         )
+
+        # state, response = prompt_template.update_response_state_from_delta_text(
+        #     current_state=state,
+        #     delta_text=delta_text,
+        #     finish_reason=finish_reason,
+        #     tool_choice=tool_choice,
+        # )
         if response is not None:
             if type(response) is list:
                 for item in response:
