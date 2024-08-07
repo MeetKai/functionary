@@ -135,8 +135,9 @@ class Llama3TemplateV3(PromptTemplate):
         return (
             grammar_sampled_token_id,
             grammar_sampled_token,
-            self.update_grammar_sampling_gen_state(
+            self.update_fsm_gen_state(
                 gen_state=gen_state,
+                new_token=None,
                 new_token_id=grammar_sampled_token_id,
                 options=options,
                 tokenizer=tokenizer,

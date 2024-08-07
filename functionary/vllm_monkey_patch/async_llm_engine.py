@@ -1041,7 +1041,7 @@ class AsyncLLMEngine:
         # Initialize the request_id entry of self.gen_states
         self.engine.gen_states[request_id] = self.engine.prompt_templates[
             request_id
-        ].initialize_grammar_sampling_gen_state(
+        ].initialize_fsm_gen_state(
             tool_choice=tool_choice_name,
             curr_text=curr_text,
             curr_tokens=curr_tokens,
