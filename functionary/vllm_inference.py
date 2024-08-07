@@ -260,12 +260,13 @@ async def process_chat_completion(
         # yield "", "stop"
 
     async def completion_stream_generator(
-        tool_choice, functions
+        tool_choice, functions, tools_or_functions
     ) -> AsyncGenerator[str, None]:
         generator = wrap_vllm_generator(tool_choice=tool_choice)
+
         tool_call_count = 0
         async for response in generate_openai_format_from_stream_async(
-            generator, prompt_template, tool_choice
+            generator, prompt_template, tool_choice, tools_or_functions
         ):
             # Convert tool_calls to function_call if request.functions is provided
             if (
@@ -325,6 +326,7 @@ async def process_chat_completion(
             completion_stream_generator(
                 tool_choice=tool_func_choice,
                 functions=request.functions,
+                tools_or_functions=tools_or_functions,
             ),
             media_type="text/event-stream",
             background=background_tasks,
