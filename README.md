@@ -16,7 +16,9 @@ Documentation and more examples: [functionary.meetkai.com](https://functionary.m
   <summary>Changelog: (click to expand)</summary>
 
   + [2024/08/07] We release **new vision function calling models**: [meetkai/functionary-vision-medium-v0.1](https://huggingface.co/meetkai/functionary-vision-medium-v0.1); [meetkai/functionary-vision-small-v0.1](https://huggingface.co/meetkai/functionary-vision-small-v0.1)
-  + [2024/08/06] We release [meetkai/functionary-small-v3.1](https://huggingface.co/meetkai/functionary-small-v3.1) (based on [meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct)) with 128k context-length
+  + [2024/08/07] We release 2 128k-context length models that are based on [meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct): 
+     + [meetkai/functionary-small-v3.1](https://huggingface.co/meetkai/functionary-small-v3.1): **using Meta's original prompt template** as described in: [User-defined Custom tool calling](https://llama.meta.com/docs/model-cards-and-prompt-formats/llama3_1#user-defined-custom-tool-calling)
+     + [meetkai/functionary-small-v3.2](https://huggingface.co/meetkai/functionary-small-v3.2): using **our own prompt template**. This model is **better** than [meetkai/functionary-small-v3.1](https://huggingface.co/meetkai/functionary-small-v3.1)
   + [2024/06/14] We release [meetkai/functionary-medium-v3.0](https://huggingface.co/meetkai/functionary-medium-v3.0) (based on [meta-llama/Meta-Llama-3-70B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-70B-Instruct)) with better capability for function calling
   + [2024/05/17] We release [meetkai/functionary-small-v2.5](https://huggingface.co/meetkai/functionary-small-v2.5) with better capability for function calling and code interpreter compared with [functionary-small-v2.4](https://huggingface.co/meetkai/functionary-small-v2.4)
   + [2024/05/06] Streaming support for functionary v2 to v2.4 models is released in [llama-cpp-python](https://github.com/abetlen/llama-cpp-python)!
@@ -39,7 +41,7 @@ Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/ge
 
 **Small Model:**
 ```shell
-python3 server_vllm.py --model "meetkai/functionary-small-v3.1" --host 0.0.0.0 --max-model-len 8192
+python3 server_vllm.py --model "meetkai/functionary-small-v3.2" --host 0.0.0.0 --max-model-len 8192
 ```
 
 <details>
@@ -143,7 +145,7 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 
 client.chat.completions.create(
-    model="meetkai/functionary-small-v3.1",
+    model="meetkai/functionary-small-v3.2",
     messages=[{"role": "user",
             "content": "What is the weather for Istanbul?"}
     ],
@@ -238,7 +240,7 @@ client.chat.completions.create(
 import requests
 
 data = {
-    'model': 'meetkai/functionary-small-v3.1', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
+    'model': 'meetkai/functionary-small-v3.2', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
     'messages': [
         {
             "role": "user",
@@ -281,9 +283,10 @@ print(response.text)
 ## Models Available
 | Model                                                                                | Model Type| Description                                                                                                                         | VRAM FP16 |
 |:-------------------------------------------------------------------------------------|---|:--------------------------------------------------------------------------------------------------------------------------------------|:------|
-| [functionary-small-v3.1](https://huggingface.co/meetkai/functionary-small-v3.1) / [GGUF](https://huggingface.co/meetkai/functionary-small-v3.1-GGUF) | Text-Only | 128k context, code interpreter | 24GB |
 | [meetkai/functionary-vision-medium-v0.1](https://huggingface.co/meetkai/functionary-vision-medium-v0.1) | Vision | 8k context| 160GB |
 | [meetkai/functionary-vision-small-v0.1](https://huggingface.co/meetkai/functionary-vision-small-v0.1) | Vision | 8k context| 24GB |
+| [functionary-small-v3.2](https://huggingface.co/meetkai/functionary-small-v3.1) / [GGUF](https://huggingface.co/meetkai/functionary-small-v3.2-GGUF) | 128k context, code interpreter, using **our own prompt template** | 24GB |
+| [functionary-small-v3.1](https://huggingface.co/meetkai/functionary-small-v3.1) / [GGUF](https://huggingface.co/meetkai/functionary-small-v3.1-GGUF) | Text-Only | 128k context, code interpreter | 24GB |
 | [functionary-medium-v3.0](https://huggingface.co/meetkai/functionary-medium-v3.0) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v3.0-GGUF)| Text-only | 8k context, based on [meta-llama/Meta-Llama-3-70B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-70B-Instruct) | 160GB |
 | [functionary-small-v2.5](https://huggingface.co/meetkai/functionary-small-v2.5) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.5-GGUF)| Text-only | 8k context, code interpreter | 24GB |
 | [functionary-small-v2.4](https://huggingface.co/meetkai/functionary-small-v2.4) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.4-GGUF)| Text-only | 8k context, code interpreter | 24GB |
@@ -293,8 +296,6 @@ print(response.text)
 | [functionary-7b-v2.1](https://huggingface.co/meetkai/functionary-7b-v2.1) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2.1-GGUF)| Text-only            | 8k context | 24GB |
 | [functionary-7b-v2](https://huggingface.co/meetkai/functionary-7b-v2) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v2-GGUF)| Text-only                | Parallel function call support.   | 24GB |
 | [functionary-7b-v1.4](https://huggingface.co/meetkai/functionary-7b-v1.4) / [GGUF](https://huggingface.co/meetkai/functionary-7b-v1.4-GGUF)| Text-only            | 4k context, better accuracy (deprecated) | 24GB |
-| [functionary-7b-v1.1](https://huggingface.co/meetkai/functionary-7b-v1.1)            | 4k context (deprecated)                                                                                                         | 24GB | 
-| functionary-7b-v0.1            | 2k context (deprecated) Not recommended, use 2.1 onwards                                                                                                  | 24GB |
 
 ### Compatibility information
 
