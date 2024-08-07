@@ -287,16 +287,6 @@ class Llama3TemplateV3(PromptTemplate):
         curr_tokens: Optional[List[int]],
         add_code_interpreter: Optional[bool],
     ) -> Dict:
-        """Initializes FSM state for both streaming and grammar sampling
-
-        Args:
-            tool_choice (str): tool_choice provided by user
-            curr_text (str): Text to initialize in gen_state
-            curr_tokens (List[int]): Corresponding tokens of curr_text
-            add_code_interpreter (bool): Flag indicating whether to add "python" tool in options in "function" stage.
-        Returns:
-            Dict: generation state
-        """
         add_all_recipient = False
         func_name = None
         # To force a text response ("tool_choice"="none")
@@ -338,8 +328,13 @@ class Llama3TemplateV3(PromptTemplate):
         )
 
     def stream_delta_text(
-        self, gen_state, delta_text, finish_reason, tools_or_functions, tool_choice
-    ):
+        self,
+        gen_state: Dict,
+        delta_text: str,
+        finish_reason: Optional[str],
+        tools_or_functions: List[Dict],
+        tool_choice: Any,
+    ) -> Tuple[Dict, Optional[Union[Dict, List[Dict]]]]:
         if finish_reason is not None:  # handle if finish
             if gen_state["func_name"] is not None and gen_state["func_name"] != "all":
                 finish_reason = "tool_calls"
@@ -399,25 +394,6 @@ class Llama3TemplateV3(PromptTemplate):
 
         return gen_state, responses
 
-    def _update_gen_state_for_fn_call(self, gen_state: Dict, func_name: str):
-        """update the state when a function is going to be called
-
-        Args:
-            current_state (_type_): _description_
-        """
-        gen_state["func_name"] = func_name
-        gen_state["func_index"] += 1
-        gen_state["call_id"] = prompt_utils.get_random_tool_call_id()
-        gen_state["first_time_func"] = True
-
-        return gen_state
-
-    def _reset_fsm_curr_text_and_tokens(self, gen_state: Dict):
-        gen_state["curr_text"] = ""
-        gen_state["curr_tokens"] = [] if gen_state["curr_tokens"] is not None else None
-
-        return gen_state
-
     def update_fsm_gen_state(
         self,
         gen_state: Dict,
@@ -426,28 +402,6 @@ class Llama3TemplateV3(PromptTemplate):
         options: Optional[List],
         tokenizer: Any,
     ) -> Dict:
-        """Receives a generation state, updates and returns it. This is only used when
-        grammar sampling is enabled in inference. This functions parses the generated
-        tokens and identifies the stage of generation (pre-function, function, parameter,
-        etc.)
-        Args:
-            gen_state (Dict): The current generation state. It contains the following:
-            - stage: one of the following:
-              - pre-function: the generation prior to function name generation
-              - function: when the model is generating a function name
-              - pre-parameter: when the model is generating the part between function name and parameter
-              - parameter: when the model is generating parameters
-              - text-gen: when the model is generating content
-              - code-interpreter: when the model is generating code
-            - curr_tokens: all the tokens for the current stage being generated
-            - curr_text: curr_tokens but in string text form
-            - func_name: the function name, if any
-            new_token_id (int): The token id of the newly sampled token
-            options (List): All available function/param names depending on the stage of gen_state
-            tokenizer (Any): The tokenizer class passed in from Transformers or vLLM
-        Returns:
-            dict: The updated gen_state
-        """
         if gen_state["curr_tokens"] is not None:
             # Update curr_tokens and curr_text
             gen_state["curr_tokens"].append(new_token_id)
