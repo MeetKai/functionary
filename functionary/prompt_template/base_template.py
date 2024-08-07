@@ -269,7 +269,7 @@ class PromptTemplate:
 
     def get_chat_template_jinja(self):
         """Return chat_template in jinja format"""
-        return ""
+        return "{# " + f"version={self.version}" + " #}"
 
     def get_generation_prefix_for_tool_choice(self, tool_choice: Any):
         if tool_choice == "auto" or tool_choice is None:
