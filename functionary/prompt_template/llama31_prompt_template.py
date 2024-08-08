@@ -256,10 +256,10 @@ class Llama31Template(PromptTemplate):
 
     def initialize_fsm_gen_state(
         self,
-        tool_choice: str | Tool,
+        tool_choice: Union[str, Tool],
         curr_text: str,
-        curr_tokens: List[int] | None,
-        add_code_interpreter: bool | None,
+        curr_tokens: Optional[List[int]],
+        add_code_interpreter: Optional[bool],
     ) -> Dict:
         func_name = None
         # To force a text response ("tool_choice"="none")
@@ -305,10 +305,10 @@ class Llama31Template(PromptTemplate):
         self,
         gen_state: Dict,
         delta_text: str,
-        finish_reason: str | None,
+        finish_reason: Optional[str],
         tools_or_functions: List[Dict],
         tool_choice: Any,
-    ) -> Tuple[Dict | List[Dict] | None]:
+    ) -> Tuple[Dict, Optional[Union[Dict, List[Dict]]]]:
         if finish_reason is not None:  # handle if finish
             if gen_state["stage"] in ["parameter", "code-interpreter"]:
                 finish_reason = "tool_calls"
