@@ -254,200 +254,235 @@ class Llama31Template(PromptTemplate):
 
         return {"role": "assistant", "content": text_response, "tool_calls": tool_calls}
 
-    def update_state_for_function(self, current_state: Dict, func_name: str):
-        """update the state when a function is going to be called
-
-        Args:
-            current_state (_type_): _description_
-        """
-        current_state["func_name"] = func_name
-        current_state["func_index"] += 1
-        current_state["call_id"] = prompt_utils.get_random_tool_call_id()
-        current_state["first_time_func"] = True
-
-    def update_response_state_from_delta_text(
+    def initialize_fsm_gen_state(
         self,
-        *,
-        current_state: Dict[str, Any],
+        tool_choice: str | Tool,
+        curr_text: str,
+        curr_tokens: List[int] | None,
+        add_code_interpreter: bool | None,
+    ) -> Dict:
+        func_name = None
+        # To force a text response ("tool_choice"="none")
+        if tool_choice == "none":
+            stage = "text-gen"
+        # Normal generation (function name first with <function= generated) (tool_choice="returned")
+        elif tool_choice == "required":
+            stage = "function"
+            curr_text = "<function="
+        # To force a function call (tool_choice={"type": "function", "function": {...}})
+        elif not isinstance(tool_choice, str):
+            stage = "parameter"
+            func_name = (
+                tool_choice.function.name
+                if isinstance(tool_choice, Tool)
+                else tool_choice.name
+            )
+        # Normal generation (text gen or function name) (tool_choice="auto")
+        else:
+            stage = "pre-function"
+
+        gen_state = {
+            "stage": stage,
+            "curr_tokens": curr_tokens,
+            "curr_text": curr_text,
+            "func_name": func_name,
+            "func_index": -1,  # index of the tool in tool_calls
+            "call_id": None,  # call_id of the current tool
+            "gen_empty_text": True,  # if first_time we return an empty delta with role=assistant
+            "first_time_func": True,
+            "text_to_func_buffer": [],
+            "clear_buffer": False,
+            "add_code_interpreter": add_code_interpreter,
+        }
+
+        return (
+            self._update_gen_state_for_fn_call(gen_state, func_name)
+            if func_name is not None
+            else gen_state
+        )
+
+    def stream_delta_text(
+        self,
+        gen_state: Dict,
         delta_text: str,
-        finish_reason: Optional[str],
+        finish_reason: str | None,
+        tools_or_functions: List[Dict],
         tool_choice: Any,
-    ) -> Tuple[Dict[str, Any], Union[None, Dict, List[Dict]]]:
-        """This function is used for streaming
-
-        Args:
-            current_state (Dict[str, Any]):  a dictionary containing the state of the streaming: such as current function_name,
-            delta_text: new token generated
-            finish_reason: if finished or not
-
-        Returns:
-            Tuple[Dict[str, Any], Optional[Dict]]: updated state, response: can be None, a dictionary: {} or a list of dictionary: [{}, ..., {}]
-        """
-        state_gen_preliminary = "gen_preliminary"
-        state_gen_function_name = "gen_function_name"
-        state_gen_text = "gen_text"
-        state_gen_code = "gen_code"
-        state_gen_arguments = "gen_arguments"
-
-        if len(current_state) == 0:
-            current_state = {
-                "state_name": state_gen_preliminary,  # can be normal text or a function call
-                "current_text": "",  # the concatenation of all tokens so far
-                "func_name": None,  # function_name of the current tool, if the response requires to use tool
-                "func_index": -1,  # index of the tool in tool_calls
-                "call_id": None,  # call_id of the current tool
-                "gen_empty_text": True,  # if first_time we return an tempty delta with role=assistant
-                "first_time_func": True,
-                "text_to_func_buffer": [],
-            }
-            if tool_choice == "none":
-                current_state["state_name"] = state_gen_text
-            elif tool_choice == "required":
-                current_state["state_name"] = state_gen_function_name
-                current_state["current_text"] = "<function="
-            elif type(tool_choice) is not str and tool_choice is not None:
-                current_state["state_name"] = state_gen_arguments
-                function_name = (
-                    tool_choice.function.name
-                    if isinstance(tool_choice, Tool)
-                    else tool_choice.name
-                )
-                self.update_state_for_function(current_state, function_name)
-
-        current_state["current_text"] += delta_text
-
+    ) -> Tuple[Dict | List[Dict] | None]:
         if finish_reason is not None:  # handle if finish
-            if current_state["state_name"] in [state_gen_arguments, state_gen_code]:
+            if gen_state["stage"] in ["parameter", "code-interpreter"]:
                 finish_reason = "tool_calls"
-            return current_state, prompt_utils.get_text_delta_response(
+            return gen_state, prompt_utils.get_text_delta_response(
                 None, False, finish_reason
             )
 
-        if current_state["state_name"] == state_gen_preliminary:
-            if current_state["current_text"].startswith("<"):
-                if current_state["current_text"] == "<|python_tag|>":
-                    current_state["state_name"] = state_gen_code
-                else:
-                    current_state["state_name"] = state_gen_function_name
-                return current_state, None
-            else:
-                responses = []
-                if current_state["gen_empty_text"]:
-                    empty_response = prompt_utils.get_text_delta_response(
-                        "", True, finish_reason
-                    )
-                    current_state["gen_empty_text"] = False
-                    responses.append(empty_response)
-                if delta_text != current_state["current_text"]:
-                    responses.append(
-                        prompt_utils.get_text_delta_response(
-                            current_state["current_text"][: -len(delta_text)],
-                            True,
-                            finish_reason,
-                        )
-                    )
+        responses = []
+        options = []
+
+        if gen_state["stage"] == "text-gen":
+            if gen_state["gen_empty_text"]:
+                responses.append(
+                    prompt_utils.get_text_delta_response("", True, finish_reason)
+                )
+                gen_state["gen_empty_text"] = False
                 responses.append(
                     prompt_utils.get_text_delta_response(
-                        delta_text, True, finish_reason
+                        gen_state["curr_text"], True, finish_reason
                     )
                 )
-                current_state["state_name"] = state_gen_text
-                return current_state, responses
-        elif current_state["state_name"] == state_gen_function_name:
-            pattern = r"<function=[^>]+>"
-            match = re.search(pattern, current_state["current_text"])
-            if match:
-                func_name = match.group(0).removeprefix("<function=").removesuffix(">")
-                self.update_state_for_function(current_state, func_name)
-                current_state["state_name"] = state_gen_arguments
-                delta_args = current_state["current_text"].removeprefix(match.group(0))
-                current_state["current_text"] = delta_args
-            return current_state, None
-        elif current_state["state_name"] == state_gen_arguments:
-            if "</" in current_state["current_text"]:
-                if "</" in delta_text:
-                    delta_args = delta_text.removesuffix("</")
-                    if len(delta_args) > 0:
-                        return current_state, prompt_utils.get_function_delta_response(
-                            current_state, delta_args, False, False, finish_reason
-                        )
-                    else:
-                        return current_state, None
-                else:
-                    if "</function>" in current_state["current_text"]:
-                        current_state["state_name"] = state_gen_preliminary
-                        current_state["current_text"] = current_state["current_text"][
-                            current_state["current_text"].rindex("</function>")
-                            + len("</function>") :
-                        ]
-                    return current_state, None
-            else:
-                responses = []
-                if current_state["first_time_func"]:
-                    current_state["first_time_func"] = False
-                    first_function_response = prompt_utils.get_function_delta_response(
-                        current_state, "", True, False, finish_reason
-                    )
-                    responses.append(first_function_response)
-                    delta_args = current_state["current_text"].removesuffix(delta_text)
-                    first_arg_response = prompt_utils.get_function_delta_response(
-                        current_state, delta_args, False, False, finish_reason
-                    )
-                    responses.append(first_arg_response)
-                responses.append(
-                    prompt_utils.get_function_delta_response(
-                        current_state, delta_text, False, False, finish_reason
-                    )
-                )
-                return current_state, responses
-        elif current_state["state_name"] == state_gen_code:
-            responses = []
-            if current_state["first_time_func"]:
-                self.update_state_for_function(current_state, "python")
-                current_state["first_time_func"] = False
-                first_function_response = prompt_utils.get_function_delta_response(
-                    current_state, "", True, False, finish_reason
-                )
-                responses.append(first_function_response)
-            responses.append(
-                prompt_utils.get_function_delta_response(
-                    current_state, delta_text, False, False, finish_reason
-                )
-            )
-            return current_state, responses
-        else:
-            responses = []
-            text_in_buffer = "".join(
-                current_state["text_to_func_buffer"] + [delta_text]
-            )
-            if "<" in text_in_buffer and "<function".startswith(
-                text_in_buffer[text_in_buffer.index("<") :]
+            text_in_buffer = "".join(gen_state["text_to_func_buffer"] + [delta_text])
+            if delta_text != "<|python_tag|>" and not (
+                "<" in text_in_buffer
+                and "<function".startswith(text_in_buffer[text_in_buffer.index("<") :])
             ):
-                if text_in_buffer[text_in_buffer.index("<") :] == "<function":
-                    current_state["state_name"] = state_gen_function_name
-                    current_state["current_text"] = "<function"
-                else:
-                    current_state["text_to_func_buffer"].append(delta_text)
-                return current_state, None
-            elif text_in_buffer == "<|python_tag|>":
-                current_state["state_name"] = state_gen_code
-                current_state["current_text"] = "<|python_tag|>"
-                return current_state, None
-            else:
-                while len(current_state["text_to_func_buffer"]) > 0:
-                    delta_text_to_stream = current_state["text_to_func_buffer"][0]
+                while len(gen_state["text_to_func_buffer"]) > 0:
+                    delta_text_to_stream = gen_state["text_to_func_buffer"][0]
                     responses.append(
                         prompt_utils.get_text_delta_response(
                             delta_text_to_stream, True, finish_reason
                         )
                     )
-                    current_state["text_to_func_buffer"] = current_state[
-                        "text_to_func_buffer"
-                    ][1:]
+                    gen_state["text_to_func_buffer"] = gen_state["text_to_func_buffer"][
+                        1:
+                    ]
+                responses.append(
+                    prompt_utils.get_text_delta_response(
+                        delta_text, True, finish_reason
+                    )
+                )
+            else:
+                gen_state["text_to_func_buffer"].append(delta_text)
+        elif gen_state["stage"] == "parameter":
+            if gen_state["first_time_func"]:
+                gen_state["first_time_func"] = False
+                responses.append(
+                    prompt_utils.get_function_delta_response(
+                        gen_state, "", True, False, finish_reason
+                    )
+                )
+                responses.append(
+                    prompt_utils.get_function_delta_response(
+                        gen_state, gen_state["curr_text"], False, False, finish_reason
+                    )
+                )
+
+            if "</" in delta_text:
+                delta_args = delta_text.removesuffix("</")
+                if len(delta_args) > 0:
+                    responses.append(
+                        prompt_utils.get_function_delta_response(
+                            gen_state, delta_args, False, False, finish_reason
+                        )
+                    )
+            elif "</" in gen_state["curr_text"] and (
+                "</function>".startswith(
+                    gen_state["curr_text"][gen_state["curr_text"].rindex("</") :]
+                    + delta_text
+                )
+                or "</function>" in gen_state["curr_text"] + delta_text
+            ):
+                pass
+            else:
+                responses.append(
+                    prompt_utils.get_function_delta_response(
+                        gen_state, delta_text, False, False, finish_reason
+                    )
+                )
+        elif gen_state["stage"] == "code-interpreter":
+            if gen_state["first_time_func"]:
+                gen_state["first_time_func"] = False
+                first_function_response = prompt_utils.get_function_delta_response(
+                    gen_state, "", True, False, finish_reason
+                )
+                responses.append(first_function_response)
             responses.append(
-                prompt_utils.get_text_delta_response(delta_text, True, finish_reason)
+                prompt_utils.get_function_delta_response(
+                    gen_state, delta_text, False, False, finish_reason
+                )
             )
-            return current_state, responses
+
+        gen_state = self.update_fsm_gen_state(
+            gen_state=gen_state,
+            new_token=delta_text,
+            new_token_id=None,
+            options=options,
+            tokenizer=None,
+        )
+
+        return gen_state, responses
+
+    def update_fsm_gen_state(
+        self,
+        gen_state: Dict,
+        new_token: str | None,
+        new_token_id: int | None,
+        options: List | None,
+        tokenizer: Any,
+    ) -> Dict:
+        if gen_state["curr_tokens"] is not None:
+            # Update curr_tokens and curr_text
+            gen_state["curr_tokens"].append(new_token_id)
+            gen_state["curr_text"] = tokenizer.decode(gen_state["curr_tokens"])
+        else:
+            gen_state["curr_text"] += new_token
+
+        if gen_state["stage"] == "pre-function":
+            if gen_state["curr_text"].startswith("<"):
+                if gen_state["curr_text"] == "<|python_tag|>":
+                    self._update_gen_state_for_fn_call(
+                        gen_state=gen_state, func_name="python"
+                    )
+                    gen_state["stage"] = "code-interpreter"
+                else:
+                    gen_state["stage"] = "function"
+            else:
+                gen_state["stage"] = "text-gen"
+        elif gen_state["stage"] == "text-gen":
+            if gen_state["curr_text"].endswith("<function"):
+                gen_state["stage"] = "function"
+                gen_state["curr_text"] = "<function"
+                gen_state["curr_tokens"] = (
+                    tokenizer.encode(gen_state["curr_text"], add_special_tokens=False)
+                    if gen_state["curr_tokens"] is not None
+                    else None
+                )
+                gen_state["text_to_func_buffer"] = []
+            elif gen_state["curr_text"].endswith("<|python_tag|>"):
+                gen_state["stage"] = "code-interpreter"
+                gen_state = self._update_gen_state_for_fn_call(
+                    gen_state=gen_state, func_name="python"
+                )
+                gen_state = self._reset_fsm_curr_text_and_tokens(gen_state=gen_state)
+                gen_state["text_to_func_buffer"] = []
+        elif gen_state["stage"] == "function":
+            pattern = r"<function=[^>]+>"
+            match = re.search(pattern, gen_state["curr_text"])
+            if match:
+                func_name = match.group(0).removeprefix("<function=").removesuffix(">")
+                gen_state = self._update_gen_state_for_fn_call(
+                    gen_state=gen_state, func_name=func_name
+                )
+                gen_state["stage"] = "parameter"
+                delta_args = gen_state["curr_text"].removeprefix(match.group(0))
+                gen_state["curr_text"] = delta_args
+                gen_state["curr_tokens"] = (
+                    tokenizer.encode(gen_state["curr_text"], add_special_tokens=False)
+                    if gen_state["curr_tokens"] is not None
+                    else None
+                )
+        elif gen_state["stage"] == "parameter":
+            if "</function>" in gen_state["curr_text"]:
+                gen_state["stage"] = "pre-function"
+                gen_state["curr_text"] = gen_state["curr_text"][
+                    gen_state["curr_text"].rindex("</function>") + len("</function>") :
+                ]
+                gen_state["curr_tokens"] = (
+                    tokenizer.encode(gen_state["curr_text"], add_special_tokens=False)
+                    if gen_state["curr_tokens"] is not None
+                    else None
+                )
+
+        return gen_state
 
     def get_chat_template_jinja(self):
         return super().get_chat_template_jinja()
