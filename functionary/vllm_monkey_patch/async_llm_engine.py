@@ -291,7 +291,7 @@ class _AsyncLLMEngine(LLMEngine):
                     )
                 ]
             elif (
-                gen_state["stage"] == "pre-function"
+                gen_state["stage"] != "parameter"
                 and seq_group_metadata_list[i].sampling_params.logits_processors
                 is not None
             ):
@@ -1042,7 +1042,7 @@ class AsyncLLMEngine:
         self.engine.gen_states[request_id] = self.engine.prompt_templates[
             request_id
         ].initialize_fsm_gen_state(
-            tool_choice=tool_choice_name,
+            tool_choice=tool_choice,
             curr_text=curr_text,
             curr_tokens=curr_tokens,
             add_code_interpreter=(

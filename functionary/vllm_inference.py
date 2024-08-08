@@ -238,25 +238,7 @@ async def process_chat_completion(
                 # the delta_text is the eos_token and just remove it
                 if output.finish_reason is not None and len(delta_text) > 0:
                     delta_text = ""
-
-                if (
-                    delta_text.strip()
-                    not in prompt_template.get_stop_tokens_for_generation()
-                ):
-                    # This part checks if delta_text is the first token and tool_choice is provided by user
-                    # If so, it yields the prefix containing the tool_choice name first
-                    if (
-                        previous_texts == delta_text
-                        and delta_text in prompt_template.fn_param_sep_token
-                        and prompt_template.version != "v1"
-                    ):
-                        if tool_choice == "none":
-                            yield "all" + prompt_template.fn_param_sep_token, finish_reason
-                        elif isinstance(tool_choice, Tool):
-                            yield tool_choice.function.name + prompt_template.fn_param_sep_token, finish_reason
-                        elif isinstance(tool_choice, Function):
-                            yield tool_choice.name + prompt_template.fn_param_sep_token, finish_reason
-                    yield delta_text, finish_reason
+                yield delta_text, finish_reason
         # yield "", "stop"
 
     async def completion_stream_generator(
