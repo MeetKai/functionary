@@ -15,6 +15,7 @@ Documentation and more examples: [functionary.meetkai.com](https://functionary.m
 
   <summary>Changelog: (click to expand)</summary>
 
+  + [2024/08/08] We release 128k-context length 70B-model: [meetkai/functionary-medium-v3.1](https://huggingface.co/meetkai/functionary-medium-v3.1) that are based on [meta-llama/Meta-Llama-3.1-70B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-70B-Instruct)  
   + [2024/08/07] We release 2 128k-context length models that are based on [meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct): 
      + [meetkai/functionary-small-v3.1](https://huggingface.co/meetkai/functionary-small-v3.1): **using Meta's original prompt template** as described in: [User-defined Custom tool calling](https://llama.meta.com/docs/model-cards-and-prompt-formats/llama3_1#user-defined-custom-tool-calling)
      + [meetkai/functionary-small-v3.2](https://huggingface.co/meetkai/functionary-small-v3.2): using **our own prompt template**. This model is **better** than [meetkai/functionary-small-v3.1](https://huggingface.co/meetkai/functionary-small-v3.1)
@@ -49,7 +50,7 @@ python3 server_vllm.py --model "meetkai/functionary-small-v3.2" --host 0.0.0.0 -
   If you use multiple GPUs (medium models require: 4xA6000 or 2xA100 80GB to run), need to use: `tensor-parallel-size`
   
 ```shell
-python3 server_vllm.py --model "meetkai/functionary-medium-v3.0" --max-model-len 8192 --tensor-parallel-size 2
+python3 server_vllm.py --model "meetkai/functionary-medium-v3.1" --max-model-len 8192 --tensor-parallel-size 2
 ```
   
 </details>
@@ -60,7 +61,7 @@ python3 server_vllm.py --model "meetkai/functionary-medium-v3.0" --max-model-len
 We also offer our own function-calling grammar sampling feature which constrains the LLM's generation to always follow the prompt template, and ensures 100% accuracy for function name. The parameters are generated using the efficient [lm-format-enforcer](https://github.com/noamgat/lm-format-enforcer), which ensures that the parameters follow the schema of the tool called. To enable grammar sampling, run the vLLM server with the command-line argument <code>--enable-grammar-sampling</code>:
 
 ```shell
-python3 server_vllm.py --model "meetkai/functionary-medium-v2.4" --max-model-len 8192 --tensor-parallel-size 2 --enable-grammar-sampling
+python3 server_vllm.py --model "meetkai/functionary-medium-v3.1" --max-model-len 8192 --tensor-parallel-size 2 --enable-grammar-sampling
 ```
 
 Note:
@@ -197,7 +198,8 @@ print(response.text)
 ## Models Available
 | Model                                                                                | Description                                                                                                                         | VRAM FP16 |
 |:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:------|
-| [functionary-small-v3.2](https://huggingface.co/meetkai/functionary-small-v3.1) / [GGUF](https://huggingface.co/meetkai/functionary-small-v3.2-GGUF) | 128k context, code interpreter, using **our own prompt template** | 24GB |
+| [functionary-small-v3.2](https://huggingface.co/meetkai/functionary-small-v3.2) / [GGUF](https://huggingface.co/meetkai/functionary-small-v3.2-GGUF) | 128k context, code interpreter, using **our own prompt template** | 24GB |
+| [functionary-medium-v3.1](https://huggingface.co/meetkai/functionary-medium-v3.1) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v3.1-GGUF) | 128k context, code interpreter, using **original Meta's prompt template** | 160GB |
 | [functionary-small-v3.1](https://huggingface.co/meetkai/functionary-small-v3.1) / [GGUF](https://huggingface.co/meetkai/functionary-small-v3.1-GGUF) | 128k context, code interpreter, using **original Meta's prompt template** | 24GB |
 | [functionary-medium-v3.0](https://huggingface.co/meetkai/functionary-medium-v3.0) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v3.0-GGUF) | 8k context, based on [meta-llama/Meta-Llama-3-70B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-70B-Instruct) | 160GB |
 | [functionary-small-v2.5](https://huggingface.co/meetkai/functionary-small-v2.5) / [GGUF](https://huggingface.co/meetkai/functionary-small-v2.5-GGUF) | 8k context, code interpreter | 24GB |
@@ -596,20 +598,29 @@ We don't change the logit probabilities to conform to a certain schema, but the 
 
 ## Evaluation
 
+### Berkeley Function-Calling Leaderboard
+| Model Name          | Function Calling  Accuracy (Name & Arguments) |
+| :-------------------| ---------------------------: | 
+| meetkai/functionary-medium-v3.1  |                       **87.24%**|
+| meta-llama/Meta-Llama-3.1-70B-Instruct  |                       83.82%|
+| meetkai/functionary-small-v3.2  |                       83%|
+| meetkai/functionary-small-v3.1  |                       82.53%|
+| FireFunction-v2 (FC)  |                        82.47% |
+
+
 ### Function Prediction Evaluation
 Evaluation function call prediction in SGD dataset. The accuracy metric measures the overall correctness of predicted function calls, including function name prediction and arguments extraction.
 
-<img align="left" width="800" src="assets/SGD_v30.png">
+<img align="left" width="800" src="assets/Functionary_32.png">
 
 | Dataset       | Model Name          | Function Calling  Accuracy (Name & Arguments) |
 | :-------------| :-------------------| ---------------------------: | 
-| SGD | MeetKai-functionary-medium-v3.0  |                       **89.6%**|
+| SGD | meetkai/functionary-medium-v3.1  |                       **88.11%**|
 | SGD | gpt-4o-2024-05-13  |                       82.75%|
 | SGD | gemini-1.5-flash  |                       79.64%|
 | SGD | c4ai-command-r-plus  |                        45.66% |
 
 </details>
-
 
 ## Training
 
