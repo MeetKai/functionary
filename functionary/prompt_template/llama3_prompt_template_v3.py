@@ -398,7 +398,7 @@ class Llama3TemplateV3(PromptTemplate):
         self,
         gen_state: Dict,
         new_token: Optional[str],
-        new_token_id: Optional[int],
+        new_token_id: Optional[str],
         options: Optional[List],
         tokenizer: Any,
     ) -> Dict:
