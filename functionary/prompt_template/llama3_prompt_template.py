@@ -359,9 +359,9 @@ class Llama3Template(PromptTemplate):
     def update_fsm_gen_state(
         self,
         gen_state: Dict,
-        new_token: str | None,
-        new_token_id: int | None,
-        options: List | None,
+        new_token: Optional[str],
+        new_token_id: Optional[str],
+        options: Optional[List],
         tokenizer: Any,
     ) -> Dict:
         if gen_state["curr_tokens"] is not None:
