@@ -133,6 +133,7 @@ class ChatCompletionRequest(BaseModel):
     top_k: Optional[int] = -1
     ignore_eos: Optional[bool] = False
     use_beam_search: Optional[bool] = False
+    images: Optional[List[str]] = None
 
     # @validator("tool_choice", always=True)
     # def validate_tool_choice(cls, value, values):

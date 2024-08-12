@@ -43,7 +43,9 @@ WORKDIR /app
 COPY requirements.txt /app
 
 RUN python3.10 -m pip install -r requirements.txt
-
+# RUN pip show torch && sleep 60
 COPY . /app
 
+# CMD python3.10 server_vllm.py --model "hivata/functionary-small-v2.1-AWQ" --host 0.0.0.0 --trust-remote-code
 ENTRYPOINT [ "python3.10", "server_vllm.py" ]
+# CMD [ "pip", "show", "torch", "transformers", "vllm" ]

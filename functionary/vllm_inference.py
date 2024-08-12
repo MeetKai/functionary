@@ -251,11 +251,21 @@ async def process_chat_completion(
                         and prompt_template.version != "v1"
                     ):
                         if tool_choice == "none":
-                            yield "all" + prompt_template.fn_param_sep_token, finish_reason
+                            yield (
+                                "all" + prompt_template.fn_param_sep_token,
+                                finish_reason,
+                            )
                         elif isinstance(tool_choice, Tool):
-                            yield tool_choice.function.name + prompt_template.fn_param_sep_token, finish_reason
+                            yield (
+                                tool_choice.function.name
+                                + prompt_template.fn_param_sep_token,
+                                finish_reason,
+                            )
                         elif isinstance(tool_choice, Function):
-                            yield tool_choice.name + prompt_template.fn_param_sep_token, finish_reason
+                            yield (
+                                tool_choice.name + prompt_template.fn_param_sep_token,
+                                finish_reason,
+                            )
                     yield delta_text, finish_reason
         # yield "", "stop"
 

@@ -36,17 +36,38 @@ from functionary.vllm_inference import process_chat_completion
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
 logger = init_logger(__name__)
-served_model = None
+served_model: List[str] = []
 app = fastapi.FastAPI()
+
+
+@app.get("/healthz")
+async def get_health_and_readiness():
+    """
+    Indicate service health and readiness.
+
+    Returns:
+        dict: A dictionary containing the vLLM inference service's readiness and health status.
+              - "ready" (bool): Indicates if the service is ready to accept requests.
+              - "health" (bool): Indicates if the service is healthy and operational.
+    """
+    return {"ready": True, "health": True}
 
 
 @app.get("/v1/models")
 async def show_available_models():
     """Show available models. Right now we only have one model."""
-    model_cards = [
-        ModelCard(id=served_model, root=served_model, permission=[ModelPermission()])
-    ]
-    return ModelList(data=model_cards)
+    print("served_model", served_model)
+    if len(served_model) > 0:
+        model_cards = []
+        for model in served_model:
+            model_cards.append(
+                ModelCard(
+                    id=served_model[0],
+                    root=served_model[0],
+                    permission=[ModelPermission()],
+                )
+            )
+        return ModelList(data=model_cards)
 
 
 @app.post("/v1/chat/completions")
@@ -61,12 +82,14 @@ async def create_chat_completion(raw_request: Request):
     request = ChatCompletionRequest(**request_json)
 
     logger.info(f"Received chat completion request: {request}")
+    if request.images is not None:
+        logger.info(f"Vision request: {repr(request.images)}")
 
     return await process_chat_completion(
         request=request,
         raw_request=raw_request,
         tokenizer=tokenizer,
-        served_model=served_model,
+        served_model=request.model,
         engine_model_config=engine_model_config,
         enable_grammar_sampling=args.grammar_sampling,
         engine=engine,
@@ -75,9 +98,12 @@ async def create_chat_completion(raw_request: Request):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="vLLM OpenAI-Compatible RESTful API server."
+        description="Functionary Inference Service: 100% OpenAI-compatible vLLM inference RESTful API server incl. tools"
     )
     parser.add_argument("--host", type=str, default="0.0.0.0", help="host name")
+    # parser.add_argument(
+    #     "--chat-template", type=str, default=None, help="chat template .jinja"
+    # )
     parser.add_argument("--port", type=int, default=8000, help="port number")
     parser.add_argument(
         "--allow-credentials", action="store_true", help="allow credentials"
@@ -121,17 +147,16 @@ if __name__ == "__main__":
         allow_headers=args.allowed_headers,
     )
 
-    logger.info(f"args: {args}")
-
     if args.served_model_name is not None:
         served_model = args.served_model_name
     else:
         served_model = args.model
-
     engine_args = AsyncEngineArgs.from_cli_args(args)
     # A separate tokenizer to map token IDs to strings.
     tokenizer = get_tokenizer(
-        engine_args.tokenizer, tokenizer_mode=engine_args.tokenizer_mode
+        engine_args.tokenizer,
+        tokenizer_mode=engine_args.tokenizer_mode,
+        trust_remote_code=True,
     )
     # Overwrite vLLM's default ModelConfig.max_logprobs of 5
     engine_args.max_logprobs = len(tokenizer.vocab.keys())
