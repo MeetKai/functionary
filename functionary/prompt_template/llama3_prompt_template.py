@@ -78,15 +78,9 @@ class Llama3Template(PromptTemplate):
             grammar_sampled_token_id = model_sampled_token_id
             grammar_sampled_token = tokenizer.decode([model_sampled_token_id])
 
-        options = []
-        # Form the pre-function options (<|reserved_token_249|> or <|eot_id|>) to update gen_state
-        if gen_state["stage"] == "pre-function":
-            options = [self.function_separator, "<|eot_id|>"]
-        # Form the functions options for grammar sampling
-        elif gen_state["stage"] == "function":
-            options = [tool_or_func["name"] for tool_or_func in tools_or_functions]
-            if gen_state["add_code_interpreter"]:
-                options.append("python")
+        options = self.get_options_from_gen_state(
+            gen_state=gen_state, tools_or_functions=tools_or_functions
+        )
 
         # Loop through the list of token ids sorted in descending order. For "function"
         # stage, form a mask made up of booleans where the index of the mask == index
@@ -305,15 +299,9 @@ class Llama3Template(PromptTemplate):
         responses = []
 
         # Form the options for the following stages
-        options = []
-        # Form the pre-function options (<|reserved_token_249|> or <|eot_id|>) to update gen_state
-        if gen_state["stage"] == "pre-function":
-            options = [self.function_separator, "<|eot_id|>"]
-        # Form the functions options for grammar sampling
-        elif gen_state["stage"] == "function":
-            options = [tool_or_func["name"] for tool_or_func in tools_or_functions]
-            if gen_state["add_code_interpreter"]:
-                options.append("python")
+        options = self.get_options_from_gen_state(
+            gen_state=gen_state, tools_or_functions=tools_or_functions
+        )
 
         if gen_state["stage"] == "text-gen":
             if gen_state["gen_empty_text"]:
@@ -435,6 +423,19 @@ class Llama3Template(PromptTemplate):
                 gen_state["stage"] = "function"
                 gen_state = self._reset_fsm_curr_text_and_tokens(gen_state=gen_state)
         return gen_state
+
+    def get_options_from_gen_state(self, gen_state: Dict, tools_or_functions: List):
+        options = []
+        # Form the pre-function options (<|reserved_token_249|> or <|eot_id|>) to update gen_state
+        if gen_state["stage"] == "pre-function":
+            options = [self.function_separator, "<|eot_id|>"]
+        # Form the functions options for grammar sampling
+        elif gen_state["stage"] == "function":
+            options = [tool_or_func["name"] for tool_or_func in tools_or_functions]
+            if gen_state["add_code_interpreter"]:
+                options.append("python")
+
+        return options
 
     def get_chat_template_jinja(self) -> str:
         chat_template = """{% for message in messages %}
