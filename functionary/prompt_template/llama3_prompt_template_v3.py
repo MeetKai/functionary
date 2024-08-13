@@ -472,6 +472,8 @@ class Llama3TemplateV3(PromptTemplate):
         elif gen_state["stage"] == "pre-parameter":
             options = [self.fn_param_sep_token]
 
+        return options
+
     def get_chat_template_jinja(self) -> str:
         chat_template = """{% for message in messages %}
         {% if message['role'] == 'user' or message['role'] == 'system' %}
