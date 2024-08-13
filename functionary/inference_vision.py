@@ -59,7 +59,7 @@ def generate_internvl_chat(
     ]
 
     generation_config = dict(
-        max_new_tokens=2048,
+        max_new_tokens=request.max_tokens,
         do_sample=False,
         eos_token_id=eos_token_ids,
         temperature=request.temperature,
@@ -124,7 +124,7 @@ def generate_llava(
         image_sizes=image_sizes,
         do_sample=False,
         temperature=request.temperature,
-        max_new_tokens=1024,
+        max_new_tokens=request.max_tokens,
     )
 
     text_output = tokenizer.batch_decode(generate_ids, skip_special_tokens=True)[0]
