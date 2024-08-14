@@ -177,7 +177,9 @@ class Llama31Template(PromptTemplate):
             )
 
         responses = []
-        options = []
+        options = self.get_options_from_gen_state(
+            gen_state=gen_state, tools_or_functions=tools_or_functions
+        )
 
         if gen_state["stage"] == "text-gen":
             if gen_state["gen_empty_text"]:
@@ -344,14 +346,11 @@ class Llama31Template(PromptTemplate):
 
         return gen_state
 
-    def get_chat_template_jinja(self) -> str:
-        if self._chat_template is None:
-            with open(
-                f"./functionary/prompt_template/jinja_templates/{self.version}.txt", "r"
-            ) as f:
-                self._chat_template = f.read()
+    def get_options_from_gen_state(self, gen_state: Dict, tools_or_functions: List):
+        return []
 
-        return self._chat_template
+    def get_chat_template_jinja(self):
+        return super().get_chat_template_jinja()
 
     def get_force_function_call_prefix(self, function_name: str):
         return f"<function={function_name}>"

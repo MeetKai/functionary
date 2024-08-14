@@ -264,6 +264,19 @@ class PromptTemplate:
         """
         raise NotImplementedError
 
+    @abstractmethod
+    def get_options_from_gen_state(self, gen_state: Dict, tools_or_functions: List):
+        """Gets a list of options for grammar sampling to generate tokens to form given the gen state
+
+        Args:
+            gen_state (Dict): _description_
+            tools_or_functions (List): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        return []
+
     def get_force_text_generation_prefix(self):
         """This function will be used for force-text generation. Returns empty string by default"""
         return ""

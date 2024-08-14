@@ -63,17 +63,9 @@ class Llama3TemplateV3(PromptTemplate):
         grammar_sampled_token_id, grammar_sampled_token = None, None
 
         # Form the options for the following stages
-        options = []
-        if gen_state["stage"] == "pre-function":
-            options = [self.function_separator, self.eos_token]
-        elif gen_state["stage"] == "function":
-            options = [tool_or_func["name"] for tool_or_func in tools_or_functions]
-            if gen_state["add_all_recipient"]:
-                options.append("all")
-            if gen_state["add_code_interpreter"]:
-                options.append("python")
-        elif gen_state["stage"] == "pre-parameter":
-            options = [self.fn_param_sep_token]
+        options = self.get_options_from_gen_state(
+            gen_state=gen_state, tools_or_functions=tools_or_functions
+        )
 
         # No grammar sampling needed if gen_state not in the following stages. Return model_sampled_token_id
         if gen_state["stage"] not in ["pre-function", "function", "pre-parameter"]:
@@ -249,18 +241,9 @@ class Llama3TemplateV3(PromptTemplate):
 
         responses = []
 
-        # Form the options for the following stages
-        options = []
-        if gen_state["stage"] == "pre-function":
-            options = [self.function_separator, self.eos_token]
-        elif gen_state["stage"] == "function":
-            options = [(tool_or_func["name"]) for tool_or_func in tools_or_functions]
-            if gen_state["add_all_recipient"]:
-                options.append("all")
-            if gen_state["add_code_interpreter"]:
-                options.append("python")
-        elif gen_state["stage"] == "pre-parameter":
-            options = [self.fn_param_sep_token]
+        options = self.get_options_from_gen_state(
+            gen_state=gen_state, tools_or_functions=tools_or_functions
+        )
 
         if gen_state["stage"] == "text-gen":
             if delta_text != self.function_separator:
@@ -379,3 +362,19 @@ class Llama3TemplateV3(PromptTemplate):
                 gen_state["func_name"] = ""
 
         return gen_state
+
+    def get_options_from_gen_state(self, gen_state: Dict, tools_or_functions: List):
+        # Form the options for the following stages
+        options = []
+        if gen_state["stage"] == "pre-function":
+            options = [self.function_separator, self.eos_token]
+        elif gen_state["stage"] == "function":
+            options = [(tool_or_func["name"]) for tool_or_func in tools_or_functions]
+            if gen_state["add_all_recipient"]:
+                options.append("all")
+            if gen_state["add_code_interpreter"]:
+                options.append("python")
+        elif gen_state["stage"] == "pre-parameter":
+            options = [self.fn_param_sep_token]
+
+        return options
