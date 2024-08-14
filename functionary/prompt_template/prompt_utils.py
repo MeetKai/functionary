@@ -89,7 +89,7 @@ def prepare_messages_for_inference(
     final_prompt = prompt_template.get_prompt_from_messages(
         dic_messages,
         tools_or_functions=tools_or_functions,
-        bos_token=tokenizer.bos_token,
+        bos_token="",
         add_generation_prompt=True,
     )
 
