@@ -8,69 +8,6 @@ from functionary.prompt_template import prompt_utils
 from functionary.prompt_template.base_template import PromptTemplate
 
 
-def get_system_prompt_for_custom_tools(custom_tools: List) -> str:
-    custom_tool_params = ""
-    for t in custom_tools:
-        custom_tool_params += get_instruction_string(t) + "\n"
-        custom_tool_params += get_parameters_string(t) + "\n\n"
-
-    content = f"""
-You have access to the following functions:
-
-{custom_tool_params}
-Think very carefully before calling functions.
-If a you choose to call a function ONLY reply in the following format:
-<{{start_tag}}={{function_name}}>{{parameters}}{{end_tag}}
-where
-
-start_tag => `<function`
-parameters => a JSON dict with the function argument name as key and function argument value as value.
-end_tag => `</function>`
-
-Here is an example,
-<function=example_function_name>{{"example_name": "example_value"}}</function>
-
-Reminder:
-- If looking for real time information use relevant functions before falling back to brave_search
-- Function calls MUST follow the specified format, start with <function= and end with </function>
-- Required parameters MUST be specified
-- Only call one function at a time
-- Put the entire function call reply on one line
-
-"""
-    return content
-
-
-def get_instruction_string(custom_tool_definition) -> str:
-    name, description = (
-        custom_tool_definition["name"],
-        custom_tool_definition["description"],
-    )
-    return f"Use the function '{name}' to '{description}'"
-
-
-def get_parameters_string(custom_tool_definition) -> str:
-    return json.dumps(custom_tool_definition)
-
-
-def get_system_message_for_tools(tools: List[Dict], use_code_interpreter) -> List[Dict]:
-    content = ""
-    if use_code_interpreter:
-        content += "Environment: ipython\n"
-
-    current_date = datetime.datetime.now()
-    formatted_date = current_date.strftime("%d %B %Y")
-    date_str = f"""
-Cutting Knowledge Date: December 2023\n\n"""
-    content += date_str
-
-    if tools:
-        custom_message = get_system_prompt_for_custom_tools(tools)
-        content += custom_message
-
-    return {"role": "system", "content": content}
-
-
 def parse_function_call_from_text(function_call_text: str) -> Optional[Dict]:
     index = function_call_text.find(">")
     if index >= 0:
@@ -108,83 +45,6 @@ class Llama31Template(PromptTemplate):
 
     def get_stop_tokens_for_generation(self) -> List[str]:
         return [self.eos_token, "<|end_of_text|>", self.eof_message]
-
-    def inject_system_messages_based_on_tools(
-        self, messages: List[Dict], tools_or_functions: Optional[List[Dict]] = None
-    ) -> List[Dict]:
-        """This will be used to add Default system message, code-interpreter system message if needed
-
-        Args:
-            messages (List[Dict]): List of messages
-            tools_or_functions (Optional[List[Dict]], optional): List of tools, functions. Defaults to None.
-
-        Returns:
-            List[Dict]: _description_
-        """
-        messages_clone = messages.copy()  # To avoid modifying the original list
-
-        functions = []
-        is_code_interpreter = False
-        if tools_or_functions is not None:
-            for item in tools_or_functions:
-                if (
-                    "function" in item and item["function"] is not None
-                ):  #  new data format: tools: [{"type": xx, "function": xxx}]
-                    functions.append(item["function"])
-                elif "type" in item and item["type"] == "code_interpreter":
-                    is_code_interpreter = True
-                else:
-                    functions.append(item)  #  old format
-
-        tools_system_message = get_system_message_for_tools(
-            functions, is_code_interpreter
-        )
-        messages_clone.insert(0, tools_system_message)
-
-        return messages_clone
-
-    def convert_message_to_prompt(self, message: Dict) -> str:
-        role = message["role"]
-        if role == "tool":
-            role = "ipython"
-        content = message.get("content", None)
-
-        prompt_template = (
-            f"{self.start_header}{role}{self.end_header}\n\n" + "{text}{eot_content}"
-        )
-        eot_content = self.eos_token
-
-        if role in ["user", "system", "ipython"]:
-            return prompt_template.format(text=content, eot_content=eot_content)
-
-        assert role == "assistant", f"role must be assistant, but: {role}"
-
-        tool_calls = message.get("tool_calls", [])
-        if tool_calls is None:
-            tool_calls = []
-
-        if content is None and len(tool_calls) == 0:  # inference time
-            return f"{self.start_header}{role}{self.end_header}\n\n"
-
-        total_content = content if content else ""
-
-        # list of text representing function calls: {function_name}\n{arguments}
-        tool_call_prompts = []
-        for tool_call in tool_calls:
-            arguments = tool_call["function"]["arguments"]
-            assert isinstance(arguments, str)
-            tool_name = tool_call["function"]["name"]
-            if tool_name == "python":
-                tool_prompt = f"<|python_tag|>{arguments}"
-            else:
-                tool_prompt = f"<function={tool_name}>{arguments}</function>"
-            tool_call_prompts.append(tool_prompt)
-
-        # join all function calls
-        if tool_call_prompts:
-            total_content += "".join(tool_call_prompts)
-            eot_content = self.eof_message
-        return prompt_template.format(text=total_content, eot_content=eot_content)
 
     def parse_assistant_response(
         self, llm_output: str, tool_choice: Any = None
@@ -483,9 +343,6 @@ class Llama31Template(PromptTemplate):
                 )
 
         return gen_state
-
-    def get_chat_template_jinja(self):
-        return super().get_chat_template_jinja()
 
     def get_force_function_call_prefix(self, function_name: str):
         return f"<function={function_name}>"
