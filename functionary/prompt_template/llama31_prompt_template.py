@@ -344,6 +344,15 @@ class Llama31Template(PromptTemplate):
 
         return gen_state
 
+    def get_chat_template_jinja(self) -> str:
+        if self._chat_template is None:
+            with open(
+                f"./functionary/prompt_template/jinja_templates/{self.version}.txt", "r"
+            ) as f:
+                self._chat_template = f.read()
+
+        return self._chat_template
+
     def get_force_function_call_prefix(self, function_name: str):
         return f"<function={function_name}>"
 

@@ -319,11 +319,18 @@ class PromptTemplate:
         return raw_response.rstrip()
 
     def get_chat_template_jinja(self) -> str:
+        path_prefix = "./functionary/prompt_template/jinja_templates/"
         if self._chat_template is None:
-            with open(
-                f"./functionary/prompt_template/jinja_templates/{self.version}.txt", "r"
-            ) as f:
-                self._chat_template = f.read()
+            with open(f"{path_prefix}json_to_ts_schema.txt", "r") as f:
+                json_to_ts_schema = f.read()
+            with open(f"{path_prefix}{self.version}.txt", "r") as f:
+                template = f.read()
+            self._chat_template = (
+                template[: template.index("{%")]
+                + json_to_ts_schema
+                + "\n"
+                + template[template.index("{%") :]
+            )
 
         return self._chat_template
 
