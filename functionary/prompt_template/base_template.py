@@ -303,11 +303,13 @@ class PromptTemplate:
             str: The mock raw response in str format
         """
         # Form raw response from messages list
-        raw_response = self.convert_message_to_prompt(message)
-
-        # Remove null content
-        null_content = self.convert_message_to_prompt({"role": "assistant"})
-        raw_response = raw_response[len(null_content) :]
+        sys_msg = self.get_prompt_from_messages(
+            messages=[], tools_or_functions=[], add_generation_prompt=True
+        )
+        assistant_msg = self.get_prompt_from_messages(
+            messages=[message], tools_or_functions=[]
+        )
+        raw_response = assistant_msg[len(sys_msg) :]
 
         # Remove stop tokens
         for stop_token in self.get_stop_tokens_for_generation():

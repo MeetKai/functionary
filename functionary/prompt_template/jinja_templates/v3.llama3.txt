@@ -14,7 +14,7 @@
         {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'}}
         {%- if message['content'] -%}
             {{ '>>>all\n' + message['content'] }}
-        {% endif %}
+        {%- endif -%}
         {%- if 'tool_calls' in message and message['tool_calls'] -%}
             {%- for tool_call in message['tool_calls'] -%}
                 {{ '>>>' + tool_call['function']['name'] + '\n' + tool_call['function']['arguments'] }}
