@@ -34,7 +34,7 @@ from functionary.prompt_template.prompt_utils import (
 
 
 def create_error_response(
-    status_code: HTTPStatus, message: str, param: Optional[str]
+    status_code: HTTPStatus, message: str, param: Optional[str]= None
 ) -> JSONResponse:
     return JSONResponse(
         ErrorResponse(
@@ -184,7 +184,8 @@ async def process_chat_completion(
         logprobs = None
     else:
         logprobs = 200
-
+    if request.n is None or request.n <= 0:
+        request.n = 1
     try:
         sampling_params = SamplingParams(
             n=request.n,

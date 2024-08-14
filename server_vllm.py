@@ -20,10 +20,10 @@ import asyncio
 import json
 import re
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
-
+from pydantic import BaseModel
 import fastapi
 import uvicorn
-from fastapi import Request
+from fastapi import Request, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.entrypoints.openai.protocol import ModelCard, ModelList, ModelPermission
@@ -32,6 +32,8 @@ from vllm.transformers_utils.tokenizer import get_tokenizer
 
 from functionary.openai_types import ChatCompletionRequest
 from functionary.vllm_inference import process_chat_completion
+import requests
+import json
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -56,7 +58,6 @@ async def get_health_and_readiness():
 @app.get("/v1/models")
 async def show_available_models():
     """Show available models. Right now we only have one model."""
-    print("served_model", served_model)
     if len(served_model) > 0:
         model_cards = []
         for model in served_model:
@@ -81,10 +82,8 @@ async def create_chat_completion(raw_request: Request):
     request_json = await raw_request.json()
     request = ChatCompletionRequest(**request_json)
 
-    logger.info(f"Received chat completion request: {request}")
     if request.images is not None:
         logger.info(f"Vision request: {repr(request.images)}")
-
     return await process_chat_completion(
         request=request,
         raw_request=raw_request,
@@ -94,6 +93,66 @@ async def create_chat_completion(raw_request: Request):
         enable_grammar_sampling=args.grammar_sampling,
         engine=engine,
     )
+
+
+class EmbeddingData(BaseModel):
+    object: str = "embedding"
+    index: int
+    embedding: List[float]
+
+class UsageData(BaseModel):
+    prompt_tokens: int
+    total_tokens: int
+
+class EmbeddingResponse(BaseModel):
+    object: str = "list"
+    data: List[EmbeddingData]
+    model: str
+    usage: UsageData
+
+class EmbeddingRequest(BaseModel):
+    input: Union[str, List[str]]
+    model: str
+
+@app.post("/v1/embeddings", response_model=EmbeddingResponse)
+async def get_embedding(request: EmbeddingRequest, authorization: str = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # Handle both single string and list of strings
+    inputs = [request.input] if isinstance(request.input, str) else request.input
+
+    url = "http://embeddings:8080/embed"
+    headers = {'Content-Type': 'application/json'}
+    data = {
+        "inputs": inputs
+    }
+
+    response = requests.post(url, headers=headers, json=data)
+    embeddings = response.json()
+    print("Embeddings response: ", embeddings)
+
+    # Construct the response data
+    data = [
+        EmbeddingData(
+            object="embedding",
+            index=i,
+            embedding=embeddings[i]
+        )
+        for i in range(len(inputs))
+    ]
+
+    response = EmbeddingResponse(
+        object="list",
+        data=data,
+        model=request.model,
+        usage=UsageData(
+            prompt_tokens=len(inputs) * 5,
+            total_tokens=len(inputs) * 5
+        )
+    )
+
+    return response
 
 
 if __name__ == "__main__":
