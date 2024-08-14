@@ -14,6 +14,7 @@ from functionary.schema import generate_schema_from_functions
 
 class PromptTemplate:
     _jinja_env = jinja2.Environment()
+    _jinja_env.policies["json.dumps_kwargs"] = {"sort_keys": False}
     _chat_template = None
     # Mapping from class --> instance to create singleton instance
     _instances = {}

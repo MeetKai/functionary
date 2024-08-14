@@ -42,7 +42,7 @@ class TestPromptTemplate(unittest.TestCase):
             "meetkai/functionary-small-v2.4",
             "meetkai/functionary-small-v2.5",
             "meetkai/functionary-medium-v3.0",
-            "meta-llama/Meta-Llama-3.1-8B-Instruct",
+            "meetkai/functionary-small-v3.1",
         ]
 
     def read_example_data(self, template_version: str):
@@ -152,16 +152,19 @@ class TestPromptTemplate(unittest.TestCase):
 
         print(f"number of unmasked chunks: {len(chunks)}")
         for chunk, message in zip(chunks, assistant_message):
+            sys_msg = prompt_template.get_prompt_from_messages([])
             if keep_assistant_prefix:
                 prefix = ""
             else:
-                prefix = prompt_template.convert_message_to_prompt(
-                    {"role": "assistant"}
+                prefix = prompt_template.get_prompt_from_messages(
+                    [], add_generation_prompt=True
                 )
+                prefix = prefix[len(sys_msg) :].lstrip()
             decoded_content = prefix + tokenizer.decode(
                 chunk
             )  # note that need to add: "\nassistant" because we mask this, see line 194 in prompt_utils.py
-            prompt = prompt_template.convert_message_to_prompt(message)
+            prompt = prompt_template.get_prompt_from_messages([message])
+            prompt = prompt[len(sys_msg) :].lstrip()
             # decoded_content and prompt should be the same
             # to avoid any mistakes of tokenizer like adding white space we will compare after removing space
             self.assertEqual(
