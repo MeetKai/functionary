@@ -45,10 +45,9 @@ Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/ge
 python3 server_vllm.py --model "meetkai/functionary-small-v3.2" --host 0.0.0.0 --max-model-len 8192
 ```
 
-<details>
-  <summary>Medium model: (click to expand)</summary>
-  
-  If you use multiple GPUs (medium models require: 4xA6000 or 2xA100 80GB to run), need to use: `tensor-parallel-size`
+**Medium Model:**
+
+Our medium models require: 4xA6000 or 2xA100 80GB to run, need to use: `tensor-parallel-size`
 
 ```shell
 # vllm requires to run this first: https://github.com/vllm-project/vllm/issues/6152
@@ -56,8 +55,6 @@ export VLLM_WORKER_MULTIPROC_METHOD=spawn
 
 python server_vllm.py --model "meetkai/functionary-medium-v3.1" --max-model-len 8192 --tensor-parallel-size 2
 ```
-  
-</details>
 
 
 **Grammar Sampling**
