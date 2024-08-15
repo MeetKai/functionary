@@ -15,6 +15,7 @@ Documentation and more examples: [functionary.meetkai.com](https://functionary.m
 
   <summary>Changelog: (click to expand)</summary>
 
+  + [2024-08-11] Our newest model ([meetkai/functionary-medium-v3.1](https://huggingface.co/meetkai/functionary-medium-v3.1)) is ranked 2nd in [Berkeley Function-Calling Leaderboard](https://gorilla.cs.berkeley.edu/leaderboard.html)
   + [2024/08/08] We release 128k-context length 70B-model: [meetkai/functionary-medium-v3.1](https://huggingface.co/meetkai/functionary-medium-v3.1) that are based on [meta-llama/Meta-Llama-3.1-70B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-70B-Instruct)  
   + [2024/08/07] We release 2 128k-context length models that are based on [meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct): 
      + [meetkai/functionary-small-v3.1](https://huggingface.co/meetkai/functionary-small-v3.1): **using Meta's original prompt template** as described in: [User-defined Custom tool calling](https://llama.meta.com/docs/model-cards-and-prompt-formats/llama3_1#user-defined-custom-tool-calling)
@@ -48,9 +49,12 @@ python3 server_vllm.py --model "meetkai/functionary-small-v3.2" --host 0.0.0.0 -
   <summary>Medium model: (click to expand)</summary>
   
   If you use multiple GPUs (medium models require: 4xA6000 or 2xA100 80GB to run), need to use: `tensor-parallel-size`
-  
+
 ```shell
-python3 server_vllm.py --model "meetkai/functionary-medium-v3.1" --max-model-len 8192 --tensor-parallel-size 2
+# vllm requires to run this first: https://github.com/vllm-project/vllm/issues/6152
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
+
+python server_vllm.py --model "meetkai/functionary-medium-v3.1" --max-model-len 8192 --tensor-parallel-size 2
 ```
   
 </details>
@@ -599,13 +603,14 @@ We don't change the logit probabilities to conform to a certain schema, but the 
 ## Evaluation
 
 ### Berkeley Function-Calling Leaderboard
+We are ranked 2nd in the [Berkeley Function-Calling Leaderboard](https://gorilla.cs.berkeley.edu/leaderboard.html) (Last Updated: 2024-08-11)
 | Model Name          | Function Calling  Accuracy (Name & Arguments) |
 | :-------------------| ---------------------------: | 
-| meetkai/functionary-medium-v3.1  |                       **87.24%**|
-| meta-llama/Meta-Llama-3.1-70B-Instruct  |                       83.82%|
-| meetkai/functionary-small-v3.2  |                       83%|
+| meetkai/functionary-medium-v3.1  |                       **88.88%**|
+| GPT-4-1106-Preview (Prompt)  |                       88.53%|
+| meetkai/functionary-small-v3.2  |                       82.82%|
 | meetkai/functionary-small-v3.1  |                       82.53%|
-| FireFunction-v2 (FC)  |                        82.47% |
+| FireFunction-v2 (FC)  |                        78.82.47% |
 
 
 ### Function Prediction Evaluation
