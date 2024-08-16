@@ -128,11 +128,22 @@ class ChatCompletionRequest(BaseModel):
     frequency_penalty: Optional[float] = 0.0
     logit_bias: Optional[Dict[str, float]] = None
     user: Optional[str] = None
+
+    # Disable logprobs and top_logprobs currently first
+    logprobs: Optional[bool] = False
+    top_logprobs: Optional[int] = None
+
     # Additional parameters supported by vLLM
     best_of: Optional[int] = None
     top_k: Optional[int] = -1
     ignore_eos: Optional[bool] = False
     use_beam_search: Optional[bool] = False
+
+    # Extra parameters for SRT backend only and will be ignored by OpenAI models.
+    regex: Optional[str] = None
+    min_tokens: Optional[int] = 0
+    repetition_penalty: Optional[float] = 1.0
+    stop_token_ids: Optional[List[int]] = Field(default_factory=list)
 
     # @validator("tool_choice", always=True)
     # def validate_tool_choice(cls, value, values):
