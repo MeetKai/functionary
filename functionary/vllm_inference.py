@@ -250,6 +250,7 @@ async def process_chat_completion(
         async for response in generate_openai_format_from_stream_async(
             generator, prompt_template, tool_choice, tools_or_functions
         ):
+            
             # Convert tool_calls to function_call if request.functions is provided
             if (
                 functions
@@ -289,8 +290,22 @@ async def process_chat_completion(
                     }
                 if response["finish_reason"] == "function_call":
                     response["finish_reason"] = "tool_calls"
+            
+            
+            # Workaround Fixes
+            response["delta"]["role"] = "assistant"
+            if (
+                "tool_calls" in response["delta"]
+                and response["delta"]["tool_calls"]
+                and len(response["delta"]["tool_calls"]) > 0
+            ):
+                for tool_call in response["delta"]["tool_calls"]:
+                    if tool_call.get("type") is None:
+                        tool_call["type"] = "function"
+            
+            
             chunk = StreamChoice(**response)
-            result = ChatCompletionChunk(id=request_id, choices=[chunk])
+            result = ChatCompletionChunk(id=request_id, choices=[chunk], model=served_model)
             chunk_dic = result.dict(exclude_unset=True)
             chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
             yield f"data: {chunk_data}\n\n"
