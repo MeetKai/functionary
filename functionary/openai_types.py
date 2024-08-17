@@ -97,18 +97,18 @@ class StreamChoice(BaseModel):
     finish_reason: Optional[str] = "stop"
     index: int = 0
 
+class UsageInfo(BaseModel):
+    prompt_tokens: int = 0
+    total_tokens: int = 0
+    completion_tokens: Optional[int] = 0
 
 class ChatCompletionChunk(BaseModel):
     id: str
     object: str = "chat.completion.chunk"
     created: float = Field(default_factory=time.time)
     choices: List[StreamChoice]
-
-
-class UsageInfo(BaseModel):
-    prompt_tokens: int = 0
-    total_tokens: int = 0
-    completion_tokens: Optional[int] = 0
+    model: str
+    usage: Optional[UsageInfo] = Field(default=None)
 
 
 class ChatCompletionRequest(BaseModel):
