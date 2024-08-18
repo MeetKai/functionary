@@ -249,7 +249,7 @@ def v1_chat_generate_response(request, prompt_template, ret):
         if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
             finish_reason = "tool_calls"
 
-        if finish_reason is None:
+        if not finish_reason:
             finish_reason = format_finish_reason(ret_item["meta_info"]["finish_reason"])
 
         choice_data = ChatCompletionResponseChoice(
