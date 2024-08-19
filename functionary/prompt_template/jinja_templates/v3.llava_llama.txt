@@ -15,7 +15,7 @@
             {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' }}
             {%- for content in message['content'] -%}
                 {%- if content['type'] == 'text' -%}
-                    {{ content }}
+                    {{ content['text'] }}
                 {%- else -%}
                     {{ '<|reserved_special_token_250|>' }}
                 {%- endif -%}
