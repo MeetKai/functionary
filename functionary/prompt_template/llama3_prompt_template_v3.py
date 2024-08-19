@@ -168,7 +168,7 @@ class Llama3TemplateV3(PromptTemplate):
         assert role == "assistant", f"role must be assistant, but: {role}"
 
         # set content=none if content=""
-        if type(content) is str and len(content) == "":
+        if type(content) is str and len(content) == 0:
             content = None
 
         tool_calls = message.get("tool_calls", [])
