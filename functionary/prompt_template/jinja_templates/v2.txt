@@ -16,7 +16,7 @@
         {%- if message['content'] -%}
             {{ "\n<|from|>" + message['role'] + "\n<|recipient|>all\n<|content|>" + message['content'] }}
         {%- endif -%}
-        {%- if 'tool_calls' in message and message['tool_calls'] is not none -%}
+        {%- if 'tool_calls' in message and message['tool_calls'] -%}
             {%- for tool_call in message['tool_calls'] -%}
                 {{ '\n<|from|>' + message['role'] + '\n<|recipient|>' + tool_call['function']['name'] + '\n<|content|>' + tool_call['function']['arguments'] }}
             {%- endfor -%}
