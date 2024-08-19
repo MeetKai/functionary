@@ -20,6 +20,7 @@ import asyncio
 import json
 import re
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
+import logging
 
 import fastapi
 import uvicorn
@@ -35,7 +36,12 @@ from functionary.vllm_inference import process_chat_completion
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
-logger = init_logger(__name__)
+#logger = init_logger(__name__)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logger.addHandler(logging.StreamHandler())
+
+
 served_model = None
 app = fastapi.FastAPI()
 
