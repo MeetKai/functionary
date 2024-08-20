@@ -56,6 +56,15 @@ export VLLM_WORKER_MULTIPROC_METHOD=spawn
 python server_vllm.py --model "meetkai/functionary-medium-v3.1" --max-model-len 8192 --tensor-parallel-size 2
 ```
 
+<details>
+  <summary>SGLang</summary>
+
+```shell
+python server_sglang.py --model-path meetkai/functionary-medium-v3.2 --port 8000 --host 0.0.0.0 --tp 8
+```
+
+</details>
+
 
 **Grammar Sampling**
 
