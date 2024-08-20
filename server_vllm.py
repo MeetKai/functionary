@@ -48,10 +48,13 @@ app = fastapi.FastAPI()
 
 @app.get("/v1/models")
 async def show_available_models():
-    """Show available models. Right now we only have one model."""
-    model_cards = [
-        ModelCard(id=served_model, root=served_model, permission=[ModelPermission()])
-    ]
+    """Show available models."""
+    model_cards = []
+    if isinstance(served_model, list):
+        for model in served_model:
+            model_cards.append(ModelCard(id=model, root=model, permission=[ModelPermission()]))
+    else:
+        model_cards.append(ModelCard(id=served_model, root=served_model, permission=[ModelPermission()]))
     return ModelList(data=model_cards)
 
 
