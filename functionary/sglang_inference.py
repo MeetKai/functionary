@@ -249,6 +249,7 @@ def v1_chat_generate_response(request, prompt_template, ret):
         if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
             finish_reason = "tool_calls"
 
+       
         if not finish_reason:
             finish_reason = format_finish_reason(ret_item["meta_info"]["finish_reason"])
 
@@ -342,7 +343,19 @@ async def v1_chat_completions(tokenizer_manager, raw_request: Request):
                 if request.functions and tool_call_count == 2:
                     response["delta"] = {}
                     response["finish_reason"] = "function_call"
+                
+                # Workaround Fixes
+                response["delta"]["role"] = "assistant"
+                if (
+                    "tool_calls" in response["delta"]
+                    and response["delta"]["tool_calls"]
+                    and len(response["delta"]["tool_calls"]) > 0
+                ):
+                    for tool_call in response["delta"]["tool_calls"]:
+                        if tool_call.get("type") is None:
+                            tool_call["type"] = "function"
 
+                
                 chunk = StreamChoice(**response)
                 result = ChatCompletionChunk(id=adapted_request.rid, choices=[chunk])
                 chunk_dic = result.dict(exclude_unset=True)
