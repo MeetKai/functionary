@@ -20,47 +20,6 @@ class PromptTemplateV2(PromptTemplate):
     def get_start_of_function_call_token(self) -> str:
         return self.recipient_token
 
-    def initialize_grammar_sampling_gen_state(
-        self,
-        tool_choice: str,
-        curr_text: str,
-        curr_tokens: List[int],
-        add_code_interpreter: bool,
-    ) -> Dict:
-        """Initializes grammar-sampling state
-
-        Args:
-            tool_choice (str): tool_choice provided by user
-            curr_text (str): Text to initialize in gen_state
-            curr_tokens (List[int]): Corresponding tokens of curr_text
-            add_code_interpreter (bool): Flag indicating whether to add "python" tool in options in "function" stage.
-        Returns:
-            Dict: generation state
-        """
-        add_all_recipient = False
-        # To force a text response ("tool_choice"="none")
-        if tool_choice == "none":
-            stage = "text-gen"
-        # Normal generation (function name first without "all") (tool_choice="returned")
-        elif tool_choice == "required":
-            stage = "function"
-        # To force a function call (tool_choice={"type": "function", "function": {...}})
-        elif tool_choice != "":
-            stage = "parameter"
-        # Normal generation (function name first) (tool_choice="auto")
-        else:
-            add_all_recipient = True
-            stage = "function"
-
-        return {
-            "stage": stage,
-            "curr_tokens": curr_tokens,
-            "curr_text": curr_text,
-            "func_name": tool_choice,
-            "add_all_recipient": add_all_recipient,
-            "add_code_interpreter": add_code_interpreter,
-        }
-
     def grammar_sample(
         self,
         gen_state: Dict,
@@ -92,20 +51,9 @@ class PromptTemplateV2(PromptTemplate):
         grammar_sampled_token_id, grammar_sampled_token = None, None
 
         # Form the options for the following stages
-        options = []
-        if gen_state["stage"] == "pre-function":
-            options = [
-                f"\n{self.from_token}assistant\n{self.recipient_token}",
-                self.stop_token,
-            ]
-        elif gen_state["stage"] == "function":
-            options = [tool_or_func["name"] for tool_or_func in tools_or_functions]
-            if gen_state["add_all_recipient"]:
-                options.append("all")
-            if gen_state["add_code_interpreter"]:
-                options.append("python")
-        elif gen_state["stage"] == "pre-parameter":
-            options = [self.fn_param_sep_token]
+        options = self.get_options_from_gen_state(
+            gen_state=gen_state, tools_or_functions=tools_or_functions
+        )
 
         # No grammar sampling needed if gen_state not in the following stages. Return model_sampled_token_id
         if gen_state["stage"] not in ["function", "pre-parameter"]:
@@ -156,8 +104,9 @@ class PromptTemplateV2(PromptTemplate):
         return (
             grammar_sampled_token_id,
             grammar_sampled_token,
-            self.update_grammar_sampling_gen_state(
+            self.update_fsm_gen_state(
                 gen_state=gen_state,
+                new_token=None,
                 new_token_id=grammar_sampled_token_id,
                 options=options,
                 tokenizer=tokenizer,
@@ -171,103 +120,6 @@ class PromptTemplateV2(PromptTemplate):
             self.content_token,
             self.stop_token,
         ]
-
-    def update_grammar_sampling_gen_state(
-        self,
-        gen_state: Dict,
-        new_token_id: int,
-        options: Optional[List],
-        tokenizer: Any,
-    ) -> Dict:
-        """Receives a generation state, updates and returns it. This is only used when
-        grammar sampling is enabled in inference. This functions parses the generated
-        tokens and identifies the stage of generation (pre-function, function, parameter,
-        etc.)
-        Args:
-            gen_state (Dict): The current generation state. It contains the following:
-            - stage: one of the following:
-              - pre-function: the generation prior to function name generation
-              - function: when the model is generating a function name
-              - pre-parameter: when the model is generating the part between function name and parameter
-              - parameter: when the model is generating parameters
-              - text-gen: when the model is generating content
-              - code-interpreter: when the model is generating code
-            - curr_tokens: all the tokens for the current stage being generated
-            - curr_text: curr_tokens but in string text form
-            - func_name: the function name, if any
-            new_token_id (int): The token id of the newly sampled token
-            options (List): All available function/param names depending on the stage of gen_state
-            tokenizer (Any): The tokenizer class passed in from Transformers or vLLM
-        Returns:
-            dict: The updated gen_state
-        """
-        # Update curr_tokens and curr_text
-        gen_state["curr_tokens"].append(new_token_id)
-        gen_state["curr_text"] = tokenizer.decode(gen_state["curr_tokens"])
-
-        # v2: "{func_name}\n<content|>{param_names}\n<|from|> assistant\n<|recipient|>"
-        if gen_state["stage"] == "pre-function":
-            # Check if the new state is in "function" stage
-            if gen_state["curr_text"].endswith(self.get_start_of_function_call_token()):
-                gen_state["stage"] = "function"
-                gen_state["curr_text"], gen_state["curr_tokens"] = "", []
-                gen_state["func_name"] = ""
-
-        elif gen_state["stage"] == "function":
-            curr_text = gen_state["curr_text"]
-            # Generate options_mask
-            options_mask = [
-                (
-                    True
-                    if option.startswith(curr_text.lstrip(" "))
-                    or curr_text.lstrip(" ").startswith(option)
-                    else False
-                )
-                for option in options
-            ]
-            # Transition to "pre-parameter" when only 1 element in options_mask is True
-            if (
-                sum(options_mask) == 1
-                and curr_text == options[options_mask.index(True)]
-            ):
-                # Use the suffix from curr_text as the prefix in "pre-parameter"
-                tool_name = options[options_mask.index(True)]
-                suffix = curr_text[len(tool_name) :]
-                gen_state["func_name"] = tool_name
-                gen_state["curr_text"] = suffix
-                gen_state["curr_tokens"] = [new_token_id] if suffix != "" else []
-                gen_state["stage"] = "pre-parameter"
-
-        elif gen_state["stage"] == "pre-parameter":
-            if self.fn_param_sep_token in gen_state["curr_text"]:
-                gen_state["curr_text"], gen_state["curr_tokens"] = "", []
-                # Check if the new state is "text-gen" or "code-interpreter" or "parameter"
-                if gen_state["func_name"] == "all":
-                    gen_state["stage"] = "text-gen"
-                elif gen_state["func_name"] == "python":
-                    gen_state["stage"] = "code-interpreter"
-                else:
-                    gen_state["stage"] = "parameter"
-
-        elif gen_state["stage"] == "parameter":
-            # Get the latest param
-            latest_param_str = gen_state["curr_text"]
-            # Check if the new state is in "pre-function" stage
-            try:
-                _ = json.loads(latest_param_str)
-                gen_state["stage"] = "pre-function"
-                gen_state["curr_text"], gen_state["curr_tokens"] = "", []
-            except:
-                pass
-        elif gen_state["stage"] in ["text-gen", "code-interpreter"]:
-            # Check if the new state is in "function" stage
-            # This happens when the text-gen is a COT or another fn is called after code-interpreter
-            if gen_state["curr_text"].endswith(self.get_start_of_function_call_token()):
-                gen_state["stage"] = "function"
-                gen_state["curr_text"], gen_state["curr_tokens"] = "", []
-                gen_state["func_name"] = ""
-
-        return gen_state
 
     def convert_message_to_prompt(self, message: Dict) -> str:
         role = message["role"]
@@ -284,6 +136,11 @@ class PromptTemplateV2(PromptTemplate):
             return f"{self.from_token}{tool_name}\n{self.recipient_token}all\n{self.content_token}{content}\n"
 
         assert role == "assistant"
+
+        # set content=none if content=""
+        if type(content) is str and len(content) == 0:
+            content = None
+
         tool_calls = message.get("tool_calls", [])
         if tool_calls is None:
             tool_calls = []
@@ -427,198 +284,221 @@ class PromptTemplateV2(PromptTemplate):
         chat_template = chat_template.strip()
         return chat_template
 
-    def update_state_for_text(self, current_state):
-        """update the state when a function is going to be called
-
-        Args:
-            current_state (_type_): _description_
-        """
-        current_state["response_type"] = "text"
-        current_state["skip_until_reach"] = ""
-        current_state["current_text"] = ""
-
-    def update_state_for_function(self, current_state):
-        """update the state when a function is going to be called
-
-        Args:
-            current_state (_type_): _description_
-        """
-        current_state["response_type"] = "function"
-        current_state["skip_until_reach"] = ""
-        current_state["current_text"] = ""
-        current_state["func_index"] += 1
-        current_state["call_id"] = prompt_utils.get_random_tool_call_id()
-
-    def update_response_state_from_delta_text(
+    def initialize_fsm_gen_state(
         self,
-        *,
-        current_state: Dict[str, Any],
+        tool_choice: Union[str, Tool],
+        curr_text: str,
+        curr_tokens: Optional[List[int]],
+        add_code_interpreter: Optional[bool],
+    ) -> Dict:
+        add_all_recipient = False
+        func_name = None
+        # To force a text response ("tool_choice"="none")
+        if tool_choice == "none":
+            stage = "text-gen"
+        # Normal generation (function name first without "all") (tool_choice="returned")
+        elif tool_choice == "required":
+            stage = "function"
+        # To force a function call (tool_choice={"type": "function", "function": {...}})
+        elif not isinstance(tool_choice, str):
+            stage = "parameter"
+            func_name = (
+                tool_choice.function.name
+                if isinstance(tool_choice, Tool)
+                else tool_choice.name
+            )
+        # Normal generation (function name first) (tool_choice="auto")
+        else:
+            add_all_recipient = True
+            stage = "function"
+
+        return {
+            "stage": stage,
+            "curr_tokens": curr_tokens,
+            "curr_text": curr_text,
+            "func_name": func_name,
+            "func_index": -1,  # index of the tool in tool_calls
+            "call_id": None,  # call_id of the current tool
+            "gen_empty_text": True,  # if first_time we return an empty delta with role=assistant
+            "first_time_func": True,
+            "prev_newline": False,
+            "add_all_recipient": add_all_recipient,
+            "add_code_interpreter": add_code_interpreter,
+        }
+
+    def stream_delta_text(
+        self,
+        gen_state: Dict,
         delta_text: str,
         finish_reason: Optional[str],
+        tools_or_functions: List[Dict],
         tool_choice: Any,
-    ) -> Tuple[Dict[str, Any], Union[None, Dict, List[Dict]]]:
-
-        if len(current_state) == 0:  # empty dict, at the first_time
-            current_state = {
-                "current_text": "",  # the concatenation of all tokens so far
-                "func_name": None,  # function_name of the current tool, if the response requires to use tool
-                "response_type": None,  # response_type=text(text response)/function (using tool)
-                "func_index": -1,  # index of the tool in tool_calls
-                "call_id": None,  # call_id of the current tool
-                # skip_until_reach we skip new tokens until we reach certain token. This is used when we hit special tokens
-                "skip_until_reach": self.content_token,  # at first we don't need to skip as we are generating function
-                "first_time": True,  # if first_time we return an tempty delta with role=assistant
-                "prev_whitespaces": 0,  # number of consecutive whitespaces prior to this token
-            }
-
-            if tool_choice == "none":
-                self.update_state_for_text(current_state=current_state)
-
-            elif type(tool_choice) is not str and tool_choice is not None:
-                self.update_state_for_function(current_state=current_state)
-                current_state["func_name"] = (
-                    tool_choice.function.name
-                    if isinstance(tool_choice, Tool)
-                    else tool_choice.name
-                )
-                current_state["current_text"] += delta_text
-                # first return a delta with function_name only
-                responses = [
-                    prompt_utils.get_function_delta_response(
-                        current_state, "", True, False, finish_reason
-                    )
-                ]
-                # next return the first chunk of params
-                responses.append(
-                    prompt_utils.get_function_delta_response(
-                        current_state, delta_text, False, False, finish_reason
-                    )
-                )
-                return current_state, responses
-        else:
-            current_state["first_time"] = False
-
-        # check if previous token is <|content|>, there might be a space between this token and next token (ex, <|content|> Hello)
-        if current_state["current_text"].endswith(self.content_token):
-            if delta_text[0] == " ":
-                delta_text = delta_text[1:]
-
-        current_state["current_text"] += delta_text
-
+    ) -> Tuple[Dict, Optional[Union[Dict, List[Dict]]]]:
         if finish_reason is not None:  # handle if finish
-            if current_state["response_type"] == "function":
+            if gen_state["func_name"] is not None and gen_state["func_name"] != "all":
                 finish_reason = "tool_calls"
-            return current_state, prompt_utils.get_text_delta_response(
+            return gen_state, prompt_utils.get_text_delta_response(
                 None, False, finish_reason
             )
 
-        skip_until_reach = current_state.get("skip_until_reach", "")
-        if skip_until_reach:  # if have to wait
-            if delta_text != skip_until_reach:
-                return current_state, None
-            else:
-                current_state["skip_until_reach"] = ""  # once hit, no need to skip
-                recipient = self.get_recipient(current_state["current_text"])
-                first_time = current_state["first_time"]
-                current_state["first_time"] = False
+        responses = []
 
-                if recipient == "all":
-                    current_state["response_type"] = "text"
-                    return current_state, prompt_utils.get_text_delta_response(
-                        "", True, finish_reason
-                    )
-                else:
-                    current_state["response_type"] = "function"
-                    current_state["func_name"] = recipient
-                    current_state["call_id"] = prompt_utils.get_random_tool_call_id()
-                    current_state["func_index"] += 1
+        # Form the options for the following stages
+        options = self.get_options_from_gen_state(
+            gen_state=gen_state, tools_or_functions=tools_or_functions
+        )
 
-                    return current_state, prompt_utils.get_function_delta_response(
-                        current_state, "", True, False, finish_reason
-                    )
-        else:
-            assert current_state["response_type"] is not None
-
-            first_time = current_state["first_time"]
-            # If the model is generating a new assistant turn
+        if gen_state["stage"] == "text-gen":
             if delta_text == "\n":
-                current_state["prev_whitespaces"] += 1
-                return current_state, None
-            elif (
-                delta_text == self.from_token and current_state["prev_whitespaces"] > 0
-            ):
-                current_state["current_text"] = ""
-                current_state["skip_until_reach"] = self.content_token
-                current_state["response_type"] = None
-                responses = None
-                if current_state["prev_whitespaces"] > 1:
-                    for _ in range(1, current_state["prev_whitespaces"]):
-                        if current_state["response_type"] == "text":
-                            responses.append(
-                                prompt_utils.get_text_delta_response(
-                                    "\n", True, finish_reason
-                                )
-                            )
-                        else:
-                            responses.append(
-                                prompt_utils.get_function_delta_response(
-                                    current_state, "\n", False, False, finish_reason
-                                )
-                            )
-                current_state["prev_whitespaces"] = 0
-                return current_state, responses
-            # Continue generating delta_text
-            else:
-                responses = []
-                if current_state["response_type"] == "function":
-                    if first_time:
-                        current_state["call_id"] = (
-                            prompt_utils.get_random_tool_call_id()
-                        )
-                        current_state["func_index"] += 1
-                        responses.append(
-                            prompt_utils.get_function_delta_response(
-                                current_state, "", first_time, False, finish_reason
-                            )
-                        )
-                        current_state["first_time"] = False
-                    if current_state["prev_whitespaces"] > 0:
-                        for _ in range(current_state["prev_whitespaces"]):
-                            responses.append(
-                                prompt_utils.get_function_delta_response(
-                                    current_state, "\n", False, False, finish_reason
-                                )
-                            )
-                        current_state["prev_whitespaces"] = 0
+                gen_state["prev_newline"] = True
+            elif gen_state["prev_newline"] and delta_text != self.from_token:
+                responses.append(
+                    prompt_utils.get_text_delta_response("\n", True, finish_reason)
+                )
+                gen_state["prev_newline"] = False
+            elif gen_state["prev_newline"] is False:
+                if gen_state["gen_empty_text"]:
                     responses.append(
-                        prompt_utils.get_function_delta_response(
-                            current_state, delta_text, False, False, finish_reason
-                        )
+                        prompt_utils.get_text_delta_response("", True, finish_reason)
                     )
-                    return current_state, responses
-                else:  # response_type=text
-                    if first_time:
-                        current_state["first_time"] = False
-                        responses.append(
-                            prompt_utils.get_text_delta_response(
-                                "", True, finish_reason
-                            )
-                        )
-                    if current_state["prev_whitespaces"] > 0:
-                        for _ in range(current_state["prev_whitespaces"]):
-                            responses.append(
-                                prompt_utils.get_text_delta_response(
-                                    "\n", True, finish_reason
-                                )
-                            )
-                        current_state["prev_whitespaces"] = 0
-                    responses.append(
-                        prompt_utils.get_text_delta_response(
-                            delta_text, True, finish_reason
-                        )
+                    gen_state["gen_empty_text"] = False
+                    delta_text = delta_text.lstrip(" ")
+                responses.append(
+                    prompt_utils.get_text_delta_response(
+                        delta_text, True, finish_reason
+                    )
+                )
+        elif gen_state["stage"] == "parameter":
+            if gen_state["first_time_func"]:
+                responses.append(
+                    prompt_utils.get_function_delta_response(
+                        gen_state, "", True, False, finish_reason
+                    )
+                )
+                gen_state["first_time_func"] = False
+                delta_text = delta_text.lstrip(" ")
+            responses.append(
+                prompt_utils.get_function_delta_response(
+                    gen_state, delta_text, False, False, finish_reason
+                )
+            )
+
+        gen_state = self.update_fsm_gen_state(
+            gen_state=gen_state,
+            new_token=delta_text,
+            new_token_id=None,
+            options=options,
+            tokenizer=None,
+        )
+
+        return gen_state, responses
+
+    def update_fsm_gen_state(
+        self,
+        gen_state: Dict,
+        new_token: Optional[str],
+        new_token_id: Optional[str],
+        options: Optional[List],
+        tokenizer: Any,
+    ) -> Dict:
+        if gen_state["curr_tokens"] is not None:
+            # Update curr_tokens and curr_text
+            gen_state["curr_tokens"].append(new_token_id)
+            gen_state["curr_text"] = tokenizer.decode(gen_state["curr_tokens"])
+        else:
+            gen_state["curr_text"] += new_token
+
+        # v2: "{func_name}\n<content|>{param_names}\n<|from|> assistant\n<|recipient|>"
+        if gen_state["stage"] == "pre-function":
+            # Check if the new state is in "function" stage
+            if gen_state["curr_text"].endswith(self.get_start_of_function_call_token()):
+                gen_state["stage"] = "function"
+                gen_state = self._reset_fsm_curr_text_and_tokens(gen_state=gen_state)
+                gen_state["func_name"] = ""
+
+        elif gen_state["stage"] == "function":
+            curr_text = gen_state["curr_text"]
+            # Generate options_mask
+            options_mask = [
+                (
+                    True
+                    if option.startswith(curr_text.lstrip(" "))
+                    or curr_text.lstrip(" ").startswith(option)
+                    else False
+                )
+                for option in options
+            ]
+            # Transition to "pre-parameter" when only 1 element in options_mask is True
+            if (
+                sum(options_mask) == 1
+                and curr_text.lstrip(" ") == options[options_mask.index(True)]
+            ):
+                # Use the suffix from curr_text as the prefix in "pre-parameter"
+                tool_name = options[options_mask.index(True)]
+                suffix = curr_text[len(tool_name) :]
+                gen_state["func_name"] = tool_name
+                gen_state["curr_text"] = suffix
+                if gen_state["curr_tokens"] is not None:
+                    gen_state["curr_tokens"] = [new_token_id] if suffix != "" else []
+                gen_state["stage"] = "pre-parameter"
+
+        elif gen_state["stage"] == "pre-parameter":
+            if self.fn_param_sep_token in gen_state["curr_text"]:
+                gen_state = self._reset_fsm_curr_text_and_tokens(gen_state=gen_state)
+                # Check if the new state is "text-gen" or "code-interpreter" or "parameter"
+                if gen_state["func_name"] == "all":
+                    gen_state["stage"] = "text-gen"
+                else:
+                    gen_state = self._update_gen_state_for_fn_call(
+                        gen_state=gen_state, func_name=gen_state["func_name"]
+                    )
+                    gen_state["stage"] = (
+                        "code-interpreter"
+                        if gen_state["func_name"] == "python"
+                        else "parameter"
                     )
 
-                    return current_state, responses
+        elif gen_state["stage"] == "parameter":
+            # Get the latest param
+            latest_param_str = gen_state["curr_text"]
+            # Check if the new state is in "pre-function" stage
+            try:
+                _ = json.loads(latest_param_str)
+                gen_state["stage"] = "pre-function"
+                gen_state = self._reset_fsm_curr_text_and_tokens(gen_state=gen_state)
+            except:
+                pass
+        elif gen_state["stage"] in ["text-gen", "code-interpreter"]:
+            # Check if the new state is in "pre-function" stage
+            # This happens when the text-gen is a COT or another fn is called after code-interpreter
+            if gen_state["curr_text"].endswith(f"\n{self.from_token}"):
+                gen_state["stage"] = "pre-function"
+                gen_state["curr_text"] = f"\n{self.from_token}"
+                gen_state["curr_tokens"] = (
+                    tokenizer.encode(gen_state["curr_text"], add_special_tokens=False)
+                    if gen_state["curr_tokens"] is not None
+                    else None
+                )
+
+        return gen_state
+
+    def get_options_from_gen_state(self, gen_state: Dict, tools_or_functions: List):
+        options = []
+        if gen_state["stage"] == "pre-function":
+            options = [
+                f"\n{self.from_token} assistant\n{self.recipient_token}",
+                self.stop_token,
+            ]
+        elif gen_state["stage"] == "function":
+            options = [tool_or_func["name"] for tool_or_func in tools_or_functions]
+            if gen_state["add_all_recipient"]:
+                options.append("all")
+            if gen_state["add_code_interpreter"]:
+                options.append("python")
+        elif gen_state["stage"] == "pre-parameter":
+            options = [self.fn_param_sep_token]
+
+        return options
 
     def get_force_text_generation_prefix(self):
         return f"all{self.fn_param_sep_token}"

@@ -238,35 +238,19 @@ async def process_chat_completion(
                 # the delta_text is the eos_token and just remove it
                 if output.finish_reason is not None and len(delta_text) > 0:
                     delta_text = ""
-
-                if (
-                    delta_text.strip()
-                    not in prompt_template.get_stop_tokens_for_generation()
-                ):
-                    # This part checks if delta_text is the first token and tool_choice is provided by user
-                    # If so, it yields the prefix containing the tool_choice name first
-                    if (
-                        previous_texts == delta_text
-                        and delta_text in prompt_template.fn_param_sep_token
-                        and prompt_template.version != "v1"
-                    ):
-                        if tool_choice == "none":
-                            yield "all" + prompt_template.fn_param_sep_token, finish_reason
-                        elif isinstance(tool_choice, Tool):
-                            yield tool_choice.function.name + prompt_template.fn_param_sep_token, finish_reason
-                        elif isinstance(tool_choice, Function):
-                            yield tool_choice.name + prompt_template.fn_param_sep_token, finish_reason
-                    yield delta_text, finish_reason
+                yield delta_text, finish_reason
         # yield "", "stop"
 
     async def completion_stream_generator(
-        tool_choice, functions
+        tool_choice, functions, tools_or_functions
     ) -> AsyncGenerator[str, None]:
         generator = wrap_vllm_generator(tool_choice=tool_choice)
+
         tool_call_count = 0
         async for response in generate_openai_format_from_stream_async(
-            generator, prompt_template, tool_choice
+            generator, prompt_template, tool_choice, tools_or_functions
         ):
+            
             # Convert tool_calls to function_call if request.functions is provided
             if (
                 functions
@@ -306,8 +290,22 @@ async def process_chat_completion(
                     }
                 if response["finish_reason"] == "function_call":
                     response["finish_reason"] = "tool_calls"
+            
+            
+            # Workaround Fixes
+            response["delta"]["role"] = "assistant"
+            if (
+                "tool_calls" in response["delta"]
+                and response["delta"]["tool_calls"]
+                and len(response["delta"]["tool_calls"]) > 0
+            ):
+                for tool_call in response["delta"]["tool_calls"]:
+                    if tool_call.get("type") is None:
+                        tool_call["type"] = "function"
+            
+            
             chunk = StreamChoice(**response)
-            result = ChatCompletionChunk(id=request_id, choices=[chunk])
+            result = ChatCompletionChunk(id=request_id, choices=[chunk], model=served_model)
             chunk_dic = result.dict(exclude_unset=True)
             chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
             yield f"data: {chunk_data}\n\n"
@@ -325,6 +323,7 @@ async def process_chat_completion(
             completion_stream_generator(
                 tool_choice=tool_func_choice,
                 functions=request.functions,
+                tools_or_functions=tools_or_functions,
             ),
             media_type="text/event-stream",
             background=background_tasks,

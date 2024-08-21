@@ -1,6 +1,7 @@
-from functionary.prompt_template.prompt_utils import enforce_tool_choice
-from transformers import StoppingCriteriaList, StoppingCriteria
 import torch
+from transformers import StoppingCriteria, StoppingCriteriaList
+
+from functionary.prompt_template.prompt_utils import enforce_tool_choice
 
 
 class StopWordsCriteria(StoppingCriteria):
@@ -32,5 +33,5 @@ def analyze_tools_and_tool_choice(request):
     else:
         tools_or_functions = []
         tool_func_choice = "none"
-    
+
     return tools_or_functions, tool_func_choice

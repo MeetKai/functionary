@@ -171,6 +171,14 @@ def generate_raw_response(
     )
 
 
+def generate_list_of_tools_or_functions(tool_name):
+    tools_or_functions_list = []
+    if tool_name is not None:
+        tools_or_functions_list.append({"name": tool_name})
+
+    return tools_or_functions_list
+
+
 class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
     def __init__(self, *args, **kwargs):
         super(TestRequestHandling, self).__init__(*args, **kwargs)
@@ -671,15 +679,26 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                 tool_calls = []
                 tool_call_count = 0
                 chunks_list = []
-                state = {}
+                gen_state = prompt_template.initialize_fsm_gen_state(
+                    tool_choice=test_case["tool_func_choice"],
+                    curr_text="",
+                    curr_tokens=None,
+                    add_code_interpreter=test_case["gen_code"],
+                )
+
                 async for delta_text, finish_reason in generator:
-                    state, responses = (
-                        prompt_template.update_response_state_from_delta_text(
-                            current_state=state,
-                            delta_text=delta_text,
-                            finish_reason=finish_reason,
-                            tool_choice=test_case["tool_func_choice"],
-                        )
+                    gen_state, responses = prompt_template.stream_delta_text(
+                        gen_state=gen_state,
+                        delta_text=delta_text,
+                        finish_reason=finish_reason,
+                        tools_or_functions=generate_list_of_tools_or_functions(
+                            tool_name=(
+                                self.default_tool_call_name
+                                if not test_case["gen_text"]
+                                else None
+                            ),
+                        ),
+                        tool_choice=test_case["tool_func_choice"],
                     )
 
                     if responses is not None:

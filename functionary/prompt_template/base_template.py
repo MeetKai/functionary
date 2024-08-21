@@ -6,6 +6,7 @@ from abc import abstractmethod
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.openai_types import Function, Tool
+from functionary.prompt_template import prompt_utils
 from functionary.schema import generate_schema_from_functions
 
 SYSTEM_MESSAGE = """A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. The assistant calls functions with appropriate input when necessary"""
@@ -212,6 +213,113 @@ class PromptTemplate:
             Tuple[Dict[str, Any], Optional[Dict]]: updated state, response: can be None, a dictionary: {} or a list of dictionary: [{}, ..., {}]
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def initialize_fsm_gen_state(
+        self,
+        tool_choice: Union[str, Tool],
+        curr_text: str,
+        curr_tokens: Optional[List[int]],
+        add_code_interpreter: Optional[bool],
+    ) -> Dict:
+        """Initializes FSM state for both streaming and grammar sampling
+
+        Args:
+            tool_choice (str): tool_choice provided by user
+            curr_text (str): Text to initialize in gen_state
+            curr_tokens (List[int]): Corresponding tokens of curr_text
+            add_code_interpreter (bool): Flag indicating whether to add "python" tool in options in "function" stage.
+        Returns:
+            Dict: generation state
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def stream_delta_text(
+        self,
+        gen_state: Dict,
+        delta_text: str,
+        finish_reason: Optional[str],
+        tools_or_functions: List[Dict],
+        tool_choice: Any,
+    ) -> Tuple[Dict, Optional[Union[Dict, List[Dict]]]]:
+        """This function is used for streaming
+
+        Args:
+            gen_state (Dict[str, Any]):  a dictionary containing the state of the streaming: such as current function_name,
+            delta_text: new token generated
+            finish_reason: if finished or not
+            tools_or_functions: list of tools or functions
+            tool_choice: tool_choice
+
+        Returns:
+            Tuple[Dict[str, Any], Optional[Dict]]: updated state, response: can be None, a dictionary: {} or a list of dictionary: [{}, ..., {}]
+        """
+
+    def _update_gen_state_for_fn_call(self, gen_state: Dict, func_name: str):
+        """update the state when a function is going to be called
+
+        Args:
+            current_state (_type_): _description_
+        """
+        gen_state["func_name"] = func_name
+        gen_state["func_index"] += 1
+        gen_state["call_id"] = prompt_utils.get_random_tool_call_id()
+        gen_state["first_time_func"] = True
+
+        return gen_state
+
+    def _reset_fsm_curr_text_and_tokens(self, gen_state: Dict):
+        gen_state["curr_text"] = ""
+        gen_state["curr_tokens"] = [] if gen_state["curr_tokens"] is not None else None
+
+        return gen_state
+
+    @abstractmethod
+    def update_fsm_gen_state(
+        self,
+        gen_state: Dict,
+        new_token: Optional[str],
+        new_token_id: Optional[int],
+        options: Optional[List],
+        tokenizer: Any,
+    ) -> Dict:
+        """Receives a generation state, updates and returns it. This functions parses the generated
+        tokens and identifies the stage of generation (pre-function, function, parameter, etc.)
+
+        Args:
+            gen_state (Dict): The current generation state. It contains the following:
+            - stage: some of the common stages:
+              - function: when the model is generating a function name
+              - pre-parameter: when the model is generating the part between function name and parameter
+              - parameter: when the model is generating parameters
+              - text-gen: when the model is generating content
+              - code-interpreter: when the model is generating code
+            - curr_tokens: all the tokens for the current stage being generated
+            - curr_text: curr_tokens but in string text form
+            - func_name: the function name, if any
+            new_token (str): The newly sampled token in string
+            new_token_id (int): The token id of the newly sampled token
+            options (List): All available function/param names depending on the stage of gen_state
+            tokenizer (Any): The tokenizer class passed in from Transformers or vLLM
+
+        Returns:
+            dict: The updated gen_state
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_options_from_gen_state(self, gen_state: Dict, tools_or_functions: List):
+        """Gets a list of options for grammar sampling to generate tokens to form given the gen state
+
+        Args:
+            gen_state (Dict): _description_
+            tools_or_functions (List): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        return []
 
     def get_force_text_generation_prefix(self):
         """This function will be used for force-text generation. Returns empty string by default"""
