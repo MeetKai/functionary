@@ -3,7 +3,6 @@ import string
 from typing import Dict, List, Optional, Union
 from PIL import Image
 from io import BytesIO
-import os
 import base64
 import requests
 import torch

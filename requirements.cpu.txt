@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+pydantic
+scipy
+jsonref
+requests
+PyYAML
+typer
+protobuf
+triton

@@ -33,7 +33,19 @@ from vllm.transformers_utils.tokenizer import get_tokenizer
 from functionary.openai_types import ChatCompletionRequest
 from functionary.vllm_inference import process_chat_completion
 import requests
-import json
+
+import torch
+
+DEVICE = "auto"
+# Check if CUDA is available
+if torch.cuda.is_available():
+    print(f"CUDA is available! Number of devices: {torch.cuda.device_count()}")
+    for i in range(torch.cuda.device_count()):
+        print(f"Device {i}: {torch.cuda.get_device_name(i)}")
+else:
+    print("CUDA is not available. Setting device to cpu")
+    DEVICE = "cpu"
+
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -100,9 +112,11 @@ class EmbeddingData(BaseModel):
     index: int
     embedding: List[float]
 
+
 class UsageData(BaseModel):
     prompt_tokens: int
     total_tokens: int
+
 
 class EmbeddingResponse(BaseModel):
     object: str = "list"
@@ -110,9 +124,11 @@ class EmbeddingResponse(BaseModel):
     model: str
     usage: UsageData
 
+
 class EmbeddingRequest(BaseModel):
     input: Union[str, List[str]]
     model: str
+
 
 @app.post("/v1/embeddings", response_model=EmbeddingResponse)
 async def get_embedding(request: EmbeddingRequest, authorization: str = Header(None)):
@@ -123,22 +139,15 @@ async def get_embedding(request: EmbeddingRequest, authorization: str = Header(N
     inputs = [request.input] if isinstance(request.input, str) else request.input
 
     url = "http://embeddings:8080/embed"
-    headers = {'Content-Type': 'application/json'}
-    data = {
-        "inputs": inputs
-    }
+    headers = {"Content-Type": "application/json"}
+    data = {"inputs": inputs}
 
     response = requests.post(url, headers=headers, json=data)
     embeddings = response.json()
-    print("Embeddings response: ", embeddings)
 
     # Construct the response data
     data = [
-        EmbeddingData(
-            object="embedding",
-            index=i,
-            embedding=embeddings[i]
-        )
+        EmbeddingData(object="embedding", index=i, embedding=embeddings[i])
         for i in range(len(inputs))
     ]
 
@@ -146,10 +155,7 @@ async def get_embedding(request: EmbeddingRequest, authorization: str = Header(N
         object="list",
         data=data,
         model=request.model,
-        usage=UsageData(
-            prompt_tokens=len(inputs) * 5,
-            total_tokens=len(inputs) * 5
-        )
+        usage=UsageData(prompt_tokens=len(inputs) * 5, total_tokens=len(inputs) * 5),
     )
 
     return response
@@ -198,6 +204,7 @@ if __name__ == "__main__":
     else:
         from vllm.engine.async_llm_engine import AsyncLLMEngine
 
+    args.device = DEVICE
     app.add_middleware(
         CORSMiddleware,
         allow_origins=args.allowed_origins,
