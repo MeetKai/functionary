@@ -126,14 +126,12 @@ def v1_chat_generate_request(all_requests, tokenizer_manager):
                 tool_choice=tool_func_choice,
                 device="cpu",
             ).tolist()[0]
-            stop = request.stop
-            if (
-                get_prompt_template_from_tokenizer(
+            stop = (
+                request.stop
+                + get_prompt_template_from_tokenizer(
                     tokenizer=tokenizer_manager.tokenizer
-                ).version
-                == "v3-llama3.1"
-            ):
-                stop.append("<|eom_id|>")
+                ).get_stop_tokens_for_generation()
+            )
             image_data = None
         else:
             # Use the raw prompt and stop strings if the messages is already a string.
