@@ -127,6 +127,13 @@ def v1_chat_generate_request(all_requests, tokenizer_manager):
                 device="cpu",
             ).tolist()[0]
             stop = request.stop
+            if (
+                get_prompt_template_from_tokenizer(
+                    tokenizer=tokenizer_manager.tokenizer
+                ).version
+                == "v3-llama3.1"
+            ):
+                stop.append("<|eom_id|>")
             image_data = None
         else:
             # Use the raw prompt and stop strings if the messages is already a string.
@@ -249,7 +256,6 @@ def v1_chat_generate_response(request, prompt_template, ret):
         if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
             finish_reason = "tool_calls"
 
-       
         if not finish_reason:
             finish_reason = format_finish_reason(ret_item["meta_info"]["finish_reason"])
 
@@ -343,7 +349,7 @@ async def v1_chat_completions(tokenizer_manager, raw_request: Request):
                 if request.functions and tool_call_count == 2:
                     response["delta"] = {}
                     response["finish_reason"] = "function_call"
-                
+
                 # Workaround Fixes
                 response["delta"]["role"] = "assistant"
                 if (
@@ -355,7 +361,6 @@ async def v1_chat_completions(tokenizer_manager, raw_request: Request):
                         if tool_call.get("type") is None:
                             tool_call["type"] = "function"
 
-                
                 chunk = StreamChoice(**response)
                 result = ChatCompletionChunk(id=adapted_request.rid, choices=[chunk])
                 chunk_dic = result.dict(exclude_unset=True)
