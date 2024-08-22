@@ -74,6 +74,7 @@ from sglang.srt.utils import (
 )
 from sglang.utils import get_exception_traceback
 
+from functionary.openai_types import ChatCompletionRequest
 from functionary.sglang_inference import v1_chat_completions
 
 logger = logging.getLogger(__name__)
@@ -149,6 +150,9 @@ app.put("/generate")(generate_request)
 
 @app.post("/v1/chat/completions")
 async def openai_v1_chat_completions(raw_request: Request):
+    if args.logfile is not None:
+        request_json = await raw_request.json()
+        logger.info(ChatCompletionRequest(**request_json).model_dump(mode="json"))
     return await v1_chat_completions(tokenizer_manager, raw_request)
 
 
@@ -206,6 +210,8 @@ def launch_server(
     global tokenizer_manager
 
     logging.basicConfig(
+        filename=args.logfile,
+        filemode="a",
         level=getattr(logging, server_args.log_level.upper()),
         format="%(message)s",
     )
@@ -430,6 +436,9 @@ def _wait_and_warmup(server_args, pipe_finish_writer):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--logfile", type=str, default=None, help="name of the file to log requests"
+    )
     ServerArgs.add_cli_args(parser)
     args = parser.parse_args()
     server_args = ServerArgs.from_cli_args(args)
