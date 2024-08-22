@@ -52,6 +52,34 @@ def enforce_tool_choice(
     return tools_or_functions
 
 
+def get_prompt_str_from_inputs(
+    *,
+    tokenizer: LlamaTokenizer,
+    messages: List[ChatMessage],
+    tools_or_functions: List[Dict],
+    tool_choice: Optional[Union[str, Tool, Function]] = None,
+) -> str:
+    # Import function in this function to prevent circular imports
+    from functionary.prompt_template import get_prompt_template_from_tokenizer
+
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+
+    dic_messages = [mess.dict() for mess in messages]
+    dic_messages.append({"role": "assistant"})
+
+    dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)
+
+    # This also checks for code_interpreter and adds python default system message instead
+    # default system message
+    final_prompt = prompt_template.get_prompt_from_messages(
+        dic_messages, tools_or_functions=tools_or_functions
+    )
+
+    # add prefix based on tool-choice
+    final_prompt += prompt_template.get_generation_prefix_for_tool_choice(tool_choice)
+    return final_prompt
+
+
 def prepare_messages_for_inference(
     *,
     tokenizer: LlamaTokenizer,
@@ -73,25 +101,12 @@ def prepare_messages_for_inference(
     Returns:
         torch.Tensor: The tokenized tensor
     """
-
-    # Import function in this function to prevent circular imports
-    from functionary.prompt_template import get_prompt_template_from_tokenizer
-
-    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
-
-    dic_messages = [mess.dict() for mess in messages]
-    dic_messages.append({"role": "assistant"})
-
-    dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)
-
-    # This also checks for code_interpreter and adds python default system message instead
-    # default system message
-    final_prompt = prompt_template.get_prompt_from_messages(
-        dic_messages, tools_or_functions=tools_or_functions
+    final_prompt = get_prompt_str_from_inputs(
+        tokenizer=tokenizer,
+        messages=messages,
+        tools_or_functions=tools_or_functions,
+        tool_choice=tool_choice,
     )
-
-    # add prefix based on tool-choice
-    final_prompt += prompt_template.get_generation_prefix_for_tool_choice(tool_choice)
     input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
     input_ids = input_ids.to(device)
     return input_ids

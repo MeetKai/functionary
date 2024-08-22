@@ -30,6 +30,8 @@ from functionary.prompt_template.prompt_utils import (
     enforce_tool_choice,
     get_random_tool_call_id,
     prepare_messages_for_inference,
+    extract_images_from_messages,
+    get_prompt_str_from_inputs,
 )
 
 
@@ -153,14 +155,33 @@ async def process_chat_completion(
     if error_check_ret is not None:
         return error_check_ret
 
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
     tools_or_functions, tool_func_choice = analyze_tools_and_tool_choice(request)
 
-    prompt_token_ids = prepare_messages_for_inference(
-        tokenizer=tokenizer,
-        messages=request.messages,
-        tools_or_functions=tools_or_functions,
-        tool_choice=tool_func_choice,
-    ).tolist()[0]
+    images = extract_images_from_messages([mess.dict() for mess in request.messages])
+    if len(images) == 0:  # inputs without image
+        prompt_token_ids = prepare_messages_for_inference(
+            tokenizer=tokenizer,
+            messages=request.messages,
+            tools_or_functions=tools_or_functions,
+            tool_choice=tool_func_choice,
+        ).tolist()[0]
+    else:
+        final_prompt = get_prompt_str_from_inputs(
+            tokenizer=tokenizer,
+            messages=request.messages,
+            tools_or_functions=tools_or_functions,
+            tool_choice=tool_func_choice,
+        )
+        final_prompt = final_prompt.replace(prompt_template.img_token, "<image>")
+        vision_inputs = {
+            "prompt": final_prompt,
+            "multi_modal_data": {
+                "image": images[
+                    0
+                ]  # Currently, vllm only supports single image instead of multiple images
+            },
+        }
 
     # error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     # if error_check_ret is not None:
@@ -172,7 +193,7 @@ async def process_chat_completion(
 
     # compute stop_token_ids
     stop_token_ids = []
-    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+
     for stop_tok in prompt_template.get_stop_tokens_for_generation():
         tok_ids = tokenizer.encode(stop_tok, add_special_tokens=False)
         stop_token_ids.append(tok_ids[-1])
@@ -207,7 +228,11 @@ async def process_chat_completion(
 
     if enable_grammar_sampling:
         result_generator = engine.generate(
-            inputs=TokensPrompt(prompt_token_ids=prompt_token_ids),
+            inputs=(
+                TokensPrompt(prompt_token_ids=prompt_token_ids)
+                if len(images) == 0
+                else vision_inputs
+            ),
             sampling_params=sampling_params,
             request_id=request_id,
             tools_or_functions=tools_or_functions,
@@ -216,7 +241,11 @@ async def process_chat_completion(
         )
     else:
         result_generator = engine.generate(
-            inputs=TokensPrompt(prompt_token_ids=prompt_token_ids),
+            inputs=(
+                TokensPrompt(prompt_token_ids=prompt_token_ids)
+                if len(images) == 0
+                else vision_inputs
+            ),
             sampling_params=sampling_params,
             request_id=request_id,
         )
@@ -250,7 +279,7 @@ async def process_chat_completion(
         async for response in generate_openai_format_from_stream_async(
             generator, prompt_template, tool_choice, tools_or_functions
         ):
-            
+
             # Convert tool_calls to function_call if request.functions is provided
             if (
                 functions
@@ -290,8 +319,7 @@ async def process_chat_completion(
                     }
                 if response["finish_reason"] == "function_call":
                     response["finish_reason"] = "tool_calls"
-            
-            
+
             # Workaround Fixes
             response["delta"]["role"] = "assistant"
             if (
@@ -302,10 +330,11 @@ async def process_chat_completion(
                 for tool_call in response["delta"]["tool_calls"]:
                     if tool_call.get("type") is None:
                         tool_call["type"] = "function"
-            
-            
+
             chunk = StreamChoice(**response)
-            result = ChatCompletionChunk(id=request_id, choices=[chunk], model=served_model)
+            result = ChatCompletionChunk(
+                id=request_id, choices=[chunk], model=served_model
+            )
             chunk_dic = result.dict(exclude_unset=True)
             chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
             yield f"data: {chunk_data}\n\n"

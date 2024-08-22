@@ -114,24 +114,17 @@ sudo docker run --gpus all -it --ipc=host --name functionary -v ${PWD}/functiona
 ```
 
 
-### Setup For Vision Function Calling Models
-
-To install the required dependencies, run:
-
-```shell
-pip install -r vision_requirements.txt
-```
-
-Note that, for vision function calling models, we use Transformers Inference instead of Vllm inference
-
+### Vision Function Calling Models
+We also use ``server_vllm.py`` to deploy function calling models. Note that currently, vllm only supports single image in inputs, mutiple images will be supported in the future.
 **Small Model:**
 ```shell
-python3 server_vision.py --model meetkai/functionary-vision-small-v0.1
+python3 server_vllm.py --model "meetkai/functionary-vision-small-v0.1" --max-model-len 8192
+
 ```
 
 **Medium Model:**
 ```shell
-python3 server_vision.py --model meetkai/functionary-vision-medium-v0.1
+python server_vllm.py --model "meetkai/functionary-vision-medium-v0.1" --max-model-len 8192 --tensor-parallel-size 2
 ```
 
 You need to have 4xA6000 (or A40) or 2xA100 to run medium model.
@@ -176,6 +169,7 @@ client.chat.completions.create(
 ```python
 from openai import OpenAI
 import base64
+import os
 
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 
@@ -186,10 +180,10 @@ def encode_image(image_path: str):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
 
-encoded_img = "assets/example.png"
+encoded_img = encode_image("assets/example.png")
 client.chat.completions.create(
     model="meetkai/functionary-vision-small-v0.1",
-    messages=messages = [
+    messages=[
         {
             "role": "user",
             "content": [

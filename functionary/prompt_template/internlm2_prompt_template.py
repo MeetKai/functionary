@@ -9,8 +9,8 @@ from functionary.schema import generate_schema_from_functions
 
 class InternLMChat(Llama3TemplateV3):
     version = "internlm2-chat"
+    img_token = "<img>"
     start_img_token = "<img>"
-    # "<img>", "<IMG_CONTEXT>", "</img>"
     end_img_token = "</img>"
     img_context = "<IMG_CONTEXT>"
     start_of_turn = "<|im_start|>"
@@ -68,7 +68,7 @@ class InternLMChat(Llama3TemplateV3):
 
         if role == "user" and type(content) is list:
             content = prompt_utils.stringify_content_with_images(
-                message["content"], self.start_img_token
+                message["content"], self.img_token
             )
 
         if role == "tool":
