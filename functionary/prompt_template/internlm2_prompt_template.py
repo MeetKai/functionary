@@ -45,23 +45,6 @@ class InternLMChat(Llama3TemplateV3):
     def get_stop_tokens_for_generation(self) -> List[str]:
         return [self.eos_token]
 
-    def get_force_function_call_prefix(self, function_name: str):
-        return f"{function_name}\n"
-
-    def get_start_of_function_call_token(self) -> str:
-        return ""
-
-    def pre_process_messages_before_inference(self, messages: List[Dict]) -> List[Dict]:
-        """Order the tool results by the order of tool call ids
-
-        Args:
-            messages (List[Dict]): List of messages
-
-        Returns:
-            List[Dict]: List of messages
-        """
-        return prompt_utils.reorder_tool_messages_by_tool_call_ids(messages)
-
     def convert_message_to_prompt(self, message: Dict) -> str:
         role = message["role"]
         content = message.get("content", None)
@@ -106,32 +89,3 @@ class InternLMChat(Llama3TemplateV3):
             tool_call_prompts
         )
         return prompt_template.format(text=total_content)
-
-    def get_force_text_generation_prefix(self):
-        return f"all\n"
-
-    def get_chat_template_jinja(self) -> str:
-        chat_template = """{% for message in messages %}
-        {% if message['role'] == 'user' or message['role'] == 'system' %}
-            {{ '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' }}<br>
-        {% elif message['role'] == 'tool' %}
-            {{ '<|im_start|>' + message['role'] + '\nname=' + message['name'] + '\n' + message['content'] + '<|im_end|>' }}<br>
-        {% else %}
-            {{ '<|im_start|>' + message['role'] + '\n'}}<br>
-            {% if message['content'] is not none %}
-                {{ '>>>all\n' + message['content'] }}<br>
-            {% endif %}
-            {% if 'tool_calls' in message and message['tool_calls'] is not none %}
-                {% for tool_call in message['tool_calls'] %}
-                    {{ '>>>' + tool_call['function']['name'] + '\n' + tool_call['function']['arguments'] }}<br>
-                {% endfor %}
-            {% endif %}
-            {{ '<|im_end|>' }}<br>
-        {% endif %}
-        {% endfor %}
-        {% if add_generation_prompt %}{{ '<|im_start|>{role}\n' }}{% endif %}
-        """
-        chat_template = chat_template.replace("    ", "")
-        chat_template = chat_template.replace("<br>\n", "")
-        chat_template = chat_template.strip()
-        return chat_template

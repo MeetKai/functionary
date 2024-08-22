@@ -50,7 +50,7 @@ def create_error_response(
 
 
 async def check_all_errors(request, served_model) -> Optional[JSONResponse]:
-    if request.model != served_model:
+    if request.model not in served_model:
         return create_error_response(
             status_code=HTTPStatus.NOT_FOUND,
             message=f"The model `{request.model}` does not exist.",
@@ -146,7 +146,7 @@ async def process_chat_completion(
     request: ChatCompletionRequest,
     raw_request: Optional[Request],
     tokenizer: Any,
-    served_model: str,
+    served_model: List[str],
     engine_model_config: Any,
     enable_grammar_sampling: bool,
     engine: Any,
@@ -333,7 +333,7 @@ async def process_chat_completion(
 
             chunk = StreamChoice(**response)
             result = ChatCompletionChunk(
-                id=request_id, choices=[chunk], model=served_model
+                id=request_id, choices=[chunk], model=model_name
             )
             chunk_dic = result.dict(exclude_unset=True)
             chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
