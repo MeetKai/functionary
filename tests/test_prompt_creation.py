@@ -42,7 +42,7 @@ class TestPromptTemplate(unittest.TestCase):
             "meetkai/functionary-small-v2.4",
             "meetkai/functionary-small-v2.5",
             "meetkai/functionary-medium-v3.0",
-            "meta-llama/Meta-Llama-3.1-8B-Instruct",
+            "meetkai/functionary-small-v3.1",
         ]
 
     def read_example_data(self, template_version: str):
