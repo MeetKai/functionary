@@ -18,9 +18,9 @@
 import argparse
 import asyncio
 import json
+import logging
 import re
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
-import logging
 
 import fastapi
 import uvicorn
@@ -36,13 +36,13 @@ from functionary.vllm_inference import process_chat_completion
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
-#logger = init_logger(__name__)
+# logger = init_logger(__name__)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler())
 
 
-served_model = None
+served_model = []
 app = fastapi.FastAPI()
 
 
@@ -52,9 +52,15 @@ async def show_available_models():
     model_cards = []
     if isinstance(served_model, list):
         for model in served_model:
-            model_cards.append(ModelCard(id=model, root=model, permission=[ModelPermission()]))
+            model_cards.append(
+                ModelCard(id=model, root=model, permission=[ModelPermission()])
+            )
     else:
-        model_cards.append(ModelCard(id=served_model, root=served_model, permission=[ModelPermission()]))
+        model_cards.append(
+            ModelCard(
+                id=served_model, root=served_model, permission=[ModelPermission()]
+            )
+        )
     return ModelList(data=model_cards)
 
 
@@ -133,9 +139,11 @@ if __name__ == "__main__":
     logger.info(f"args: {args}")
 
     if args.served_model_name is not None:
-        served_model = args.served_model_name
-    else:
-        served_model = args.model
+        logger.info(
+            "args.served_model_name is not used in this service and will be ignored. Served model will consist of args.model only."
+        )
+
+    served_model = [args.model]
 
     engine_args = AsyncEngineArgs.from_cli_args(args)
     # A separate tokenizer to map token IDs to strings.
