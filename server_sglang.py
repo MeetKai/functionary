@@ -74,8 +74,10 @@ from sglang.srt.utils import (
 )
 from sglang.utils import get_exception_traceback
 
-from functionary.openai_types import ChatCompletionRequest
 from functionary.sglang_inference import v1_chat_completions
+from functionary.sglang_monkey_patch.tokenizer_manager import (
+    MonkeyPatchTokenizerManager,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -150,9 +152,6 @@ app.put("/generate")(generate_request)
 
 @app.post("/v1/chat/completions")
 async def openai_v1_chat_completions(raw_request: Request):
-    if args.logfile is not None:
-        request_json = await raw_request.json()
-        logger.info(ChatCompletionRequest(**request_json).model_dump(mode="json"))
     return await v1_chat_completions(tokenizer_manager, raw_request)
 
 
@@ -210,8 +209,6 @@ def launch_server(
     global tokenizer_manager
 
     logging.basicConfig(
-        filename=args.logfile,
-        filemode="a",
         level=getattr(logging, server_args.log_level.upper()),
         format="%(message)s",
     )
@@ -262,7 +259,12 @@ def launch_server(
                 pass
 
     # Launch processes
-    tokenizer_manager = TokenizerManager(server_args, port_args, model_overide_args)
+    if args.logfile is not None:
+        tokenizer_manager = MonkeyPatchTokenizerManager(
+            server_args, port_args, model_overide_args, logfile=args.logfile
+        )
+    else:
+        tokenizer_manager = TokenizerManager(server_args, port_args, model_overide_args)
     if server_args.chat_template:
         load_chat_template_for_openai_api(tokenizer_manager, server_args.chat_template)
     pipe_controller_reader, pipe_controller_writer = mp.Pipe(duplex=False)
@@ -437,7 +439,10 @@ def _wait_and_warmup(server_args, pipe_finish_writer):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--logfile", type=str, default=None, help="name of the file to log requests"
+        "--logfile",
+        type=str,
+        default=None,
+        help="enable detailed request input/output logging by providing logfile",
     )
     ServerArgs.add_cli_args(parser)
     args = parser.parse_args()
