@@ -285,6 +285,10 @@ def v1_chat_generate_response(request, prompt_template, ret):
 
 async def v1_chat_completions(tokenizer_manager, raw_request: Request):
     request_json = await raw_request.json()
+    for message in request_json["messages"]:
+        if message["role"] == "assistant" and message["content"] == "":
+            message["content"] = None
+    print(request_json)
     all_requests = [ChatCompletionRequest(**request_json)]
 
     prompt_template = get_prompt_template_from_tokenizer(
