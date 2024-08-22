@@ -18,9 +18,9 @@
 import argparse
 import asyncio
 import json
+import logging
 import re
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
-import logging
 
 import fastapi
 import uvicorn
@@ -36,7 +36,7 @@ from functionary.vllm_inference import process_chat_completion
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
-#logger = init_logger(__name__)
+# logger = init_logger(__name__)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler())
@@ -72,7 +72,7 @@ async def create_chat_completion(raw_request: Request):
         request=request,
         raw_request=raw_request,
         tokenizer=tokenizer,
-        served_model=request.model,
+        served_model=served_model,
         engine_model_config=engine_model_config,
         enable_grammar_sampling=args.grammar_sampling,
         engine=engine,
