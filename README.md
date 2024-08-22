@@ -115,7 +115,8 @@ sudo docker run --gpus all -it --ipc=host --name functionary -v ${PWD}/functiona
 
 
 ### Vision Function Calling Models
-We also use ``server_vllm.py`` to deploy function calling models. Note that currently, vllm only supports single image in inputs, mutiple images will be supported in the future.
+We also use ``server_vllm.py`` to deploy vision function calling models. Note that currently, vllm only supports single image in inputs, mutiple images will be supported in the future.
+
 **Small Model:**
 ```shell
 python3 server_vllm.py --model "meetkai/functionary-vision-small-v0.1" --max-model-len 8192
@@ -165,7 +166,7 @@ client.chat.completions.create(
 )
 ```
 
-**For Including Image**
+**For Including Image (Vision Models)**
 ```python
 from openai import OpenAI
 import base64
