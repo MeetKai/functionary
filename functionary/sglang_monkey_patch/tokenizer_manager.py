@@ -50,7 +50,9 @@ class MonkeyPatchTokenizerManager(TokenizerManager):
         logfile: str = "logfile.txt",
     ):
         super().__init__(server_args, port_args, model_overide_args)
-        file_handler = logging.FileHandler(logfile)
+        file_handler = logging.handlers.RotatingFileHandler(
+            logfile, maxBytes=1024 * 1024 * 100, backupCount=10
+        )
         logger.addHandler(file_handler)
 
     async def _wait_for_response(
