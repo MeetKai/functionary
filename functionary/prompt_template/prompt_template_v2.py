@@ -136,6 +136,11 @@ class PromptTemplateV2(PromptTemplate):
             return f"{self.from_token}{tool_name}\n{self.recipient_token}all\n{self.content_token}{content}\n"
 
         assert role == "assistant"
+
+        # set content=none if content=""
+        if type(content) is str and len(content) == 0:
+            content = None
+
         tool_calls = message.get("tool_calls", [])
         if tool_calls is None:
             tool_calls = []

@@ -187,6 +187,10 @@ class Llama3Template(PromptTemplate):
             return prompt_template.format(text=content)
 
         assert role == "assistant"
+        # set content=none if content=""
+        if type(content) is str and len(content) == 0:
+            content = None
+
         tool_calls = message.get("tool_calls", [])
         if tool_calls is None:
             tool_calls = []
