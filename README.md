@@ -125,6 +125,8 @@ python3 server_vllm.py --model "meetkai/functionary-vision-small-v0.1" --max-mod
 
 **Medium Model:**
 ```shell
+# vllm requires to run this first: https://github.com/vllm-project/vllm/issues/6152
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
 python server_vllm.py --model "meetkai/functionary-vision-medium-v0.1" --max-model-len 8192 --tensor-parallel-size 2
 ```
 
