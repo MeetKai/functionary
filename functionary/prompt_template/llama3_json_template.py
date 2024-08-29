@@ -15,8 +15,8 @@ def get_functions_in_json_schema(functions):
     for function in functions:
         result.append(json.dumps(function, ensure_ascii=False) + "\n------------------")
     return "\n".join(result)
-    
-    
+
+
 class Llama3JsonSchema(Llama3TemplateV3):
     version = "v3.json"
 
@@ -51,10 +51,14 @@ class Llama3JsonSchema(Llama3TemplateV3):
             0,
             {
                 "role": "system",
-                "content": SYSTEM_CONTENT + json.dumps(functions, ensure_ascii=False)
+                "content": SYSTEM_CONTENT + json.dumps(functions, ensure_ascii=False),
             },
         )
         if is_code_interpreter:
             messages_clone.insert(1, {"role": "system", "content": PYTHON_RUN_SYS_MSG})
 
         return messages_clone
+
+    def get_chat_template_jinja(self):
+        """Return chat_template in jinja format"""
+        return "{# " + f"version={self.version}" + " #}"
