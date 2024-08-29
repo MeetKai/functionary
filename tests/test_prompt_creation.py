@@ -37,11 +37,18 @@ class TestPromptTemplate(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(TestPromptTemplate, self).__init__(*args, **kwargs)
 
-        self.template_versions = ["v2", "v2.llama3", "v3.llama3", "v3-llama3.1"]
+        self.template_versions = [
+            "v2",
+            "v2.llama3",
+            "v3.llama3",
+            "v3-llama3.1",
+            "v3.json",
+        ]
         self.pretrained_models = [
             "meetkai/functionary-small-v2.4",
             "meetkai/functionary-small-v2.5",
             "meetkai/functionary-medium-v3.0",
+            "meetkai/functionary-small-v3.1",
             "meetkai/functionary-small-v3.1",
         ]
 
@@ -69,7 +76,6 @@ class TestPromptTemplate(unittest.TestCase):
             created_prompt = prompt_template.get_prompt_from_messages(
                 test_case["messages"], tools_or_functions
             )
-            print(created_prompt)
             self.assertEqual(
                 final_prompt.strip(),
                 created_prompt.strip(),
@@ -100,6 +106,7 @@ class TestPromptTemplate(unittest.TestCase):
         tokenizer.pad_token = tokenizer.eos_token
         # first we add stop_tokens to the tokenizer
         prompt_template = get_prompt_template_by_version(template_version)
+        tokenizer.chat_template = prompt_template.get_chat_template_jinja()
 
         added_tokens = prompt_template.get_additional_tokens()
         special_tokens = {"additional_special_tokens": added_tokens}
