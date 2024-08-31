@@ -138,12 +138,10 @@ if __name__ == "__main__":
 
     logger.info(f"args: {args}")
 
-    if args.served_model_name is not None:
-        logger.info(
-            "args.served_model_name is not used in this service and will be ignored. Served model will consist of args.model only."
-        )
-
     served_model = [args.model]
+
+    if args.served_model_name is not None:
+        served_model += args.served_model_name
 
     engine_args = AsyncEngineArgs.from_cli_args(args)
     # A separate tokenizer to map token IDs to strings.
