@@ -360,7 +360,7 @@ async def v1_chat_completions(tokenizer_manager, raw_request: Request):
                             tool_call["type"] = "function"
 
                 chunk = StreamChoice(**response)
-                result = ChatCompletionChunk(id=adapted_request.rid, choices=[chunk])
+                result = ChatCompletionChunk(id=adapted_request.rid, choices=[chunk], model=request.model)
                 chunk_dic = result.dict(exclude_unset=True)
                 chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
                 yield f"data: {chunk_data}\n\n"
