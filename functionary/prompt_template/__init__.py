@@ -8,6 +8,7 @@ from functionary.prompt_template.llama31_prompt_template import Llama31Template
 from functionary.prompt_template.llava_prompt_template import LlavaLlama
 from functionary.prompt_template.prompt_template_v1 import PromptTemplateV1
 from functionary.prompt_template.prompt_template_v2 import PromptTemplateV2
+from functionary.prompt_template.qwen2_prompt_template_v2 import Qwen2PromptTemplateV2
 
 
 def get_available_prompt_template_versions() -> List[PromptTemplate]:

@@ -37,12 +37,13 @@ class TestPromptTemplate(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(TestPromptTemplate, self).__init__(*args, **kwargs)
 
-        self.template_versions = ["v2", "v2.llama3", "v3.llama3", "v3-llama3.1"]
+        self.template_versions = ["v2", "v2.llama3", "v3.llama3", "v3-llama3.1", "v2.qwen2_v2"]
         self.pretrained_models = [
             "meetkai/functionary-small-v2.4",
             "meetkai/functionary-small-v2.5",
             "meetkai/functionary-medium-v3.0",
             "meetkai/functionary-small-v3.1",
+            "Qwen/Qwen2-7B-Instruct"
         ]
 
     def read_example_data(self, template_version: str):
@@ -104,6 +105,7 @@ class TestPromptTemplate(unittest.TestCase):
         added_tokens = prompt_template.get_additional_tokens()
         special_tokens = {"additional_special_tokens": added_tokens}
         tokenizer.add_special_tokens(special_tokens)
+        tokenizer.chat_template = prompt_template.get_chat_template_jinja()
 
         test_case, _ = self.read_example_data(template_version)
 
