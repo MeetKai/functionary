@@ -15,9 +15,11 @@ from functionary.schema import generate_schema_from_functions
 class PromptTemplate:
     _jinja_env = jinja2.Environment()
     _jinja_env.policies["json.dumps_kwargs"] = {"sort_keys": False}
-    _chat_template = None
     # Mapping from class --> instance to create singleton instance
     _instances = {}
+    
+    def __init__(self):
+        self._jinja_template = self._jinja_env.from_string(self.get_chat_template_jinja())
 
     @abstractmethod
     def get_start_of_function_call_token(self) -> str:
@@ -105,8 +107,7 @@ class PromptTemplate:
             str: the prompt for inference/training
         """
 
-        jinja_template = self._jinja_env.from_string(self.get_chat_template_jinja())
-        prompt = jinja_template.render(
+        prompt = self._jinja_template.render(
             messages=messages,
             tools=tools_or_functions,
             bos_token=bos_token,
@@ -336,19 +337,17 @@ class PromptTemplate:
 
     def get_chat_template_jinja(self) -> str:
         path_prefix = "./functionary/prompt_template/jinja_templates/"
-        if self._chat_template is None:
-            with open(f"{path_prefix}json_to_ts_schema.txt", "r") as f:
-                json_to_ts_schema = f.read()
-            with open(f"{path_prefix}{self.version}.txt", "r") as f:
-                template = f.read()
-            self._chat_template = (
-                template[: template.index("{%")]
-                + json_to_ts_schema
-                + "\n"
-                + template[template.index("{%") :]
-            )
-
-        return self._chat_template
+        with open(f"{path_prefix}json_to_ts_schema.txt", "r") as f:
+            json_to_ts_schema = f.read()
+        with open(f"{path_prefix}{self.version}.txt", "r") as f:
+            template = f.read()
+            
+        return (
+            template[: template.index("{%")]
+            + json_to_ts_schema
+            + "\n"
+            + template[template.index("{%") :]
+        )
 
     def get_generation_prefix_for_tool_choice(self, tool_choice: Any):
         if tool_choice == "auto" or tool_choice is None:
