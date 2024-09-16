@@ -610,6 +610,32 @@ We are ranked 2nd in the [Berkeley Function-Calling Leaderboard](https://gorilla
 | FireFunction-v2 (FC)  |                        78.82.47% |
 
 
+### ToolSandbox
+We also evaluate our models on [ToolSandbox](https://github.com/apple/ToolSandbox), this benchmark is much more difficult than **Berkeley Function-Calling Leaderboard**. This benchmark includes stateful tool execution, implicit state dependencies between tools, a built-in user simulator supporting on-policy conversational evaluation and a dynamic evaluation strategy for intermediate and final milestones over an arbitrary trajectory. The authors of this benchmark showed that there is a huge performance gap between open source models and proprietary models.
+
+From our evaluation result, our models are comparable to best proprietary models and much better than other open source models.
+
+| Model Name | Average similarity score |
+| :----------| ------------------------: |
+| GPT-4o-2024-05-13 |	73 |
+| Claude-3-Opus-20240229 |	69.2 |
+| **Functionary-medium-v3.1** | 68.87 |
+| GPT-3.5-Turbo-0125 | 65.6 |
+| GPT-4-0125-Preview	| 64.3 |
+| Claude-3-Sonnet-20240229 |	63.8 |
+| **Functionary-small-v3.1** | 63.13 |
+| Gemini-1.5-Pro-001 | 60.4 |
+| **Functionary-small-v3.2** | 58.56 |
+| Claude-3-Haiku-20240307 | 54.9 |
+| Gemini-1.0-Pro | 38.1 |	
+| Hermes-2-Pro-Mistral-7B | 31.4 |
+| Mistral-7B-Instruct-v0.3 | 29.8 |
+| C4AI-Command-R-v01 | 26.2 |
+| Gorilla-Openfunctions-v2 | 25.6 |
+| C4AI-Command R+ | 24.7 |
+
+
+
 ### Function Prediction Evaluation
 Evaluation function call prediction in SGD dataset. The accuracy metric measures the overall correctness of predicted function calls, including function name prediction and arguments extraction.
 

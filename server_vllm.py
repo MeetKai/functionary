@@ -18,15 +18,17 @@
 import argparse
 import asyncio
 import json
+import logging
 import re
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
-import logging
 
 import fastapi
 import uvicorn
+import vllm.entrypoints.openai.api_server as vllm_api_server
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from vllm.engine.arg_utils import AsyncEngineArgs
+from vllm.entrypoints.openai.api_server import health, mount_metrics
 from vllm.entrypoints.openai.protocol import ModelCard, ModelList, ModelPermission
 from vllm.logger import init_logger
 from vllm.transformers_utils.tokenizer import get_tokenizer
@@ -36,22 +38,37 @@ from functionary.vllm_inference import process_chat_completion
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
-#logger = init_logger(__name__)
+# logger = init_logger(__name__)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler())
 
 
-served_model = None
+served_model = []
 app = fastapi.FastAPI()
+
+
+@app.get("/health")
+async def _health():
+    """Health check."""
+    return await health()
 
 
 @app.get("/v1/models")
 async def show_available_models():
-    """Show available models. Right now we only have one model."""
-    model_cards = [
-        ModelCard(id=served_model, root=served_model, permission=[ModelPermission()])
-    ]
+    """Show available models."""
+    model_cards = []
+    if isinstance(served_model, list):
+        for model in served_model:
+            model_cards.append(
+                ModelCard(id=model, root=model, permission=[ModelPermission()])
+            )
+    else:
+        model_cards.append(
+            ModelCard(
+                id=served_model, root=served_model, permission=[ModelPermission()]
+            )
+        )
     return ModelList(data=model_cards)
 
 
@@ -119,6 +136,8 @@ if __name__ == "__main__":
     else:
         from vllm.engine.async_llm_engine import AsyncLLMEngine
 
+    mount_metrics(app)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=args.allowed_origins,
@@ -129,10 +148,10 @@ if __name__ == "__main__":
 
     logger.info(f"args: {args}")
 
+    served_model = [args.model]
+
     if args.served_model_name is not None:
-        served_model = args.served_model_name
-    else:
-        served_model = args.model
+        served_model += args.served_model_name
 
     engine_args = AsyncEngineArgs.from_cli_args(args)
     # A separate tokenizer to map token IDs to strings.
@@ -144,6 +163,9 @@ if __name__ == "__main__":
 
     engine = AsyncLLMEngine.from_engine_args(engine_args)
     engine_model_config = asyncio.run(engine.get_model_config())
+
+    # Adapt to vLLM's health endpoint
+    vllm_api_server.async_engine_client = engine
 
     uvicorn.run(
         app,
