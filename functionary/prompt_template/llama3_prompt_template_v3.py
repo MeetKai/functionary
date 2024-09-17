@@ -3,18 +3,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.openai_types import Function, Tool
 from functionary.prompt_template import prompt_utils
-from functionary.prompt_template.base_template import PYTHON_RUN_SYS_MSG, PromptTemplate
-from functionary.schema import generate_schema_from_functions
-
-SYSTEM_CONTENT = """You are capable of executing available function(s) if required.
-Only execute function(s) when absolutely necessary.
-Ask for the required input to:recipient==all
-Use JSON for function arguments.
-Respond in this format:
->>>${recipient}
-${content}
-Available functions:
-"""
+from functionary.prompt_template.base_template import PromptTemplate
 
 
 class Llama3TemplateV3(PromptTemplate):
@@ -147,56 +136,6 @@ class Llama3TemplateV3(PromptTemplate):
         """
         return prompt_utils.reorder_tool_messages_by_tool_call_ids(messages)
 
-    def convert_message_to_prompt(self, message: Dict) -> str:
-        role = message["role"]
-        content = message.get("content", None)
-
-        # comment this as currently the Llama-70b was trained using this
-        # if role == "tool":
-        #     tool_name = message["name"]
-        #     content = f"name={tool_name}\n{content}"
-
-        prompt_template = (
-            f"{self.start_header}{role}{self.end_header}\n\n"
-            + "{text}"
-            + self.eos_token
-        )
-
-        if role in ["user", "system", "tool"]:
-            return prompt_template.format(text=content)
-
-        assert role == "assistant", f"role must be assistant, but: {role}"
-
-        # set content=none if content=""
-        if type(content) is str and len(content) == 0:
-            content = None
-
-        tool_calls = message.get("tool_calls", [])
-        if tool_calls is None:
-            tool_calls = []
-
-        if content is None and len(tool_calls) == 0:  # inference time
-            return f"{self.start_header}{role}{self.end_header}\n\n{self.function_separator}"
-
-        if content is not None:  # text-only
-            tool_calls = [
-                {"function": {"name": "all", "arguments": content}}
-            ] + tool_calls
-
-        # list of text representing function calls: {function_name}\n{arguments}
-        tool_call_prompts = []
-        for tool_call in tool_calls:
-            arguments = tool_call["function"]["arguments"]
-            tool_name = tool_call["function"]["name"]
-            tool_prompt = f"{tool_name}\n{arguments}"
-            tool_call_prompts.append(tool_prompt)
-
-        # join all function calls
-        total_content = self.function_separator + self.function_separator.join(
-            tool_call_prompts
-        )
-        return prompt_template.format(text=total_content)
-
     def parse_assistant_response(
         self, llm_output: str, tool_choice: Any = None
     ) -> Dict:
@@ -234,45 +173,6 @@ class Llama3TemplateV3(PromptTemplate):
             tool_calls = None
 
         return {"role": "assistant", "content": text_content, "tool_calls": tool_calls}
-
-    def inject_system_messages_based_on_tools(
-        self, messages: List[Dict], tools_or_functions: Optional[List[Dict]] = None
-    ) -> List[Dict]:
-        """This will be used to add Default system message, code-interpreter system message if needed
-
-        Args:
-            messages (List[Dict]): List of messages
-            tools_or_functions (Optional[List[Dict]], optional): List of tools, functions. Defaults to None.
-
-        Returns:
-            List[Dict]: _description_
-        """
-        messages_clone = messages.copy()  # To avoid modifying the original list
-
-        functions = []
-        is_code_interpreter = False
-        if tools_or_functions is not None:
-            for item in tools_or_functions:
-                if (
-                    "function" in item and item["function"] is not None
-                ):  #  new data format: tools: [{"type": xx, "function": xxx}]
-                    functions.append(item["function"])
-                elif "type" in item and item["type"] == "code_interpreter":
-                    is_code_interpreter = True
-                else:
-                    functions.append(item)  #  old format
-
-        messages_clone.insert(
-            0,
-            {
-                "role": "system",
-                "content": SYSTEM_CONTENT + generate_schema_from_functions(functions),
-            },
-        )
-        if is_code_interpreter:
-            messages_clone.insert(1, {"role": "system", "content": PYTHON_RUN_SYS_MSG})
-
-        return messages_clone
 
     def get_force_text_generation_prefix(self):
         return f"all\n"
@@ -478,29 +378,3 @@ class Llama3TemplateV3(PromptTemplate):
             options = [self.fn_param_sep_token]
 
         return options
-
-    def get_chat_template_jinja(self) -> str:
-        chat_template = """{% for message in messages %}
-        {% if message['role'] == 'user' or message['role'] == 'system' %}
-            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}<br>
-        {% elif message['role'] == 'tool' %}
-            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}<br>
-        {% else %}
-            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'}}<br>
-            {% if message['content'] is not none %}
-                {{ '>>>all\n' + message['content'] }}<br>
-            {% endif %}
-            {% if 'tool_calls' in message and message['tool_calls'] is not none %}
-                {% for tool_call in message['tool_calls'] %}
-                    {{ '>>>' + tool_call['function']['name'] + '\n' + tool_call['function']['arguments'] }}<br>
-                {% endfor %}
-            {% endif %}
-            {{ '<|eot_id|>' }}<br>
-        {% endif %}
-        {% endfor %}
-        {% if add_generation_prompt %}{{ '<|start_header_id|>{role}<|end_header_id|>\n\n' }}{% endif %}
-        """
-        chat_template = chat_template.replace("    ", "")
-        chat_template = chat_template.replace("<br>\n", "")
-        chat_template = chat_template.strip()
-        return chat_template

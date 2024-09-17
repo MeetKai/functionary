@@ -1,7 +1,7 @@
 import re
 from typing import Any, List
 
-from functionary.prompt_template.base_template import SYSTEM_MESSAGE, PromptTemplate
+from functionary.prompt_template.base_template import PromptTemplate
 from functionary.prompt_template.internlm2_prompt_template import InternLMChat
 from functionary.prompt_template.llama3_prompt_template import Llama3Template
 from functionary.prompt_template.llama3_prompt_template_v3 import Llama3TemplateV3

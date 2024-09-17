@@ -1,12 +1,13 @@
+import base64
+import os
 import random
 import string
-from typing import Dict, List, Optional, Union
-from PIL import Image
 from io import BytesIO
-import os
-import base64
+from typing import Dict, List, Optional, Union
+
 import requests
 import torch
+from PIL import Image
 from transformers import LlamaTokenizer
 
 from functionary.openai_types import ChatMessage, Function, Tool
@@ -101,11 +102,23 @@ def prepare_messages_for_inference(
     Returns:
         torch.Tensor: The tokenized tensor
     """
-    final_prompt = get_prompt_str_from_inputs(
-        tokenizer=tokenizer,
-        messages=messages,
+
+    # Import function in this function to prevent circular imports
+    from functionary.prompt_template import get_prompt_template_from_tokenizer
+
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+
+    dic_messages = [mess.dict() for mess in messages]
+
+    dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)
+
+    # This also checks for code_interpreter and adds python default system message instead
+    # default system message
+    final_prompt = prompt_template.get_prompt_from_messages(
+        dic_messages,
         tools_or_functions=tools_or_functions,
-        tool_choice=tool_choice,
+        bos_token="",
+        add_generation_prompt=True,
     )
     input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
     input_ids = input_ids.to(device)
