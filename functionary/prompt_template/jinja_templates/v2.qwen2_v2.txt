@@ -1,0 +1,29 @@
+{# version=v2.qwen2_v2 #}{%- if not tools -%}
+    {%- set tools = [] -%}
+{%- endif -%}
+{# version=v3.llama3 #}{%- if not tools -%}
+    {%- set tools = [] -%}
+{%- endif -%}
+{{ bos_token + '<|im_start|>system\nYou are capable of executing available function(s) if required.\nOnly execute function(s) when absolutely necessary.\nAsk for the required input to:recipient==all\nUse JSON for function arguments.\nRespond in this format:\n>>>${recipient}\n${content}\nAvailable functions:\n' + generate_schema_from_functions(tools) + '<|im_end|>' -}}
+{%- if tools|length > 0 and tools|selectattr("type", "equalto", "code_interpreter")|list|length > 0 -%}
+    {{ '\n<|im_start|>system\nWhen you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at \'/mnt/data\' can be used to save and persist user files.<|im_end|>' }}
+{%- endif -%}
+{%- for message in messages -%}
+    {%- if message['role'] == 'user' or message['role'] == 'system' -%}
+        {{ '\n<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' }}
+    {%- elif message['role'] == 'tool' -%}
+        {{ '\n<|im_start|>' + message['role'] + '\nname=' + message['name'] + '\n' + message['content'] + '<|im_end|>' }}
+    {%- else -%}
+        {{ '\n<|im_start|>' + message['role'] + '\n'}}
+        {%- if message['content'] -%}
+            {{ '>>>all\n' + message['content'] }}
+        {%- endif -%}
+        {%- if 'tool_calls' in message and message['tool_calls'] -%}
+            {%- for tool_call in message['tool_calls'] -%}
+                {{ '>>>' + tool_call['function']['name'] + '\n' + tool_call['function']['arguments'] }}
+            {%- endfor -%}
+        {%- endif -%}
+        {{ '<|im_end|>' }}
+    {%- endif -%}
+{%- endfor -%}
+{% if add_generation_prompt %}{{ '\n<|im_start|>assistant\n>>>' }}{% endif %}
