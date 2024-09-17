@@ -45,7 +45,7 @@ class TestPromptTemplate(unittest.TestCase):
         }
         self.image_template_version_to_model_name = {
             "v3.llava_llama": "meetkai/functionary-vision-small-v0.1",
-            "internlm2-chat": "OpenGVLab/InternVL2-8B",
+            "internlm2-chat": "meetkai/functionary-vision-small-v0.1",
         }
 
     def read_example_data(self, template_version: str):

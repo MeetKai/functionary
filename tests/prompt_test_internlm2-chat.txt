@@ -20,7 +20,7 @@ When you send a message containing Python code to python, it will be executed in
 who is the CEO of Meetkai<|im_end|><|im_start|>assistant
 >>>all
 James Kaplan is the Co-Founder and CEO of MeetKai Inc.<|im_end|><|im_start|>user
-is the car Song more expensive than car Tang?<|im_end|><|im_start|>assistant
+is the car Song more expensive than car Tang?<img><img><|im_end|><|im_start|>assistant
 >>>all
 I will get the price of 2 cars and compare>>>get_car_price
 {"car_name": "Song"}>>>get_car_price
@@ -31,7 +31,7 @@ name=get_car_price
 {"price": {"price": "$20000"}}<|im_end|><|im_start|>assistant
 >>>all
 No, the car Tang is less expensive than the car Song. The car Song is priced at $25,000, while the car Tang is priced at $20,000.<|im_end|><|im_start|>user
-what's the weather like in Hanoi?<|im_end|><|im_start|>assistant
+<img>what's the weather like in Hanoi?<|im_end|><|im_start|>assistant
 >>>get_weather
 {"location": "Hanoi"}<|im_end|><|im_start|>tool
 name=get_weather
