@@ -1,12 +1,13 @@
+import base64
+import os
 import random
 import string
-from typing import Dict, List, Optional, Union
-from PIL import Image
 from io import BytesIO
-import os
-import base64
+from typing import Dict, List, Optional, Union
+
 import requests
 import torch
+from PIL import Image
 from transformers import LlamaTokenizer
 
 from functionary.openai_types import ChatMessage, Function, Tool
@@ -80,14 +81,16 @@ def prepare_messages_for_inference(
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
 
     dic_messages = [mess.dict() for mess in messages]
-    dic_messages.append({"role": "assistant"})
 
     dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)
 
     # This also checks for code_interpreter and adds python default system message instead
     # default system message
     final_prompt = prompt_template.get_prompt_from_messages(
-        dic_messages, tools_or_functions=tools_or_functions
+        dic_messages,
+        tools_or_functions=tools_or_functions,
+        bos_token="",
+        add_generation_prompt=True,
     )
 
     # add prefix based on tool-choice

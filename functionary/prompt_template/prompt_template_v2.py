@@ -121,50 +121,6 @@ class PromptTemplateV2(PromptTemplate):
             self.stop_token,
         ]
 
-    def convert_message_to_prompt(self, message: Dict) -> str:
-        role = message["role"]
-        content = message.get("content", None)
-
-        if role in [
-            "system",
-            "user",
-        ]:  # <|from|>system\n<|recipient|>all\n<|content|>xxx
-            return f"{self.from_token}{role}\n{self.recipient_token}all\n{self.content_token}{content}\n"
-
-        if role == "tool":  # <|from|>tool_name\n<|recipient|>all\n<|content|>xxx
-            tool_name = message["name"]
-            return f"{self.from_token}{tool_name}\n{self.recipient_token}all\n{self.content_token}{content}\n"
-
-        assert role == "assistant"
-
-        # set content=none if content=""
-        if type(content) is str and len(content) == 0:
-            content = None
-
-        tool_calls = message.get("tool_calls", [])
-        if tool_calls is None:
-            tool_calls = []
-        if (
-            len(tool_calls) == 0 and content is None
-        ):  # for inference: <|from|> assistant\n<|recipient|>
-            return f"{self.from_token}{role}\n{self.recipient_token}"
-
-        if len(tool_calls) == 0:  # <|from|>assistant\n<|recipient|>all\n<|content|>xxx
-            return f"{self.from_token}{role}\n{self.recipient_token}all\n{self.content_token}{content}{self.stop_token}\n"
-
-        result = ""
-        if content is not None:  # both text-response and function_call
-            result += f"{self.from_token}{role}\n{self.recipient_token}all\n{self.content_token}{content}\n"
-
-        for tool in tool_calls:
-            func_name = tool["function"]["name"]
-            arguments = tool["function"]["arguments"]
-            #  <|from|>assistant\n<|recipient|>func_name\n<|content|>xxxx
-            result += f"{self.from_token}{role}\n{self.recipient_token}{func_name}\n{self.content_token}{arguments}\n"
-
-        result = result.strip() + f"{self.stop_token}\n"
-        return result
-
     def get_stop_tokens_for_generation(self) -> List[str]:
         return [self.stop_token]
 
@@ -251,38 +207,6 @@ class PromptTemplateV2(PromptTemplate):
 
         end_index = current_text.find(f"\n{self.content_token}")
         return current_text[start_index:end_index].strip()
-
-    def get_chat_template_jinja(self) -> str:
-        chat_template = """{% for message in messages %}
-        {% if message['role'] == 'user' or message['role'] == 'system' %}
-            {{ '<|from|>' + message['role'] + '\n<|recipient|>all\n<|content|>' + message['content'] + '\n' }}<br>
-        {% elif message['role'] == 'tool' %}
-            {{ '<|from|>' + message['name'] + '\n<|recipient|>all\n<|content|>' + message['content'] + '\n' }}<br>
-        {% else %}
-            {% set contain_content='no'%}
-            {% if message['content'] is not none %}
-                {{ '<|from|>assistant\n<|recipient|>all\n<|content|>' + message['content'] }}<br>
-                {% set contain_content='yes'%}
-            {% endif %}
-            {% if 'tool_calls' in message and message['tool_calls'] is not none %}
-                {% for tool_call in message['tool_calls'] %}
-                    {% set prompt='<|from|>assistant\n<|recipient|>' + tool_call['function']['name'] + '\n<|content|>' + tool_call['function']['arguments'] %}
-                    {% if loop.index == 1 and contain_content == "no" %}
-                        {{ prompt }}<br>
-                    {% else %}
-                        {{ '\n' + prompt}}<br>
-                    {% endif %}
-                {% endfor %}
-            {% endif %}
-            {{ '<|stop|>\n' }}<br>
-        {% endif %}
-        {% endfor %}
-        {% if add_generation_prompt %}{{ '<|from|>assistant\n<|recipient|>' }}{% endif %}
-        """
-        chat_template = chat_template.replace("    ", "")
-        chat_template = chat_template.replace("<br>\n", "")
-        chat_template = chat_template.strip()
-        return chat_template
 
     def initialize_fsm_gen_state(
         self,

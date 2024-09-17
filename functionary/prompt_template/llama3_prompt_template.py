@@ -8,22 +8,6 @@ from functionary.prompt_template import prompt_utils
 from functionary.prompt_template.base_template import PromptTemplate
 
 
-def convert_to_llama3_messages(messages: List[Dict]) -> List[Dict]:
-    result = []
-    index = 0
-    while index < len(messages):
-        if messages[index]["role"] in ["user", "system"]:
-            result.append(messages[index])
-            index += 1
-        else:
-            if messages[index]["role"] == "assistant":
-                tool_calls = messages[index].get("tool_calls", [])
-                if len(tool_calls) == 0:
-                    result.append(messages[index])
-                else:
-                    messages
-
-
 class Llama3Template(PromptTemplate):
     function_separator = "<|reserved_special_token_249|>"
     version = "v2.llama3"
@@ -172,58 +156,6 @@ class Llama3Template(PromptTemplate):
         tool_calls = None if len(tool_calls) == 0 else tool_calls
         return {"role": "assistant", "content": text_content, "tool_calls": tool_calls}
 
-    def convert_message_to_prompt(self, message: Dict) -> str:
-        role = message["role"]
-        content = message.get("content", None)
-        if role == "tool":
-            tool_name = message["name"]
-            content = f"name={tool_name}\n{content}"
-
-        prompt_template = (
-            "<|start_header_id|>%s<|end_header_id|>\n\n{text}<|eot_id|>" % role
-        )
-
-        if role in ["user", "system", "tool"]:
-            return prompt_template.format(text=content)
-
-        assert role == "assistant"
-        # set content=none if content=""
-        if type(content) is str and len(content) == 0:
-            content = None
-
-        tool_calls = message.get("tool_calls", [])
-        if tool_calls is None:
-            tool_calls = []
-
-        if content is None and len(tool_calls) == 0:
-            return f"<|start_header_id|>{role}<|end_header_id|>\n\n"
-
-        if content is not None and len(tool_calls) == 0:  # text-only
-            return prompt_template.format(text=content)
-
-        tool_call_prompts = []
-        for tool_call in tool_calls:
-            arguments = tool_call["function"]["arguments"]
-            tool_name = tool_call["function"]["name"]
-            tool_prompt = f"{tool_name}\n{arguments}"
-            tool_call_prompts.append(tool_prompt)
-
-        if (
-            content is None and len(tool_calls) > 0
-        ):  # function call only (<sep>fc1<sep>fc2<sep>)
-            tool_call_content = self.function_separator + self.function_separator.join(
-                tool_call_prompts
-            )
-            return prompt_template.format(text=tool_call_content)
-
-        # Here is the case contains both text-response and tool_calls (content<sep>fc1<sep>fc2<sep>)
-        total_content = (
-            content
-            + self.function_separator
-            + self.function_separator.join(tool_call_prompts)
-        )
-        return prompt_template.format(text=total_content)
-
     def pre_process_messages_before_inference(self, messages: List[Dict]) -> List[Dict]:
         """Order the tool results by the order of tool call ids
 
@@ -234,18 +166,6 @@ class Llama3Template(PromptTemplate):
             List[Dict]: List of messages
         """
         return prompt_utils.reorder_tool_messages_by_tool_call_ids(messages)
-
-    def update_state_for_function(self, current_state):
-        """update the state when a function is going to be called
-
-        Args:
-            current_state (_type_): _description_
-        """
-        current_state["response_type"] = "function"
-        current_state["skip_until_reach"] = "\n"
-        current_state["current_text"] = ""
-        current_state["func_index"] += 1
-        current_state["call_id"] = prompt_utils.get_random_tool_call_id()
 
     def initialize_fsm_gen_state(
         self,
@@ -440,32 +360,6 @@ class Llama3Template(PromptTemplate):
                 options.append("python")
 
         return options
-
-    def get_chat_template_jinja(self) -> str:
-        chat_template = """{% for message in messages %}
-        {% if message['role'] == 'user' or message['role'] == 'system' %}
-            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}<br>
-        {% elif message['role'] == 'tool' %}
-            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + 'name=' + message['name'] + '\n' + message['content'] + '<|eot_id|>' }}<br>
-        {% else %}
-            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'}}<br>
-            {% if message['content'] is not none %}
-                {{ message['content'] }}<br>
-            {% endif %}
-            {% if 'tool_calls' in message and message['tool_calls'] is not none %}
-                {% for tool_call in message['tool_calls'] %}
-                    {{ '<|reserved_special_token_249|>' + tool_call['function']['name'] + '\n' + tool_call['function']['arguments'] }}<br>
-                {% endfor %}
-            {% endif %}
-            {{ '<|eot_id|>' }}<br>
-        {% endif %}
-        {% endfor %}
-        {% if add_generation_prompt %}{{ '<|start_header_id|>{role}<|end_header_id|>\n\n' }}{% endif %}
-        """
-        chat_template = chat_template.replace("    ", "")
-        chat_template = chat_template.replace("<br>\n", "")
-        chat_template = chat_template.strip()
-        return chat_template
 
     def get_force_text_generation_prefix(self):
         return ""
