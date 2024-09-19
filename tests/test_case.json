@@ -167,13 +167,6 @@
             "metadata": {
                 "masked": true
             }
-        },
-        {
-            "role": "assistant",
-            "content": null,
-            "metadata": {
-                "masked": true
-            }
         }
     ]
 }
