@@ -19,9 +19,9 @@
     {{- "\nYou have access to the following functions:\n\n" }}
     {%- for t in tools %}
         {%- if "type" in t -%}
-            {{ "Use the function '"|safe + t["function"]["name"] + "' to '"|safe + t["function"]["description"] + "'\n"|safe + t["function"] | tojson() }}
+            {{ "Use the function '"|safe + t["function"]["name"] + "' to '"|safe + t["function"]["description"] + "'\n"|safe + t["function"] | tojson() | safe }}
         {%- else -%}
-            {{ "Use the function '"|safe + t["name"] + "' to '"|safe + t["description"] + "'\n"|safe + t | tojson() }}
+            {{ "Use the function '"|safe + t["name"] + "' to '"|safe + t["description"] + "'\n"|safe + t | tojson() | safe }}
         {%- endif -%}
         {{- "\n\n" }}
     {%- endfor %}
@@ -35,11 +35,13 @@
     {%- elif message['role'] == 'tool' -%}
         {{ '<|start_header_id|>ipython<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}
     {%- else -%}
-        {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'}}
-        {%- if message['content'] -%}
+        {%- if (message['content'] and message['content']|length > 0) or ('tool_calls' in message and message['tool_calls'] and message['tool_calls']|length > 0) -%}
+            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'}}
+        {%- endif -%}
+        {%- if message['content'] and message['content']|length > 0 -%}
             {{ message['content'] }}
         {%- endif -%}
-        {%- if 'tool_calls' in message and message['tool_calls'] -%}
+        {%- if 'tool_calls' in message and message['tool_calls'] and message['tool_calls']|length > 0 -%}
             {%- for tool_call in message['tool_calls'] -%}
                 {%- if tool_call["function"]["name"] == "python" -%}
                     {{ '<|python_tag|>' + tool_call['function']['arguments'] }}
@@ -48,7 +50,7 @@
                 {%- endif -%}
             {%- endfor -%}
             {{ '<|eom_id|>' }}
-        {%- else -%}
+        {%- elif message['content'] and message['content']|length > 0 -%}
             {{ '<|eot_id|>' }}
         {%- endif -%}
     {%- endif -%}

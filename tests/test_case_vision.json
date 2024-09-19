@@ -167,6 +167,20 @@
         {
             "role": "assistant",
             "content": "The final list is: 0,1,2,3,5"
+        },
+        {
+            "role": "assistant",
+            "content": "",
+            "metadata": {
+                "masked": true
+            }
+        },
+        {
+            "role": "assistant",
+            "content": null,
+            "metadata": {
+                "masked": true
+            }
         }
     ]
 }
