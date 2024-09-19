@@ -90,7 +90,11 @@ image = (
 class Model:
     @modal.enter()
     def start_engine(self):
+        load_start_time = time.time()
         model, tokenizer, engine_model_config = get_model()
+        load_end_time = time.time()
+        cold_start_time = load_end_time - load_start_time
+        print(f"Cold start time: {cold_start_time:.5f} seconds")
         self.model = model
         self.tokenizer = tokenizer
         self.engine_model_config = engine_model_config

@@ -204,223 +204,246 @@ async def process_chat_completion(
         )
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
+    
+    total_passes = 30
+    avg_ttft = 0.0
+    total_tokens = 0
+    total_generation_time = 0.0
+    
+    for i in range(total_passes):
+        request_id = f"cmpl-{random_uuid()}"
+        if enable_grammar_sampling:
+            result_generator = engine.generate(
+                inputs=TokensPrompt(prompt_token_ids=prompt_token_ids),
+                sampling_params=sampling_params,
+                request_id=request_id,
+                tools_or_functions=tools_or_functions,
+                prompt_template_cls=prompt_template,
+                tool_choice=tool_func_choice,
+            )
+        else:
+            result_generator = engine.generate(
+                inputs=TokensPrompt(prompt_token_ids=prompt_token_ids),
+                sampling_params=sampling_params,
+                request_id=request_id,
+            )
+        
 
-    if enable_grammar_sampling:
-        result_generator = engine.generate(
-            inputs=TokensPrompt(prompt_token_ids=prompt_token_ids),
-            sampling_params=sampling_params,
-            request_id=request_id,
-            tools_or_functions=tools_or_functions,
-            prompt_template_cls=prompt_template,
-            tool_choice=tool_func_choice,
-        )
-    else:
-        result_generator = engine.generate(
-            inputs=TokensPrompt(prompt_token_ids=prompt_token_ids),
-            sampling_params=sampling_params,
-            request_id=request_id,
-        )
+        async def abort_request() -> None:
+            await engine.abort(request_id)
 
-    async def abort_request() -> None:
-        await engine.abort(request_id)
+        async def wrap_vllm_generator(
+            tool_choice,
+        ) -> AsyncGenerator[Tuple[str, Optional[str]], None]:
+            previous_texts = ""
+            async for res in result_generator:
+                for output in res.outputs:
+                    delta_text = output.text[len(previous_texts) :]
+                    previous_texts = output.text
+                    finish_reason = output.finish_reason
 
-    async def wrap_vllm_generator(
-        tool_choice,
-    ) -> AsyncGenerator[Tuple[str, Optional[str]], None]:
-        previous_texts = ""
+                    # If finish_reason is not None and delta_text is not empty,
+                    # the delta_text is the eos_token and just remove it
+                    if output.finish_reason is not None and len(delta_text) > 0:
+                        delta_text = ""
+                    yield delta_text, finish_reason
+            # yield "", "stop"
+
+        async def completion_stream_generator(
+            tool_choice, functions, tools_or_functions
+        ) -> AsyncGenerator[str, None]:
+            generator = wrap_vllm_generator(tool_choice=tool_choice)
+
+            tool_call_count = 0
+            async for response in generate_openai_format_from_stream_async(
+                generator, prompt_template, tool_choice, tools_or_functions
+            ):
+
+                # Convert tool_calls to function_call if request.functions is provided
+                if (
+                    functions
+                    and len(functions) > 0
+                    and "tool_calls" in response["delta"]
+                    and response["delta"]["tool_calls"]
+                    and len(response["delta"]["tool_calls"]) > 0
+                ):
+                    tool_name = response["delta"]["tool_calls"][0]["function"]["name"]
+                    tool_args = response["delta"]["tool_calls"][0]["function"]["arguments"]
+                    response["delta"]["function_call"] = response["delta"]["tool_calls"][0][
+                        "function"
+                    ]
+                    response["delta"]["tool_calls"] = None
+                    if tool_name and len(tool_name) > 0 and tool_args == "":
+                        tool_call_count += 1
+                # Return finish_reason after the first tool_call is streamed if functions is provided
+                if functions and tool_call_count == 2:
+                    response["delta"] = {}
+                    response["finish_reason"] = "function_call"
+
+                # Convert v1 from function_call to tool_calls if tools are provided instead of functions
+                if prompt_template.version == "v1" and (
+                    functions is None or len(functions) == 0
+                ):
+                    if "function_call" in response["delta"]:
+                        response["delta"] = {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "function": response["delta"]["function_call"],
+                                    "id": get_random_tool_call_id(),
+                                    "type": "function",
+                                }
+                            ],
+                        }
+                    if response["finish_reason"] == "function_call":
+                        response["finish_reason"] = "tool_calls"
+
+                # Workaround Fixes
+                response["delta"]["role"] = "assistant"
+                if (
+                    "tool_calls" in response["delta"]
+                    and response["delta"]["tool_calls"]
+                    and len(response["delta"]["tool_calls"]) > 0
+                ):
+                    for tool_call in response["delta"]["tool_calls"]:
+                        if tool_call.get("type") is None:
+                            tool_call["type"] = "function"
+
+                chunk = StreamChoice(**response)
+                result = ChatCompletionChunk(
+                    id=request_id, choices=[chunk], model=model_name
+                )
+                chunk_dic = result.dict(exclude_unset=True)
+                chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
+                yield f"data: {chunk_data}\n\n"
+                # Break from for loop after the first tool_call is streamed if functions is provided
+                if functions and tool_call_count == 2:
+                    break
+            yield "data: [DONE]\n\n"
+
+        # Streaming response
+        if request.stream:
+            background_tasks = BackgroundTasks()
+            # Abort the request if the client disconnects.
+            background_tasks.add_task(abort_request)
+            return StreamingResponse(
+                completion_stream_generator(
+                    tool_choice=tool_func_choice,
+                    functions=request.functions,
+                    tools_or_functions=tools_or_functions,
+                ),
+                media_type="text/event-stream",
+                background=background_tasks,
+            )
+
+        # Non-streaming response
+        final_res: RequestOutput = None
+        first_token_time = None
+        generation_start_time = time.time()
         async for res in result_generator:
-            for output in res.outputs:
-                delta_text = output.text[len(previous_texts) :]
-                previous_texts = output.text
-                finish_reason = output.finish_reason
-
-                # If finish_reason is not None and delta_text is not empty,
-                # the delta_text is the eos_token and just remove it
-                if output.finish_reason is not None and len(delta_text) > 0:
-                    delta_text = ""
-                yield delta_text, finish_reason
-        # yield "", "stop"
-
-    async def completion_stream_generator(
-        tool_choice, functions, tools_or_functions
-    ) -> AsyncGenerator[str, None]:
-        generator = wrap_vllm_generator(tool_choice=tool_choice)
-
-        tool_call_count = 0
-        async for response in generate_openai_format_from_stream_async(
-            generator, prompt_template, tool_choice, tools_or_functions
-        ):
+            if raw_request and await raw_request.is_disconnected():
+                # Abort the request if the client disconnects.
+                await abort_request()
+                return create_error_response(HTTPStatus.BAD_REQUEST, "Client disconnected")
+            if first_token_time is None:
+                first_token_time = time.time()
+            final_res = res
+        assert final_res is not None
+        choices = []
+        for output in final_res.outputs:
+            text_response = output.text.strip()
+            chat_mess = prompt_template.parse_assistant_response(
+                llm_output=text_response,
+                tool_choice=tool_func_choice,
+            )  # parse_generated_content(text_response)
 
             # Convert tool_calls to function_call if request.functions is provided
             if (
-                functions
-                and len(functions) > 0
-                and "tool_calls" in response["delta"]
-                and response["delta"]["tool_calls"]
-                and len(response["delta"]["tool_calls"]) > 0
+                request.functions
+                and "tool_calls" in chat_mess
+                and chat_mess["tool_calls"] is not None
+                and len(chat_mess["tool_calls"]) > 0
             ):
-                tool_name = response["delta"]["tool_calls"][0]["function"]["name"]
-                tool_args = response["delta"]["tool_calls"][0]["function"]["arguments"]
-                response["delta"]["function_call"] = response["delta"]["tool_calls"][0][
-                    "function"
-                ]
-                response["delta"]["tool_calls"] = None
-                if tool_name and len(tool_name) > 0 and tool_args == "":
-                    tool_call_count += 1
-            # Return finish_reason after the first tool_call is streamed if functions is provided
-            if functions and tool_call_count == 2:
-                response["delta"] = {}
-                response["finish_reason"] = "function_call"
+                chat_mess["function_call"] = {
+                    "name": chat_mess["tool_calls"][0]["function"]["name"],
+                    "arguments": chat_mess["tool_calls"][0]["function"]["arguments"],
+                }
+                chat_mess["tool_calls"] = None
+
+            # Postprocess finish reason
+            if "function_call" in chat_mess and chat_mess["function_call"]:
+                output.finish_reason = "function_call"
+
+            if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
+                output.finish_reason = "tool_calls"
 
             # Convert v1 from function_call to tool_calls if tools are provided instead of functions
-            if prompt_template.version == "v1" and (
-                functions is None or len(functions) == 0
-            ):
-                if "function_call" in response["delta"]:
-                    response["delta"] = {
-                        "role": "assistant",
-                        "content": None,
-                        "tool_calls": [
-                            {
-                                "function": response["delta"]["function_call"],
-                                "id": get_random_tool_call_id(),
-                                "type": "function",
-                            }
-                        ],
-                    }
-                if response["finish_reason"] == "function_call":
-                    response["finish_reason"] = "tool_calls"
-
-            # Workaround Fixes
-            response["delta"]["role"] = "assistant"
             if (
-                "tool_calls" in response["delta"]
-                and response["delta"]["tool_calls"]
-                and len(response["delta"]["tool_calls"]) > 0
+                prompt_template.version == "v1"
+                and output.finish_reason == "function_call"
+                and (request.functions is None or len(request.functions) == 0)
             ):
-                for tool_call in response["delta"]["tool_calls"]:
-                    if tool_call.get("type") is None:
-                        tool_call["type"] = "function"
+                chat_mess = {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": chat_mess["function_call"]["name"],
+                                "arguments": chat_mess["function_call"]["arguments"],
+                            },
+                            "id": get_random_tool_call_id(),
+                            "type": "function",
+                        }
+                    ],
+                }
+                output.finish_reason = "tool_calls"
 
-            chunk = StreamChoice(**response)
-            result = ChatCompletionChunk(
-                id=request_id, choices=[chunk], model=model_name
+            choice_data = ChatCompletionResponseChoice(
+                index=output.index,
+                message=ChatMessage(**chat_mess),
+                finish_reason=output.finish_reason,
             )
-            chunk_dic = result.dict(exclude_unset=True)
-            chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
-            yield f"data: {chunk_data}\n\n"
-            # Break from for loop after the first tool_call is streamed if functions is provided
-            if functions and tool_call_count == 2:
-                break
-        yield "data: [DONE]\n\n"
+            choices.append(choice_data)
+            
+        generation_end_time = time.time()
+        total_generation_time += generation_end_time - generation_start_time
 
-    # Streaming response
-    if request.stream:
-        background_tasks = BackgroundTasks()
-        # Abort the request if the client disconnects.
-        background_tasks.add_task(abort_request)
-        return StreamingResponse(
-            completion_stream_generator(
-                tool_choice=tool_func_choice,
-                functions=request.functions,
-                tools_or_functions=tools_or_functions,
-            ),
-            media_type="text/event-stream",
-            background=background_tasks,
+        num_prompt_tokens = len(final_res.prompt_token_ids)
+        num_generated_tokens = sum(len(output.token_ids) for output in final_res.outputs)
+        usage = UsageInfo(
+            prompt_tokens=num_prompt_tokens,
+            completion_tokens=num_generated_tokens,
+            total_tokens=num_prompt_tokens + num_generated_tokens,
+        )
+        response = ChatCompletionResponse(
+            id=request_id,
+            created=created_time,
+            model=model_name,
+            choices=choices,
+            usage=usage,
         )
 
-    # Non-streaming response
-    final_res: RequestOutput = None
-    async for res in result_generator:
-        if raw_request and await raw_request.is_disconnected():
-            # Abort the request if the client disconnects.
-            await abort_request()
-            return create_error_response(HTTPStatus.BAD_REQUEST, "Client disconnected")
-        final_res = res
-    assert final_res is not None
-    choices = []
-    for output in final_res.outputs:
-        text_response = output.text.strip()
-        chat_mess = prompt_template.parse_assistant_response(
-            llm_output=text_response,
-            tool_choice=tool_func_choice,
-        )  # parse_generated_content(text_response)
+        if request.stream:
+            # When user requests streaming but we don't stream, we still need to
+            # return a streaming response with a single event.
+            response_json = response.model_dump_json(exclude_unset=True)
 
-        # Convert tool_calls to function_call if request.functions is provided
-        if (
-            request.functions
-            and "tool_calls" in chat_mess
-            and chat_mess["tool_calls"] is not None
-            and len(chat_mess["tool_calls"]) > 0
-        ):
-            chat_mess["function_call"] = {
-                "name": chat_mess["tool_calls"][0]["function"]["name"],
-                "arguments": chat_mess["tool_calls"][0]["function"]["arguments"],
-            }
-            chat_mess["tool_calls"] = None
+            async def fake_stream_generator() -> AsyncGenerator[str, None]:
+                yield f"data: {response_json}\n\n"
+                yield "data: [DONE]\n\n"
 
-        # Postprocess finish reason
-        if "function_call" in chat_mess and chat_mess["function_call"]:
-            output.finish_reason = "function_call"
-
-        if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
-            output.finish_reason = "tool_calls"
-
-        # Convert v1 from function_call to tool_calls if tools are provided instead of functions
-        if (
-            prompt_template.version == "v1"
-            and output.finish_reason == "function_call"
-            and (request.functions is None or len(request.functions) == 0)
-        ):
-            chat_mess = {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "function": {
-                            "name": chat_mess["function_call"]["name"],
-                            "arguments": chat_mess["function_call"]["arguments"],
-                        },
-                        "id": get_random_tool_call_id(),
-                        "type": "function",
-                    }
-                ],
-            }
-            output.finish_reason = "tool_calls"
-
-        choice_data = ChatCompletionResponseChoice(
-            index=output.index,
-            message=ChatMessage(**chat_mess),
-            finish_reason=output.finish_reason,
-        )
-        choices.append(choice_data)
-
-    num_prompt_tokens = len(final_res.prompt_token_ids)
-    num_generated_tokens = sum(len(output.token_ids) for output in final_res.outputs)
-    usage = UsageInfo(
-        prompt_tokens=num_prompt_tokens,
-        completion_tokens=num_generated_tokens,
-        total_tokens=num_prompt_tokens + num_generated_tokens,
-    )
-    response = ChatCompletionResponse(
-        id=request_id,
-        created=created_time,
-        model=model_name,
-        choices=choices,
-        usage=usage,
-    )
-
-    if request.stream:
-        # When user requests streaming but we don't stream, we still need to
-        # return a streaming response with a single event.
-        response_json = response.model_dump_json(exclude_unset=True)
-
-        async def fake_stream_generator() -> AsyncGenerator[str, None]:
-            yield f"data: {response_json}\n\n"
-            yield "data: [DONE]\n\n"
-
-        return StreamingResponse(
-            fake_stream_generator(), media_type="text/event-stream"
-        )
+            return StreamingResponse(
+                fake_stream_generator(), media_type="text/event-stream"
+            )
+            
+        avg_ttft += first_token_time - generation_start_time
+        total_tokens += num_generated_tokens
+        tokens_per_second = total_tokens / total_generation_time if total_generation_time > 0 else 0
+        
+    print(f"Time to first token: {avg_ttft:.5f} seconds")
+    print(f"Tokens generated: {total_tokens}")
+    print(f"Tokens per second: {tokens_per_second:.5f}")
 
     return response
