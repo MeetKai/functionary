@@ -42,6 +42,7 @@ class TestPromptTemplate(unittest.TestCase):
             "v2.llama3": "meetkai/functionary-small-v2.5",
             "v3.llama3": "meetkai/functionary-medium-v3.0",
             "v3-llama3.1": "meetkai/functionary-small-v3.1",
+            "qwen2.5": "Qwen/Qwen2.5-7B-Instruct",
         }
         self.image_template_version_to_model_name = {
             "v3.llava_llama": "meetkai/functionary-vision-small-v0.1"
@@ -137,6 +138,7 @@ class TestPromptTemplate(unittest.TestCase):
         added_tokens = prompt_template.get_additional_tokens()
         special_tokens = {"additional_special_tokens": added_tokens}
         tokenizer.add_special_tokens(special_tokens)
+        tokenizer.chat_template = prompt_template.get_chat_template_jinja()
 
         test_case, _ = self.read_example_data(template_version)
 
