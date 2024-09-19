@@ -112,7 +112,7 @@ class Qwen25Template(PromptTemplate):
         new_messages = copy.deepcopy(messages)
         for message in new_messages:
             tool_calls = message.get("tool_calls", [])
-            if len(tool_calls) > 0:
+            if tool_calls:
                 for tool_call in tool_calls:
                     if type(tool_call["function"]["arguments"]) is str:
                         if tool_call["function"]["name"] != "python":
