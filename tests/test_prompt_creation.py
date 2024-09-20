@@ -102,6 +102,7 @@ class TestPromptTemplate(unittest.TestCase):
                 test_case["messages"], tools_or_functions
             )
             print(created_prompt)
+
             self.assertEqual(
                 final_prompt.strip(),
                 created_prompt.strip(),
