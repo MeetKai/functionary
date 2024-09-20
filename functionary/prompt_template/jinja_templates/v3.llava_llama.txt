@@ -25,16 +25,20 @@
     {%- elif message['role'] == 'tool' -%}
         {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + message['content'] + '<|eot_id|>' }}
     {%- else -%}
-        {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'}}
-        {%- if message['content'] -%}
+        {%- if (message['content'] and message['content']|length > 0) or ('tool_calls' in message and message['tool_calls'] and message['tool_calls']|length > 0) -%}
+            {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'}}
+        {%- endif -%}
+        {%- if message['content'] and message['content']|length > 0 -%}
             {{ '>>>all\n' + message['content'] }}
         {%- endif -%}
-        {%- if 'tool_calls' in message and message['tool_calls'] -%}
+        {%- if 'tool_calls' in message and message['tool_calls'] and message['tool_calls']|length > 0 -%}
             {%- for tool_call in message['tool_calls'] -%}
                 {{ '>>>' + tool_call['function']['name'] + '\n' + tool_call['function']['arguments'] }}
             {%- endfor -%}
         {%- endif -%}
-        {{ '<|eot_id|>' }}
+        {%- if (message['content'] and message['content']|length > 0) or ('tool_calls' in message and message['tool_calls'] and message['tool_calls']|length > 0) -%}
+            {{ '<|eot_id|>' }}
+        {%- endif -%}
     {%- endif -%}
 {%- endfor -%}
 {% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n>>>' }}{% endif %}

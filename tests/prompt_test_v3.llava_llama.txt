@@ -74,4 +74,14 @@ l<|eot_id|><|start_header_id|>tool<|end_header_id|>
 [0,1,2,3,5,]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 >>>all
-The final list is: 0,1,2,3,5<|eot_id|>
+The final list is: 0,1,2,3,5<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+Thanks! What is the weather in San Francisco?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>>>get_weather
+{"location": "San Francisco, CA"}<|eot_id|><|start_header_id|>tool<|end_header_id|>
+
+{"result": {"temperature": 20}}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>>>all
+The temperature in San Francisco is: 20 degree Celcious<|eot_id|>
