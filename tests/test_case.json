@@ -162,11 +162,29 @@
             "content": "The final list is: 0,1,2,3,5"
         },
         {
+            "role": "user",
+            "content": "Thanks! What is the weather in San Francisco?"
+        },
+        {
             "role": "assistant",
             "content": "",
-            "metadata": {
-                "masked": true
-            }
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": "{\"location\": \"San Francisco, CA\"}"
+                    }
+                }
+            ]
+        },
+        {
+            "role": "tool",
+            "content": "{\"result\": {\"temperature\": 20}}",
+            "name": "get_weather"
+        },
+        {
+            "role": "assistant",
+            "content": "The temperature in San Francisco is: 20 degree Celcious"
         }
     ]
 }
