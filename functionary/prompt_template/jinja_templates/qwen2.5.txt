@@ -8,7 +8,7 @@
     {{- "\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>" }}
     {%- for tool in tools %}
         {{- "\n" }}
-        {{- tool | tojson }}
+        {{- tool | tojson | safe}}
     {%- endfor %}
     {{- "\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n" }}
 {%- else %}
@@ -33,7 +33,7 @@
             {{- '\n<tool_call>\n{"name": "' }}
             {{- tool_call.name }}
             {{- '", "arguments": ' }}
-            {{- tool_call.arguments | tojson }}
+            {{- tool_call.arguments | tojson | safe}}
             {{- '}\n</tool_call>' }}
         {%- endfor %}
         {{- '<|im_end|>\n' }}
