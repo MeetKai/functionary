@@ -9,17 +9,35 @@ import jinja2
 
 from functionary.openai_types import Function, Tool
 from functionary.prompt_template import prompt_utils
-from functionary.schema import generate_schema_from_functions
+
+
+def raise_exception(message):
+    raise jinja2.exceptions.TemplateError(message)
+
+
+def tojson(x, ensure_ascii=False, indent=None, separators=None, sort_keys=False):
+    # We override the built-in tojson filter because Jinja's default filter escapes HTML characters
+    # We also expose some options like custom indents and separators
+    return json.dumps(
+        x,
+        ensure_ascii=ensure_ascii,
+        indent=indent,
+        separators=separators,
+        sort_keys=sort_keys,
+    )
 
 
 class PromptTemplate:
     _jinja_env = jinja2.Environment()
-    _jinja_env.policies["json.dumps_kwargs"] = {"sort_keys": False}
+    _jinja_env.filters["tojson"] = tojson
+    _jinja_env.globals["raise_exception"] = raise_exception
     # Mapping from class --> instance to create singleton instance
     _instances = {}
-    
+
     def __init__(self):
-        self._jinja_template = self._jinja_env.from_string(self.get_chat_template_jinja())
+        self._jinja_template = self._jinja_env.from_string(
+            self.get_chat_template_jinja()
+        )
 
     @abstractmethod
     def get_start_of_function_call_token(self) -> str:
@@ -341,7 +359,7 @@ class PromptTemplate:
             json_to_ts_schema = f.read()
         with open(f"{path_prefix}{self.version}.txt", "r") as f:
             template = f.read()
-            
+
         return (
             template[: template.index("{%")]
             + json_to_ts_schema

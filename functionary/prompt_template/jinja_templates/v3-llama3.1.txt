@@ -19,9 +19,9 @@
     {{- "\nYou have access to the following functions:\n\n" }}
     {%- for t in tools %}
         {%- if "type" in t -%}
-            {{ "Use the function '"|safe + t["function"]["name"] + "' to '"|safe + t["function"]["description"] + "'\n"|safe + t["function"] | tojson() | safe }}
+            {{ "Use the function '" + t["function"]["name"] + "' to '" + t["function"]["description"] + "'\n" + t["function"] | tojson() }}
         {%- else -%}
-            {{ "Use the function '"|safe + t["name"] + "' to '"|safe + t["description"] + "'\n"|safe + t | tojson() | safe }}
+            {{ "Use the function '" + t["name"] + "' to '" + t["description"] + "'\n" + t | tojson }}
         {%- endif -%}
         {{- "\n\n" }}
     {%- endfor %}
