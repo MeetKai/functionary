@@ -24,9 +24,11 @@ from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Un
 
 import fastapi
 import uvicorn
+import vllm.entrypoints.openai.api_server as vllm_api_server
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from vllm.engine.arg_utils import AsyncEngineArgs
+from vllm.entrypoints.openai.api_server import health, mount_metrics
 from vllm.entrypoints.openai.protocol import ModelCard, ModelList, ModelPermission
 from vllm.logger import init_logger
 from vllm.transformers_utils.tokenizer import get_tokenizer
@@ -44,6 +46,12 @@ logger.addHandler(logging.StreamHandler())
 
 served_model = []
 app = fastapi.FastAPI()
+
+
+@app.get("/health")
+async def _health():
+    """Health check."""
+    return await health()
 
 
 @app.get("/v1/models")
@@ -128,6 +136,8 @@ if __name__ == "__main__":
     else:
         from vllm.engine.async_llm_engine import AsyncLLMEngine
 
+    mount_metrics(app)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=args.allowed_origins,
@@ -138,12 +148,10 @@ if __name__ == "__main__":
 
     logger.info(f"args: {args}")
 
-    if args.served_model_name is not None:
-        logger.info(
-            "args.served_model_name is not used in this service and will be ignored. Served model will consist of args.model only."
-        )
-
     served_model = [args.model]
+
+    if args.served_model_name is not None:
+        served_model += args.served_model_name
 
     engine_args = AsyncEngineArgs.from_cli_args(args)
     # A separate tokenizer to map token IDs to strings.
@@ -155,6 +163,9 @@ if __name__ == "__main__":
 
     engine = AsyncLLMEngine.from_engine_args(engine_args)
     engine_model_config = asyncio.run(engine.get_model_config())
+
+    # Adapt to vLLM's health endpoint
+    vllm_api_server.async_engine_client = engine
 
     uvicorn.run(
         app,

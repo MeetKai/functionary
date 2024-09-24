@@ -32,7 +32,7 @@ who is the CEO of Meetkai<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 >>>all
 James Kaplan is the Co-Founder and CEO of MeetKai Inc.<|eot_id|><|start_header_id|>user<|end_header_id|>
 
-is the car Song more expensive than car Tang?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+is the car Song more expensive than car Tang?<|reserved_special_token_250|><|reserved_special_token_250|><|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 >>>all
 I will get the price of 2 cars and compare>>>get_car_price
@@ -46,8 +46,7 @@ I will get the price of 2 cars and compare>>>get_car_price
 >>>all
 No, the car Tang is less expensive than the car Song. The car Song is priced at $25,000, while the car Tang is priced at $20,000.<|eot_id|><|start_header_id|>user<|end_header_id|>
 
-<|reserved_special_token_250|>
-what's the weather like in Hanoi?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+<|reserved_special_token_250|>what's the weather like in Hanoi?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 >>>get_weather
 {"location": "Hanoi"}<|eot_id|><|start_header_id|>tool<|end_header_id|>
@@ -75,4 +74,14 @@ l<|eot_id|><|start_header_id|>tool<|end_header_id|>
 [0,1,2,3,5,]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 >>>all
-The final list is: 0,1,2,3,5<|eot_id|>
+The final list is: 0,1,2,3,5<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+Thanks! What is the weather in San Francisco?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>>>get_weather
+{"location": "San Francisco, CA"}<|eot_id|><|start_header_id|>tool<|end_header_id|>
+
+{"result": {"temperature": 20}}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+>>>all
+The temperature in San Francisco is: 20 degree Celcious<|eot_id|>

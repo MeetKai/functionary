@@ -54,7 +54,11 @@
         },
         {
             "role": "user",
-            "content": "is the car Song more expensive than car Tang?"
+            "content": [
+                {"type": "text", "text": "is the car Song more expensive than car Tang?"}, 
+                {"type": "image_url", "image_url": "song_pic.png"},
+                {"type": "image_url", "image_url": "tang_pic.png"}
+            ]
         },
         {
             "role": "assistant",
@@ -90,7 +94,10 @@
         },
         {
             "role": "user",
-            "content": "what's the weather like in Hanoi?",
+            "content": [
+                {"type": "image_url", "image_url": "hanoi.png"},
+                {"text": "what's the weather like in Hanoi?", "type": "text"}
+            ],
             "metainfo": {
                 "img_path": "IMG_PATH"
             }

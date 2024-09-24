@@ -85,3 +85,15 @@ l<|stop|>
 <|from|>assistant
 <|recipient|>all
 <|content|>The final list is: 0,1,2,3,5<|stop|>
+<|from|>user
+<|recipient|>all
+<|content|>Thanks! What is the weather in San Francisco?
+<|from|>assistant
+<|recipient|>get_weather
+<|content|>{"location": "San Francisco, CA"}<|stop|>
+<|from|>get_weather
+<|recipient|>all
+<|content|>{"result": {"temperature": 20}}
+<|from|>assistant
+<|recipient|>all
+<|content|>The temperature in San Francisco is: 20 degree Celcious<|stop|>

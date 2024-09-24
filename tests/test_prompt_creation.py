@@ -37,13 +37,15 @@ class TestPromptTemplate(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(TestPromptTemplate, self).__init__(*args, **kwargs)
 
-        self.template_versions = ["v2", "v2.llama3", "v3.llama3", "v3-llama3.1"]
-        self.pretrained_models = [
-            "meetkai/functionary-small-v2.4",
-            "meetkai/functionary-small-v2.5",
-            "meetkai/functionary-medium-v3.0",
-            "meetkai/functionary-small-v3.1",
-        ]
+        self.template_version_to_model_name = {
+            "v2": "meetkai/functionary-small-v2.4",
+            "v2.llama3": "meetkai/functionary-small-v2.5",
+            "v3.llama3": "meetkai/functionary-medium-v3.0",
+            "v3-llama3.1": "meetkai/functionary-small-v3.1",
+        }
+        self.image_template_version_to_model_name = {
+            "v3.llava_llama": "meetkai/functionary-vision-small-v0.1"
+        }
 
     def read_example_data(self, template_version: str):
         current_folder = os.path.dirname(os.path.abspath(__file__))
@@ -58,8 +60,19 @@ class TestPromptTemplate(unittest.TestCase):
                 final_prompt = final_prompt.replace("\n\n<|from|>", "\n<|from|>")
         return test_case, final_prompt
 
+    def read_image_example_data(self, template_version: str):
+        current_folder = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(current_folder, f"test_case_vision.json")) as f:
+            test_case = json.loads(f.read())
+
+        with open(
+            os.path.join(current_folder, f"prompt_test_{template_version}.txt")
+        ) as f:
+            final_prompt = f.read()
+        return test_case, final_prompt
+
     def test_final_prompt_generation(self):
-        for template_version in self.template_versions:
+        for template_version in self.template_version_to_model_name.keys():
             print("--------------test template_version: ", template_version)
             test_case, final_prompt = self.read_example_data(template_version)
             tools_or_functions = (
@@ -76,10 +89,31 @@ class TestPromptTemplate(unittest.TestCase):
                 f"wrong final prompt from: get_prompt_from_messages, for version={template_version}",
             )
 
+        for image_template_version in self.image_template_version_to_model_name.keys():
+            print("--------------test image template_version: ", image_template_version)
+            test_case, final_prompt = self.read_image_example_data(
+                image_template_version
+            )
+            tools_or_functions = (
+                test_case["tools"] if "tools" in test_case else test_case["functions"]
+            )
+            prompt_template = get_prompt_template_by_version(image_template_version)
+            created_prompt = prompt_template.get_prompt_from_messages(
+                test_case["messages"], tools_or_functions
+            )
+            print(created_prompt)
+
+            self.assertEqual(
+                final_prompt.strip(),
+                created_prompt.strip(),
+                f"wrong final prompt for vision from: get_prompt_from_messages, for version={image_template_version}",
+            )
+
     def test_prepare_training_inputs_normal_tokenizer(self):
-        for template_version, pretrained_model in zip(
-            self.template_versions, self.pretrained_models
-        ):
+        for (
+            template_version,
+            pretrained_model,
+        ) in self.template_version_to_model_name.items():
             print(f"-------------_TEST: {template_version}, {pretrained_model}")
             self.run_prepare_training_inputs(
                 template_version=template_version,
@@ -152,16 +186,19 @@ class TestPromptTemplate(unittest.TestCase):
 
         print(f"number of unmasked chunks: {len(chunks)}")
         for chunk, message in zip(chunks, assistant_message):
+            sys_msg = prompt_template.get_prompt_from_messages([])
             if keep_assistant_prefix:
                 prefix = ""
             else:
-                prefix = prompt_template.convert_message_to_prompt(
-                    {"role": "assistant"}
+                prefix = prompt_template.get_prompt_from_messages(
+                    [], add_generation_prompt=True
                 )
+                prefix = prefix[len(sys_msg) :].lstrip()
             decoded_content = prefix + tokenizer.decode(
                 chunk
             )  # note that need to add: "\nassistant" because we mask this, see line 194 in prompt_utils.py
-            prompt = prompt_template.convert_message_to_prompt(message)
+            prompt = prompt_template.get_prompt_from_messages([message])
+            prompt = prompt[len(sys_msg) :].lstrip()
             # decoded_content and prompt should be the same
             # to avoid any mistakes of tokenizer like adding white space we will compare after removing space
             self.assertEqual(
