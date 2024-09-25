@@ -8,7 +8,7 @@ You may call one or more functions to assist with the user query.
 You are provided with function signatures within <tools></tools> XML tags:
 <tools>
 {"type": "function", "function": {"name": "get_car_price", "description": "Get the price of a particular car model", "parameters": {"type": "object", "properties": {"car_name": {"type": "string", "description": "The name of the car model"}}, "required": ["car_name"]}}}
-{"type": "function", "function": {"name": "get_weather", "description": "get the weather of a location", "parameters": {"type": "object", "properties": {"location": {"type": "string", "description": "where to get weather"}}, "required": ["location"]}}}
+{"type": "function", "function": {"name": "get_weather", "description": "This function's purpose is to get the weather of a location", "parameters": {"type": "object", "properties": {"location": {"type": "string", "description": "where to get weather"}}, "required": ["location"]}}}
 {"type": "function", "function": {"name": "python", "description": "When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at \"/mnt/data\" can be used to save and persist user files.", "parameters": {"type": "object", "properties": {"code": {"type": "string", "description": "Python code"}}, "required": ["code"]}}}
 </tools>
 
@@ -52,11 +52,11 @@ what's the weather like in Hanoi?<|im_end|>
 <|im_start|>assistant
 The temperature in Hanoi is: 10 degree Celcious<|im_end|>
 <|im_start|>user
-Given the list: 0,1,2,3,4,5 remove the number in the list that is close to 3.6 the most<|im_end|>
+Given the list of strings: '0','1','2','3','4','5' remove the number in the list that is close to 3.6 the most<|im_end|>
 <|im_start|>assistant
-I will use code interpreter to handle this
+I'll use code interpreter to handle this
 <tool_call>
-{"name": "python", "arguments": {"code": "l=[0,1,2,3,4,5]\nl.remove(3.6)"}}
+{"name": "python", "arguments": {"code": "l=[int('0'),int('1'),int('2'),int('3'),int('4'),int('5')]\nl.remove(3.6)"}}
 </tool_call><|im_end|>
 <|im_start|>user
 <tool_response>
@@ -65,7 +65,7 @@ ValueError: list.remove(x): x not in list
 <|im_start|>assistant
 I will fix the code
 <tool_call>
-{"name": "python", "arguments": {"code": "l=[0,1,2,3,4,5]\nl.remove(4)\nl"}}
+{"name": "python", "arguments": {"code": "l.remove(round(3.6))\nl"}}
 </tool_call><|im_end|>
 <|im_start|>user
 <tool_response>
@@ -73,3 +73,15 @@ I will fix the code
 </tool_response><|im_end|>
 <|im_start|>assistant
 The final list is: 0,1,2,3,5<|im_end|>
+<|im_start|>user
+Thanks! What's the weather in San Francisco?<|im_end|>
+<|im_start|>assistant
+<tool_call>
+{"name": "get_weather", "arguments": {"location": "San Francisco, CA"}}
+</tool_call><|im_end|>
+<|im_start|>user
+<tool_response>
+{"result": {"temperature": 20}}
+</tool_response><|im_end|>
+<|im_start|>assistant
+The temperature in San Francisco is: 20 degree Celcious<|im_end|>

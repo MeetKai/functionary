@@ -23,7 +23,7 @@
             "type": "function",
             "function": {
                 "name": "get_weather",
-                "description": "get the weather of a location",
+                "description": "This function's purpose is to get the weather of a location",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -125,16 +125,16 @@
         },
         {
             "role": "user",
-            "content": "Given the list: 0,1,2,3,4,5 remove the number in the list that is close to 3.6 the most"
+            "content": "Given the list of strings: '0','1','2','3','4','5' remove the number in the list that is close to 3.6 the most"
         },
         {
             "role": "assistant",
-            "content": "I will use code interpreter to handle this",
+            "content": "I'll use code interpreter to handle this",
             "tool_calls": [
                 {
                     "function": {
                         "name": "python",
-                        "arguments": "l=[0,1,2,3,4,5]\nl.remove(3.6)"
+                        "arguments": "l=[int('0'),int('1'),int('2'),int('3'),int('4'),int('5')]\nl.remove(3.6)"
                     }
                 }
             ],
@@ -154,7 +154,7 @@
                 {
                     "function": {
                         "name": "python",
-                        "arguments": "l=[0,1,2,3,4,5]\nl.remove(4)\nl"
+                        "arguments": "l.remove(round(3.6))\nl"
                     }
                 }
             ]
@@ -167,6 +167,31 @@
         {
             "role": "assistant",
             "content": "The final list is: 0,1,2,3,5"
+        },
+        {
+            "role": "user",
+            "content": "Thanks! What's the weather in San Francisco?"
+        },
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": "{\"location\": \"San Francisco, CA\"}"
+                    }
+                }
+            ]
+        },
+        {
+            "role": "tool",
+            "content": "{\"result\": {\"temperature\": 20}}",
+            "name": "get_weather"
+        },
+        {
+            "role": "assistant",
+            "content": "The temperature in San Francisco is: 20 degree Celcious"
         }
     ]
 }

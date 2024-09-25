@@ -9,7 +9,6 @@ import jinja2
 
 from functionary.openai_types import Function, Tool
 from functionary.prompt_template import prompt_utils
-from functionary.schema import generate_schema_from_functions
 
 
 def raise_exception(message):
@@ -30,7 +29,6 @@ def tojson(x, ensure_ascii=False, indent=None, separators=None, sort_keys=False)
 
 class PromptTemplate:
     _jinja_env = jinja2.Environment()
-    _jinja_env.policies["json.dumps_kwargs"] = {"sort_keys": False}
     _jinja_env.filters["tojson"] = tojson
     _jinja_env.globals["raise_exception"] = raise_exception
     # Mapping from class --> instance to create singleton instance
