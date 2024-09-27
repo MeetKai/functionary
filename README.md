@@ -387,7 +387,38 @@ modal serve modal_server_vllm
 ```shell Python
 modal deploy modal_server_vllm
 ```
-  
+
+## Quick Cloud Deployment
+
+Use the `deploy_skypilot.py` script to deploy a Functionary model onto various clouds using Skypilot. Currently, we support the following clouds:
+- Lambdalabs
+- RunPod
+
+### Get Started
+
+1. Install Skypilot:
+
+```bash
+pip install skypilot[all]
+```
+
+2. Set up your cloud credentials by following the instructions [here](https://skypilot.readthedocs.io/en/latest/getting-started/installation.html#cloud-account-setup)
+
+3. Run the following command to check the available arguments:
+```bash
+python deploy_skypilot.py --help
+```
+
+4. SkyPilot does not support stopping instances and opening ports for both Lambdalabs and RunPod currently.
+For Lambdalabs, please expose the port for the server manually first [here](https://cloud.lambdalabs.com/firewall) before running `deploy_skypilot.py`.
+For Runpod, please run `deploy_skypilot.py` twice. After the first command, check the [RunPod Dashboard](https://www.runpod.io/console/pods) for the instance created by Skypilot. Once the instance is created, expose the port for the server manually. Thereafter, ctrl-c the first command and run the command again.
+
+5. To stop the cluster, run the following command and manually stop the instance on RunPod/Lambdalabs:
+```bash
+sky stop <cluster_name>
+```
+
+
 # Use Cases
 
 Here are a few examples of how you can use this function calling system:
