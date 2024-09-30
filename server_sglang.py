@@ -255,7 +255,7 @@ def launch_server(
 
     # Launch tokenizer process
     if args.logfile is not None:
-        tokenizer_manager = MonkeyPatchTokenizerManager(server_args, port_args)
+        tokenizer_manager = MonkeyPatchTokenizerManager(server_args, port_args, args.logfile)
     else:
         tokenizer_manager = TokenizerManager(server_args, port_args)
     if server_args.chat_template:

@@ -16,27 +16,22 @@ limitations under the License.
 """TokenizerManager is a process that tokenizes the text."""
 
 import asyncio
-import dataclasses
 import logging
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
+import fastapi
 import uvloop
-from sglang.srt.managers.io_struct import EmbeddingReqInput, GenerateReqInput
-from sglang.srt.managers.tokenizer_manager import TokenizerManager
+from sglang.srt.managers.io_struct import (
+    EmbeddingReqInput,
+    GenerateReqInput,
+    RewardReqInput,
+)
+from sglang.srt.managers.tokenizer_manager import ReqState, TokenizerManager
 from sglang.srt.server_args import PortArgs, ServerArgs
 
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 logger = logging.getLogger("tokenizer_logger")
-
-
-@dataclasses.dataclass
-class ReqState:
-    """Store the state a request."""
-
-    out_list: List
-    finished: bool
-    event: asyncio.Event
 
 
 class MonkeyPatchTokenizerManager(TokenizerManager):
@@ -46,10 +41,9 @@ class MonkeyPatchTokenizerManager(TokenizerManager):
         self,
         server_args: ServerArgs,
         port_args: PortArgs,
-        model_overide_args: Dict = None,
         logfile: str = "logfile.txt",
     ):
-        super().__init__(server_args, port_args, model_overide_args)
+        super().__init__(server_args, port_args)
         file_handler = logging.handlers.RotatingFileHandler(
             logfile, maxBytes=1024 * 1024 * 100, backupCount=10
         )
@@ -57,17 +51,16 @@ class MonkeyPatchTokenizerManager(TokenizerManager):
 
     async def _wait_for_response(
         self,
-        event: asyncio.Event,
         state: ReqState,
-        obj: Union[GenerateReqInput, EmbeddingReqInput],
+        obj: Union[GenerateReqInput, EmbeddingReqInput, RewardReqInput],
         rid: str,
-        request,
-        index: int = None,
+        request: Optional[fastapi.Request] = None,
+        index: Optional[int] = None,
         response_index: int = 0,
     ):
         while True:
             try:
-                await asyncio.wait_for(event.wait(), timeout=4)
+                await asyncio.wait_for(state.event.wait(), timeout=4)
             except asyncio.TimeoutError:
                 if request is not None and await request.is_disconnected():
                     for rid in [obj.rid] if obj.is_single else obj.rid:
@@ -86,7 +79,7 @@ class MonkeyPatchTokenizerManager(TokenizerManager):
                     ),
                     obj.return_text_in_logprobs,
                 )
-            else:  # isinstance(obj, EmbeddingReqInput)
+            else:  # isinstance(obj, (EmbeddingReqInput, RewardReqInput))
                 out = state.out_list[-1]
 
             out["index"] = response_index
@@ -105,5 +98,5 @@ class MonkeyPatchTokenizerManager(TokenizerManager):
                 yield out
                 break
 
-            event.clear()
+            state.event.clear()
             yield out
