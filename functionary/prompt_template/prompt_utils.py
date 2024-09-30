@@ -53,6 +53,34 @@ def enforce_tool_choice(
     return tools_or_functions
 
 
+def get_prompt_str_from_inputs(
+    *,
+    tokenizer: LlamaTokenizer,
+    messages: List[ChatMessage],
+    tools_or_functions: List[Dict],
+    tool_choice: Optional[Union[str, Tool, Function]] = None,
+) -> str:
+    # Import function in this function to prevent circular imports
+    from functionary.prompt_template import get_prompt_template_from_tokenizer
+
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+
+    dic_messages = [mess.dict() for mess in messages]
+    dic_messages.append({"role": "assistant"})
+
+    dic_messages = prompt_template.pre_process_messages_before_inference(dic_messages)
+
+    # This also checks for code_interpreter and adds python default system message instead
+    # default system message
+    final_prompt = prompt_template.get_prompt_from_messages(
+        dic_messages, tools_or_functions=tools_or_functions
+    )
+
+    # add prefix based on tool-choice
+    final_prompt += prompt_template.get_generation_prefix_for_tool_choice(tool_choice)
+    return final_prompt
+
+
 def prepare_messages_for_inference(
     *,
     tokenizer: LlamaTokenizer,
@@ -92,9 +120,6 @@ def prepare_messages_for_inference(
         bos_token="",
         add_generation_prompt=True,
     )
-
-    # add prefix based on tool-choice
-    final_prompt += prompt_template.get_generation_prefix_for_tool_choice(tool_choice)
     input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
     input_ids = input_ids.to(device)
     return input_ids
@@ -249,6 +274,7 @@ def download_image_from_image_url(image_url: str):
 
     elif image_url.startswith(file_prefix):
         img_path = image_url[len(file_prefix) :].strip()
+        # image = Image.open(image_file).convert('RGB')
         return Image.open(open(img_path, "rb"))
 
     elif image_url.startswith(url_prefix):
@@ -259,3 +285,30 @@ def download_image_from_image_url(image_url: str):
         raise (
             f"image not found, image_url must startswith one of: '{base64_prefix}'; '{file_prefix}', '{url_prefix}'"
         )
+
+
+def inject_image_token(inputs, img_token_id):
+    """This function will replace the last token with image_token at the end of: input_ids and also modify attention_mask, labels accordingly
+
+    Args:
+        inputs (_type_): input_dic containing: input_ids, labels, attention_mask
+        img_token_id (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    input_ids = inputs["input_ids"]
+    label_ids = inputs["labels"]
+    attention_mask = inputs["attention_mask"]
+    # make sure that virtual token is always appended at the end --> won't influence the attention_scores for other tokens
+    input_ids[-1] = img_token_id
+    label_ids[-1] = -100  # make sure that
+    attention_mask[-1] = (
+        1  # allow attend so prepare_inputs_labels_for_multimodal will work
+    )
+
+    return {
+        "input_ids": input_ids,
+        "labels": label_ids,
+        "attention_mask": attention_mask,
+    }

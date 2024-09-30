@@ -2,6 +2,7 @@ import re
 from typing import Any, List
 
 from functionary.prompt_template.base_template import PromptTemplate
+from functionary.prompt_template.internlm2_prompt_template import InternLMChat
 from functionary.prompt_template.llama3_prompt_template import Llama3Template
 from functionary.prompt_template.llama3_prompt_template_v3 import Llama3TemplateV3
 from functionary.prompt_template.llama31_prompt_template import Llama31Template
@@ -28,7 +29,7 @@ def get_available_prompt_template_versions() -> List[PromptTemplate]:
     # directly add LLavaLlama as it is not a direct subclass of PromptTemplate but the subclass of: Llama3TemplateV3
     # we don't use get_prompt_template or this will return the parent class
     all_templates_obj.append(LlavaLlama.get_prompt_template())
-
+    all_templates_obj.append(InternLMChat.get_prompt_template())
     return all_templates_obj
 
 
@@ -80,6 +81,11 @@ def get_prompt_template_from_tokenizer(tokenizer: Any) -> PromptTemplate:
     p4 = _TEMPLATE_DIC[Llama3TemplateV3.version]
     p5 = _TEMPLATE_DIC[LlavaLlama.version]
     p6 = _TEMPLATE_DIC[Llama31Template.version]
+    p7 = _TEMPLATE_DIC[InternLMChat.version]
+
+    token_ids = tokenizer.encode(p7.img_context, add_special_tokens=False)
+    if len(token_ids) == 1:
+        return p7
 
     token_ids = tokenizer.encode("<|eom_id|>", add_special_tokens=False)
     if len(token_ids) == 1 and token_ids[0] == 128008:  # tokenizer from llama-3.1
