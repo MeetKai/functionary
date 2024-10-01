@@ -74,7 +74,10 @@ from sglang.srt.utils import (
     prepare_model_and_tokenizer,
 )
 
-from functionary.sglang_inference import v1_chat_completions
+from functionary.sglang_inference import (
+    v1_chat_completions,
+    v1_chat_completions_grammar_sampling,
+)
 from functionary.sglang_monkey_patch.tokenizer_manager import (
     MonkeyPatchTokenizerManager,
 )
@@ -175,7 +178,10 @@ app.put("/generate")(generate_request)
 
 @app.post("/v1/chat/completions")
 async def openai_v1_chat_completions(raw_request: Request):
-    return await v1_chat_completions(tokenizer_manager, raw_request)
+    if args.grammar_sampling:
+        return await v1_chat_completions_grammar_sampling(backend, raw_request)
+    else:
+        return await v1_chat_completions(tokenizer_manager, raw_request)
 
 
 @app.get("/v1/models")

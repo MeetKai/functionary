@@ -21,10 +21,14 @@ import os
 import time
 import uuid
 from http import HTTPStatus
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
+import sglang as sgl
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from outlines.fsm.json_schema import build_regex_from_schema
+from sglang.lang.choices import greedy_token_selection
+from sglang.lang.interpreter import ProgramState
 from sglang.srt.managers.io_struct import GenerateReqInput
 from sglang.srt.openai_api.protocol import (
     BatchResponse,
@@ -70,6 +74,10 @@ file_id_storage: Dict[str, str] = {}
 storage_dir = None
 
 
+# Choices sampling method for sgl.select
+CHOICES_SAMPLING_METHOD = greedy_token_selection
+
+
 def format_finish_reason(finish_reason) -> Optional[str]:
     if finish_reason.startswith("None"):
         return None
@@ -102,7 +110,7 @@ def create_streaming_error_response(
     return json_str
 
 
-def v1_chat_generate_request(all_requests, tokenizer_manager):
+def v1_chat_generate_request(all_requests, tokenizer):
     input_ids = []
     sampling_params_list = []
     image_data_list = []
@@ -120,7 +128,7 @@ def v1_chat_generate_request(all_requests, tokenizer_manager):
         if not isinstance(request.messages, str):
             # Apply chat template and its stop strings.
             prompt_ids = prepare_messages_for_inference(
-                tokenizer=tokenizer_manager.tokenizer,
+                tokenizer=tokenizer,
                 messages=request.messages,
                 tools_or_functions=tools_or_functions,
                 tool_choice=tool_func_choice,
@@ -129,7 +137,7 @@ def v1_chat_generate_request(all_requests, tokenizer_manager):
             stop = (
                 request.stop
                 + get_prompt_template_from_tokenizer(
-                    tokenizer=tokenizer_manager.tokenizer
+                    tokenizer=tokenizer
                 ).get_stop_tokens_for_generation()
             )
             image_data = None
@@ -286,6 +294,7 @@ def v1_chat_generate_response(request, prompt_template, ret):
 async def v1_chat_completions(tokenizer_manager, raw_request: Request):
     request_json = await raw_request.json()
     all_requests = [ChatCompletionRequest(**request_json)]
+    tokenizer = tokenizer_manager.tokenizer
 
     prompt_template = get_prompt_template_from_tokenizer(
         tokenizer=tokenizer_manager.tokenizer
@@ -294,7 +303,7 @@ async def v1_chat_completions(tokenizer_manager, raw_request: Request):
         all_requests[0]
     )
 
-    adapted_request, request = v1_chat_generate_request(all_requests, tokenizer_manager)
+    adapted_request, request = v1_chat_generate_request(all_requests, tokenizer)
 
     if adapted_request.stream:
 
@@ -360,7 +369,9 @@ async def v1_chat_completions(tokenizer_manager, raw_request: Request):
                             tool_call["type"] = "function"
 
                 chunk = StreamChoice(**response)
-                result = ChatCompletionChunk(id=adapted_request.rid, choices=[chunk], model=request.model)
+                result = ChatCompletionChunk(
+                    id=adapted_request.rid, choices=[chunk], model=request.model
+                )
                 chunk_dic = result.dict(exclude_unset=True)
                 chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
                 yield f"data: {chunk_data}\n\n"
@@ -368,119 +379,6 @@ async def v1_chat_completions(tokenizer_manager, raw_request: Request):
                 if request.functions and tool_call_count == 2:
                     break
             yield "data: [DONE]\n\n"
-
-        # async def generate_stream_resp():
-        #     is_first = True
-
-        #     stream_buffer = ""
-        #     n_prev_token = 0
-        #     try:
-        #         async for content in tokenizer_manager.generate_request(
-        #             adapted_request, raw_request
-        #         ):
-        #             prompt_tokens = content["meta_info"]["prompt_tokens"]
-        #             completion_tokens = content["meta_info"]["completion_tokens"]
-        #             if request.logprobs:
-        #                 logprobs = to_openai_style_logprobs(
-        #                     output_token_logprobs=content["meta_info"][
-        #                         "output_token_logprobs"
-        #                     ][n_prev_token:],
-        #                     output_top_logprobs=content["meta_info"][
-        #                         "output_top_logprobs"
-        #                     ][n_prev_token:],
-        #                 )
-
-        #                 n_prev_token = len(
-        #                     content["meta_info"]["output_token_logprobs"]
-        #                 )
-        #                 token_logprobs = []
-        #                 for token, logprob in zip(
-        #                     logprobs.tokens, logprobs.token_logprobs
-        #                 ):
-        #                     token_bytes = list(token.encode("utf-8"))
-        #                     top_logprobs = []
-        #                     if logprobs.top_logprobs:
-        #                         for top_token, top_logprob in logprobs.top_logprobs[
-        #                             0
-        #                         ].items():
-        #                             top_token_bytes = list(top_token.encode("utf-8"))
-        #                             top_logprobs.append(
-        #                                 TopLogprob(
-        #                                     token=top_token,
-        #                                     bytes=top_token_bytes,
-        #                                     logprob=top_logprob,
-        #                                 )
-        #                             )
-        #                     token_logprobs.append(
-        #                         ChatCompletionTokenLogprob(
-        #                             token=token,
-        #                             bytes=token_bytes,
-        #                             logprob=logprob,
-        #                             top_logprobs=top_logprobs,
-        #                         )
-        #                     )
-
-        #                 choice_logprobs = ChoiceLogprobs(content=token_logprobs)
-
-        #             else:
-        #                 choice_logprobs = None
-
-        #             if is_first:
-        #                 # First chunk with role
-        #                 is_first = False
-        #                 choice_data = ChatCompletionResponseStreamChoice(
-        #                     index=0,
-        #                     delta=DeltaMessage(role="assistant"),
-        #                     finish_reason=format_finish_reason(
-        #                         content["meta_info"]["finish_reason"]
-        #                     ),
-        #                     # logprobs=choice_logprobs,
-        #                 )
-        #                 chunk = ChatCompletionStreamResponse(
-        #                     id=content["meta_info"]["id"],
-        #                     choices=[choice_data],
-        #                     model=request.model,
-        #                 )
-        #                 yield f"data: {chunk.model_dump_json()}\n\n"
-
-        #             text = content["text"]
-        #             delta = text[len(stream_buffer) :]
-        #             stream_buffer = stream_buffer + delta
-        #             choice_data = ChatCompletionResponseStreamChoice(
-        #                 index=0,
-        #                 delta=DeltaMessage(content=delta),
-        #                 finish_reason=format_finish_reason(
-        #                     content["meta_info"]["finish_reason"]
-        #                 ),
-        #                 logprobs=choice_logprobs,
-        #             )
-        #             chunk = ChatCompletionStreamResponse(
-        #                 id=content["meta_info"]["id"],
-        #                 choices=[choice_data],
-        #                 model=request.model,
-        #             )
-        #             yield f"data: {chunk.model_dump_json()}\n\n"
-        #         if request.stream_options and request.stream_options.include_usage:
-        #             usage = UsageInfo(
-        #                 prompt_tokens=prompt_tokens,
-        #                 completion_tokens=completion_tokens,
-        #                 total_tokens=prompt_tokens + completion_tokens,
-        #             )
-
-        #             final_usage_chunk = ChatCompletionStreamResponse(
-        #                 id=str(uuid.uuid4().hex),
-        #                 choices=[],
-        #                 model=request.model,
-        #                 usage=usage,
-        #             )
-        #             final_usage_data = final_usage_chunk.model_dump_json(
-        #                 exclude_unset=True, exclude_none=True
-        #             )
-        #             yield f"data: {final_usage_data}\n\n"
-        #     except ValueError as e:
-        #         error = create_streaming_error_response(str(e))
-        #         yield f"data: {error}\n\n"
-        #     yield "data: [DONE]\n\n"
 
         return StreamingResponse(
             # generate_stream_resp(),
@@ -502,6 +400,116 @@ async def v1_chat_completions(tokenizer_manager, raw_request: Request):
     response = v1_chat_generate_response(request, prompt_template, ret)
 
     return response
+
+
+async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
+    request_json = await raw_request.json()
+    request = ChatCompletionRequest(**request_json)
+    tokenizer = backend.get_tokenizer()
+
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer=tokenizer)
+    tools_or_functions, tool_func_choice = analyze_tools_and_tool_choice(request)
+
+    gen_state = prompt_template.initialize_fsm_gen_state(
+        tool_choice=tool_func_choice,
+        curr_text="",
+        curr_tokens=None,
+        add_code_interpreter=(
+            True
+            if any(
+                [
+                    "type" in tool_or_func
+                    and tool_or_func["type"] == "code_interpreter"
+                    for tool_or_func in tools_or_functions
+                ]
+            )
+            else False
+        ),
+    )
+
+    @sgl.function
+    def generate_response(s: ProgramState, gen_state: Dict):
+        s += prepare_messages_for_inference(
+            tokenizer=tokenizer,
+            messages=request.messages,
+            tools_or_functions=tools_or_functions,
+            tool_choice=tool_func_choice,
+            return_text=True,
+        )
+
+        # Form the options for the following stages
+        tools = []
+        for tool in tools_or_functions:
+            if "type" in tool:
+                if tool["type"] == "function":
+                    tools.append(tool["function"])
+            else:
+                tools.append(tool)
+        options = prompt_template.get_options_from_gen_state(
+            gen_state=gen_state, tools_or_functions=tools
+        )
+
+        recipient_idx = 0
+        recipient_var = f"recipient_{recipient_idx}"
+        content_var = f"content_{recipient_idx}"
+        while True:
+            if gen_state["stage"] == "function":
+                choices = [
+                    tool["function"]["name"] if "function" in tool else tool["name"]
+                    for tool in tools_or_functions
+                ]
+                if gen_state["add_all_recipient"]:
+                    choices.append("all")
+                s += sgl.select(
+                    name=recipient_var,
+                    choices=choices,
+                    choices_method=CHOICES_SAMPLING_METHOD,
+                )
+                new_token = s[recipient_var]
+            elif gen_state["stage"] == "pre-parameter":
+                s += prompt_template.fn_param_sep_token
+                new_token = prompt_template.fn_param_sep_token
+            elif gen_state["stage"] == "parameter":
+                tool = next(t for t in tools if t["name"] == gen_state["func_name"])
+                regex = build_regex_from_schema(json.dumps(tool["parameters"]))
+                s += sgl.gen(name=content_var, regex=regex)
+            elif gen_state["stage"] == "text-gen":
+                s += sgl.gen(
+                    name=content_var,
+                    stop=[prompt_template.get_start_of_function_call_token()]
+                    + prompt_template.get_stop_tokens_for_generation(),
+                )
+            elif gen_state["stage"] == "pre-function":
+                s += sgl.gen(
+                    name=content_var,
+                    stop=[prompt_template.get_start_of_function_call_token()]
+                    + prompt_template.get_stop_tokens_for_generation(),
+                )
+
+            if content_var in s:
+                stop_match = s.get_meta_info(content_var)["finish_reason"]["matched"]
+                if not isinstance(stop_match, str):
+                    stop_match = tokenizer.decode(stop_match)
+                if stop_match in prompt_template.get_stop_tokens_for_generation():
+                    break
+                else:
+                    gen_state["stage"] = "pre-function"
+                    gen_state["curr_text"] = (
+                        prompt_template.get_start_of_function_call_token()
+                    )
+                    new_token = prompt_template.get_start_of_function_call_token()
+
+            gen_state = prompt_template.update_fsm_gen_state(
+                gen_state=gen_state,
+                new_token=new_token,
+                new_token_id=None,
+                options=options,
+                tokenizer=tokenizer,
+            )
+
+    state = generate_response.run(gen_state=gen_state)
+    breakpoint()
+    # text_response =
 
 
 def to_openai_style_logprobs(
