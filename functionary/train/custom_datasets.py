@@ -349,6 +349,20 @@ def get_assistant_stop_token_ids(prompt_template, tokenizer: Any) -> Dict[str, i
     return result
 
 
+def get_masked_indices_of_assistant_messages(messages: List[Dict]) -> List[int]:
+    masked_assistant_indices = []
+    assistant_messages = []
+    for message in messages:
+        if message["role"] == "assistant":
+            assistant_messages.append(message)
+
+    for message_index, message in enumerate(assistant_messages):
+        metadata = message.get("metadata", {})
+        if metadata.get("masked", False):
+            masked_assistant_indices.append(message_index)
+    return masked_assistant_indices
+
+
 def prepare_training_inputs_batch(
     *,
     batch_messages: Dict[str, List],
@@ -402,17 +416,9 @@ def prepare_training_inputs_batch(
         # index of assistant message that will be masked, note that index here is not index from messages
         # Assume messages=[user1, assistant1, tool1, assistant2, tool2, assitant3, tool3] and we masked assitant1, assitant2
         # --> masked_assistant_indices = [0, 1]
-        masked_assistant_indices = []
-        assistant_messages = []
-        for message in batch_messages[index]["messages"]:
-            if message["role"] == "assistant":
-                assistant_messages.append(message)
-
-        for message_index, message in enumerate(assistant_messages):
-            metadata = message.get("metadata", {})
-            if metadata.get("masked", False):
-                masked_assistant_indices.append(message_index)
-
+        masked_assistant_indices = get_masked_indices_of_assistant_messages(
+            batch_messages[index]["messages"]
+        )
         labels = get_masked_labels(
             input_token_ids=input_token_ids,
             tokenizer=tokenizer,
