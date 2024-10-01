@@ -42,6 +42,7 @@ import json
 import logging
 import multiprocessing as mp
 import os
+import socket
 import sys
 import threading
 import time
@@ -51,19 +52,20 @@ from typing import Dict, List, Optional, Union
 # Fix a bug of Python threading
 setattr(threading, "_register_atexit", lambda *args, **kwargs: None)
 
-import requests
+import sglang as sgl
 import uvicorn
 import uvloop
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from sglang.lang.backend.runtime_endpoint import RuntimeEndpoint
 from sglang.srt.managers.detokenizer_manager import run_detokenizer_process
 from sglang.srt.managers.io_struct import GenerateReqInput
 from sglang.srt.managers.scheduler import run_scheduler_process
 from sglang.srt.managers.tokenizer_manager import TokenizerManager
 from sglang.srt.openai_api.adapter import load_chat_template_for_openai_api
 from sglang.srt.openai_api.protocol import ModelCard, ModelList
-from sglang.srt.server import _set_envs_and_config, _wait_and_warmup
+from sglang.srt.server import Runtime, _set_envs_and_config, _wait_and_warmup
 from sglang.srt.server_args import PortArgs, ServerArgs
 from sglang.srt.utils import (
     add_api_key_middleware,
@@ -255,7 +257,9 @@ def launch_server(
 
     # Launch tokenizer process
     if args.logfile is not None:
-        tokenizer_manager = MonkeyPatchTokenizerManager(server_args, port_args, args.logfile)
+        tokenizer_manager = MonkeyPatchTokenizerManager(
+            server_args, port_args, args.logfile
+        )
     else:
         tokenizer_manager = TokenizerManager(server_args, port_args)
     if server_args.chat_template:
@@ -289,6 +293,79 @@ def launch_server(
         t.join()
 
 
+def find_free_port(exclude_port: int) -> int:
+    """
+    This function finds a free port that is not the excluded port.
+
+    Args:
+        exclude_port (int): The port number to exclude from selection.
+
+    Returns:
+        int: A free port number that is not the excluded port.
+    """
+    while True:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("", 0))
+                if s.getsockname()[1] != exclude_port:
+                    return s.getsockname()[1]
+        except socket.error:
+            continue
+
+
+class FunctionaryRuntime(Runtime):
+    """
+    A wrapper for the server.
+    This is used for launching the server in a python program without
+    using the commond line interface.
+    """
+
+    def __init__(
+        self,
+        log_level: str = "error",
+        *args,
+        **kwargs,
+    ):
+        """See the arguments in server_args.py::ServerArgs"""
+        self.server_args = ServerArgs(*args, log_level=log_level, **kwargs)
+
+        # Pre-allocate ports
+        self.server_args.port, self.server_args.additional_ports = allocate_init_ports(
+            self.server_args.port,
+            self.server_args.additional_ports,
+            self.server_args.dp_size,
+        )
+
+        self.url = self.server_args.url()
+        self.generate_url = (
+            f"http://{self.server_args.host}:{self.server_args.port}/generate"
+        )
+
+        self.pid = None
+        pipe_reader, pipe_writer = mp.Pipe(duplex=False)
+
+        proc = mp.Process(
+            target=launch_server,
+            args=(self.server_args, pipe_writer),
+        )
+        proc.start()
+        pipe_writer.close()
+        self.pid = proc.pid
+
+        try:
+            init_state = pipe_reader.recv()
+        except EOFError:
+            init_state = ""
+
+        if init_state != "ready":
+            self.shutdown()
+            raise RuntimeError(
+                "Initialization failed. Please see the error messages above."
+            )
+
+        self.endpoint = RuntimeEndpoint(self.url)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -297,8 +374,33 @@ if __name__ == "__main__":
         default=None,
         help="enable detailed request input/output logging by providing logfile",
     )
+    parser.add_argument(
+        "--enable-grammar-sampling",
+        dest="grammar_sampling",
+        action="store_true",
+        default=False,
+        help="enable grammar sampling for function names",
+    )
     ServerArgs.add_cli_args(parser)
     args = parser.parse_args()
     server_args = ServerArgs.from_cli_args(args)
 
-    launch_server(server_args)
+    if args.grammar_sampling:
+        wrapper_port = server_args.port
+        # Find a new random free port for the backend server runtime
+        server_args.port = find_free_port(exclude_port=wrapper_port)
+        backend = FunctionaryRuntime(**vars(server_args))
+        sgl.set_default_backend(
+            sgl.RuntimeEndpoint(f"http://{server_args.host}:{server_args.port}")
+        )
+        uvicorn.run(
+            app,
+            host=server_args.host,
+            port=wrapper_port,
+            log_level=server_args.log_level_http or server_args.log_level,
+            timeout_keep_alive=5,
+            loop="uvloop",
+        )
+        backend.shutdown()
+    else:
+        launch_server(server_args)
