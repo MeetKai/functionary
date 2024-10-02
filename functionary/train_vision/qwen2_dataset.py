@@ -22,12 +22,28 @@ def pad_inputs(inputs: Dict, tokenizer: Any, length: int) -> Dict:
 
     assert input_length < length
     pad_length = length - input_length
-    inputs["input_ids"] = torch.concat(
-        (inputs["input_ids"], torch.zeros(pad_length) + tokenizer.pad_token_id), dim=-1
-    )
-    inputs["attention_mask"] = torch.concat(
-        (inputs["attention_mask"], torch.zeros(pad_length)), dim=-1
-    )
+    if tokenizer.padding_side == "right":
+        inputs["input_ids"] = torch.concat(
+            (
+                inputs["input_ids"],
+                torch.zeros(pad_length, dtype=torch.int) + tokenizer.pad_token_id,
+            ),
+            dim=-1,
+        )
+        inputs["attention_mask"] = torch.concat(
+            (inputs["attention_mask"], torch.zeros(pad_length, dtype=torch.int)), dim=-1
+        )
+    else:
+        inputs["input_ids"] = torch.concat(
+            (
+                torch.zeros(pad_length, dtype=torch.int) + tokenizer.pad_token_id,
+                inputs["input_ids"],
+            ),
+            dim=-1,
+        )
+        inputs["attention_mask"] = torch.concat(
+            (torch.zeros(pad_length, dtype=torch.int), inputs["attention_mask"]), dim=-1
+        )
     return inputs
 
 
@@ -61,17 +77,22 @@ def find_image_token_indices(
 
 
 def truncate_images_in_pixel_values(inputs: Dict, image_num: int) -> Dict:
+    if image_num == 0:
+        del inputs["pixel_values"]
+        del inputs["image_grid_thw"]
+        return inputs
+
     image_grid_thw = inputs["image_grid_thw"]
     img_lengths = []
     for index in range(image_grid_thw.shape[0]):
         img_length = image_grid_thw[index].prod()
         img_lengths.append(img_length)
-    
+
     assert sum(img_lengths) == inputs["pixel_values"].shape[0]
-    remaining_size = sum(img_lengths[: image_num])
-    inputs["pixel_values"] = inputs["pixel_values"][: remaining_size]
-    inputs["image_grid_thw"] = inputs["image_grid_thw"][: image_num]
-    return inputs        
+    remaining_size = sum(img_lengths[:image_num])
+    inputs["pixel_values"] = inputs["pixel_values"][:remaining_size]
+    inputs["image_grid_thw"] = inputs["image_grid_thw"][:image_num]
+    return inputs
 
 
 def truncate_inputs_for_training(
@@ -80,50 +101,68 @@ def truncate_inputs_for_training(
     start_img_token: int,
     end_img_token: int,
     tokenizer: Any,
+    img_num: int,
 ) -> Dict:
     """
     This function is used to truncate inputs in case the input_token ids are truncated, and some image tokens are truncated
     """
     input_ids = inputs["input_ids"].tolist()
-    img_num = inputs["image_grid_thw"].shape[0]
     img_indices = find_image_token_indices(input_ids, start_img_token, end_img_token)
+    print("img_indices: ", img_indices, "img_num: ", img_num)
     if len(img_indices) == 0:  # all image tokens were truncated
+        print("all images are truncated ....")
         inputs["pixel_values"] = None
         inputs["image_grid_thw"] = None
         return inputs
 
     last_img_indices = img_indices[-1]
     if last_img_indices[1] == -1:  # the last image was partially truncated
+        print("an image was partially truncated")
         last_start_img_index = last_img_indices[0]
         inputs["input_ids"] = inputs["input_ids"][:last_start_img_index]
         inputs["attention_mask"] = inputs["attention_mask"][:last_start_img_index]
         inputs = pad_inputs(inputs, tokenizer, max_length)
         # pixel_values; image_grid_thw must be truncated
-        inputs = truncate_images_in_pixel_values(inputs, len(last_img_indices) - 1)
+        inputs = truncate_images_in_pixel_values(inputs, len(img_indices) - 1)
+
         return inputs
-    
+
     # pixel_values; image_grid_thw must be truncated
-    if len(last_img_indices) < img_num: # if there exists images that were not used
-        inputs = truncate_images_in_pixel_values(inputs, len(last_img_indices))
+    if len(img_indices) < img_num:  # if there exists images that were not used
+        print("some images was truncated")
+        inputs = truncate_images_in_pixel_values(inputs, len(img_indices))
+    else:
+        print("no images were truncated")
     return inputs
 
 
-def concatenate_pad_inputs(inputs: Dict, pad_token_inputs: Dict) -> Dict:
-    inputs["input_ids"] = torch.concat(
-        ( pad_token_inputs["input_ids"], inputs["input_ids"]), dim=-1
+def concatenate_pad_inputs(
+    inputs: Dict, pad_token_inputs: Dict, padding_side: str
+) -> Dict:
+    concat_tuple = (pad_token_inputs["input_ids"], inputs["input_ids"])
+    if padding_side == "right":
+        concat_tuple = (concat_tuple[1], concat_tuple[0])
+
+    inputs["input_ids"] = torch.concat(concat_tuple, dim=-1)
+    concat_tuple = (
+        torch.zeros_like(pad_token_inputs["attention_mask"]),
+        inputs["attention_mask"],
     )
+    if padding_side == "right":
+        concat_tuple = (concat_tuple[1], concat_tuple[0])
+
     inputs["attention_mask"] = torch.concat(
-        (
-            torch.zeros_like(pad_token_inputs["attention_mask"]),
-            inputs["attention_mask"]
-        ),
+        concat_tuple,
         dim=-1,
     )
 
     for key in ["pixel_values", "image_grid_thw"]:
         input_value = inputs.get(key, None)
         if input_value is not None:
-            input_value = torch.concat((pad_token_inputs[key], input_value), dim=0)
+            concat_tuple = (pad_token_inputs[key], input_value)
+            if padding_side == "right":
+                concat_tuple = (concat_tuple[1], concat_tuple[0])
+            input_value = torch.concat(concat_tuple, dim=0)
         else:
             input_value = pad_token_inputs[key]
         inputs[key] = input_value
@@ -139,7 +178,7 @@ class LazyVisionDataset(Dataset):
         tokenizer: transformers.PreTrainedTokenizer,
         pretrained_path: str,
         pad_img_path: str,
-        use_img_pad_token: bool = True
+        use_img_pad_token: bool = True,
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -169,8 +208,8 @@ class LazyVisionDataset(Dataset):
             images=[self.pad_img],
             padding="do_not_pad",
         )
-        print("--------pad_token_inputs")
-        print(self.pad_token_inputs)
+        # print("--------pad_token_inputs")
+        # print(self.pad_token_inputs)
         self.use_img_pad_token = use_img_pad_token
 
     def process_inputs(
@@ -186,6 +225,7 @@ class LazyVisionDataset(Dataset):
             padding=padding,
             max_length=max_length,
             return_tensors="pt",
+            truncation=True,
         )
         for key in inputs:
             if key in ["input_ids", "attention_mask"]:
@@ -207,26 +247,40 @@ class LazyVisionDataset(Dataset):
         pad_token_num = self.pad_token_inputs["input_ids"].shape[-1]
         # we always save pad_token_num tokens for padding to make sure that the execution path is the same
         # for all GPUs
-        max_length = self.max_length - pad_token_num if self.use_img_pad_token else self.max_length
+        max_length = (
+            self.max_length - pad_token_num
+            if self.use_img_pad_token
+            else self.max_length
+        )
+        # print(f"-----------prompt: {prompt}")
+        print(f"max_length: {max_length}")
         inputs = self.process_inputs(
             prompt,
             images,
             padding="max_length",
-            max_length=self.max_length - pad_token_num,
+            max_length=max_length,
         )
+
+        # print("inputs: ", inputs)
+
+        assert (
+            inputs["input_ids"].shape[-1] == max_length
+        ), f'input length: {inputs["input_ids"].shape}'
         if images:
             inputs = truncate_inputs_for_training(
                 inputs,
-                self.max_length - pad_token_num,
+                max_length,
                 self.vision_start_id,
                 self.vision_end_id,
                 self.tokenizer,
+                len(images),
             )
-            assert inputs["input_ids"].shape[-1] == max_length
 
         # make sure that ther is alwasy a pad_token at the end
         if self.use_img_pad_token:
-            inputs = concatenate_pad_inputs(inputs, self.pad_token_inputs)
+            inputs = concatenate_pad_inputs(
+                inputs, self.pad_token_inputs, self.tokenizer.padding_side
+            )
 
         # this chunk of code if for computing the labels
         input_ids = inputs["input_ids"].tolist()
@@ -263,5 +317,5 @@ class LazyVisionDataset(Dataset):
             == inputs["labels"].shape[-1]
             == inputs["attention_mask"].shape[-1]
             == self.max_length
-        )
+        ), f'{inputs["input_ids"].shape[-1]}, {inputs["labels"].shape[-1]}, {inputs["attention_mask"].shape[-1]}, {self.max_length}'
         return inputs
