@@ -178,6 +178,7 @@ class LazyVisionDataset(Dataset):
         tokenizer: transformers.PreTrainedTokenizer,
         pretrained_path: str,
         pad_img_path: str,
+        max_length: int,
         use_img_pad_token: bool = True,
     ):
         super().__init__()
@@ -197,7 +198,7 @@ class LazyVisionDataset(Dataset):
         self.input_processor = AutoProcessor.from_pretrained(pretrained_path)
 
         self.prompt_template = get_prompt_template_from_tokenizer(tokenizer)
-        self.max_length = tokenizer.model_max_length
+        self.max_length = max_length # tokenizer.model_max_length
         self.vision_start_id = tokenizer.convert_tokens_to_ids("<|vision_start|>")
         self.vision_end_id = tokenizer.convert_tokens_to_ids("<|vision_end|>")
 
