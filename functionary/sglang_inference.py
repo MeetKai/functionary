@@ -630,4 +630,3 @@ def to_openai_style_logprobs(
         append_top_logprobs(output_top_logprobs)
 
     return ret_logprobs
-    return ret_logprobs
