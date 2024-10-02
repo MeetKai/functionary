@@ -122,6 +122,7 @@ async def health_generate(request: Request) -> Response:
 
 @app.get("/get_model_info")
 async def get_model_info():
+    global tokenizer_manager
     result = {
         "model_path": tokenizer_manager.model_path,
         "is_generation": tokenizer_manager.is_generation,
@@ -309,14 +310,15 @@ def find_free_port(exclude_port: int) -> int:
     Returns:
         int: A free port number that is not the excluded port.
     """
+    port = 10000
     while True:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(("", 0))
+                s.bind(("", port))
                 if s.getsockname()[1] != exclude_port:
                     return s.getsockname()[1]
         except socket.error:
-            continue
+            port += 1
 
 
 class FunctionaryRuntime(Runtime):

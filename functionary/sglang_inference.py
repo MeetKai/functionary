@@ -18,6 +18,7 @@ limitations under the License.
 import asyncio
 import json
 import os
+import re
 import time
 import uuid
 from http import HTTPStatus
@@ -49,7 +50,9 @@ from functionary.openai_types import (
     ChatCompletionResponse,
     ChatCompletionResponseChoice,
     ChatMessage,
+    Function,
     StreamChoice,
+    Tool,
     UsageInfo,
 )
 from functionary.prompt_template import get_prompt_template_from_tokenizer
@@ -407,6 +410,22 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
     request = ChatCompletionRequest(**request_json)
     tokenizer = backend.get_tokenizer()
 
+    # Convert legacy functions to tools
+    if request.functions is not None:
+        request.tools = [
+            Tool(type="function", function=function) for function in request.functions
+        ]
+    # Convert legacy function_call to tool_choice
+    if request.function_call is not None:
+        if isinstance(request.function_call, str) and (
+            request.function_call == "none" or request.function_call == "auto"
+        ):
+            request.tool_choice = request.function_call
+        if request.function_call and isinstance(request.function_call, Function):
+            request.tool_choice = Tool(
+                type="function", function=Function(name=request.function_call.name)
+            )
+
     prompt_template = get_prompt_template_from_tokenizer(tokenizer=tokenizer)
     tools_or_functions, tool_func_choice = analyze_tools_and_tool_choice(request)
 
@@ -426,16 +445,20 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
             else False
         ),
     )
+    prompt = prepare_messages_for_inference(
+        tokenizer=tokenizer,
+        messages=request.messages,
+        tools_or_functions=tools_or_functions,
+        tool_choice=tool_func_choice,
+        return_text=True,
+    )
+
+    recipient_var = "recipient"
+    content_var = "content"
 
     @sgl.function
     def generate_response(s: ProgramState, gen_state: Dict):
-        s += prepare_messages_for_inference(
-            tokenizer=tokenizer,
-            messages=request.messages,
-            tools_or_functions=tools_or_functions,
-            tool_choice=tool_func_choice,
-            return_text=True,
-        )
+        s += prompt
 
         # Form the options for the following stages
         tools = []
@@ -449,17 +472,26 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
             gen_state=gen_state, tools_or_functions=tools
         )
 
-        recipient_idx = 0
-        recipient_var = f"recipient_{recipient_idx}"
-        content_var = f"content_{recipient_idx}"
+        stop_tokens = prompt_template.get_stop_tokens_for_generation()
+        function_call_token = prompt_template.get_start_of_function_call_token()
+
+        def check_stop_condition():
+            stop_match = s.get_meta_info(content_var)["finish_reason"]["matched"]
+            if not isinstance(stop_match, str):
+                stop_match = tokenizer.decode(stop_match)
+            return stop_match in stop_tokens
+
         while True:
             if gen_state["stage"] == "function":
                 choices = [
-                    tool["function"]["name"] if "function" in tool else tool["name"]
+                    tool["function"]["name"]
                     for tool in tools_or_functions
+                    if tool["type"] == "function"
                 ]
                 if gen_state["add_all_recipient"]:
                     choices.append("all")
+                if gen_state["add_code_interpreter"]:
+                    choices.append("python")
                 s += sgl.select(
                     name=recipient_var,
                     choices=choices,
@@ -471,33 +503,31 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
                 new_token = prompt_template.fn_param_sep_token
             elif gen_state["stage"] == "parameter":
                 tool = next(t for t in tools if t["name"] == gen_state["func_name"])
-                regex = build_regex_from_schema(json.dumps(tool["parameters"]))
-                s += sgl.gen(name=content_var, regex=regex)
+                regex = (
+                    build_regex_from_schema(json.dumps(tool["parameters"]))
+                    + f"({re.escape(function_call_token)})?"
+                )
+                s += sgl.gen(name=content_var, regex=regex, stop=function_call_token)
+                new_token = s[content_var]
+                if check_stop_condition():
+                    break
             elif gen_state["stage"] == "text-gen":
-                s += sgl.gen(
-                    name=content_var,
-                    stop=[prompt_template.get_start_of_function_call_token()]
-                    + prompt_template.get_stop_tokens_for_generation(),
-                )
-            elif gen_state["stage"] == "pre-function":
-                s += sgl.gen(
-                    name=content_var,
-                    stop=[prompt_template.get_start_of_function_call_token()]
-                    + prompt_template.get_stop_tokens_for_generation(),
-                )
-
-            if content_var in s:
-                stop_match = s.get_meta_info(content_var)["finish_reason"]["matched"]
-                if not isinstance(stop_match, str):
-                    stop_match = tokenizer.decode(stop_match)
-                if stop_match in prompt_template.get_stop_tokens_for_generation():
+                s += sgl.gen(name=content_var, stop=function_call_token)
+                if check_stop_condition():
                     break
                 else:
-                    gen_state["stage"] = "pre-function"
-                    gen_state["curr_text"] = (
-                        prompt_template.get_start_of_function_call_token()
-                    )
-                    new_token = prompt_template.get_start_of_function_call_token()
+                    s += function_call_token
+                    new_token = s[content_var] + function_call_token
+            elif gen_state["stage"] == "code-interpreter":
+                s += sgl.gen(name=content_var, stop=function_call_token)
+                if check_stop_condition():
+                    break
+                else:
+                    s += function_call_token
+                    new_token = s[content_var] + function_call_token
+            elif gen_state["stage"] == "pre-function":
+                s += function_call_token
+                new_token = function_call_token
 
             gen_state = prompt_template.update_fsm_gen_state(
                 gen_state=gen_state,
@@ -507,9 +537,65 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
                 tokenizer=tokenizer,
             )
 
-    state = generate_response.run(gen_state=gen_state)
-    breakpoint()
-    # text_response =
+    state = generate_response.run(
+        gen_state=gen_state,
+        max_new_tokens=request.max_tokens,
+        temperature=request.temperature,
+        top_p=request.top_p,
+        top_k=request.top_k,
+        frequency_penalty=request.frequency_penalty,
+        presence_penalty=request.presence_penalty,
+        stream=request.stream,
+    )
+
+    chat_mess = prompt_template.parse_assistant_response(
+        llm_output=state.text()[len(prompt) :], tool_choice=tool_func_choice
+    )
+
+    # Convert tool_calls to function_call if request.functions is provided
+    if (
+        request.functions
+        and "tool_calls" in chat_mess
+        and chat_mess["tool_calls"] is not None
+        and len(chat_mess["tool_calls"]) > 0
+    ):
+        chat_mess["function_call"] = {
+            "name": chat_mess["tool_calls"][0]["function"]["name"],
+            "arguments": chat_mess["tool_calls"][0]["function"]["arguments"],
+        }
+        chat_mess["tool_calls"] = None
+
+    # Postprocess finish reason
+    finish_reason = "stop"
+    if "function_call" in chat_mess and chat_mess["function_call"]:
+        finish_reason = "function_call"
+    if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
+        finish_reason = "tool_calls"
+
+    choices = [
+        ChatCompletionResponseChoice(
+            index=0,
+            message=ChatMessage(**chat_mess),
+            # logprobs=choice_logprobs,
+            finish_reason=finish_reason,
+        )
+    ]
+
+    meta_info = state.get_meta_info(content_var)
+
+    prompt_tokens = meta_info["prompt_tokens"]
+    completion_tokens = meta_info["completion_tokens"]
+    response = ChatCompletionResponse(
+        id=meta_info["id"],
+        model=request.model,
+        choices=choices,
+        usage=UsageInfo(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+        ),
+    )
+    return response
 
 
 def to_openai_style_logprobs(
