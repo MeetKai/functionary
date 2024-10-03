@@ -160,7 +160,9 @@ def convert_tools_to_system_message_content(functions: List[Dict], lang: str = "
     return tool_system_content
 
 
-def convert_openai_assistant_message_to_string(message):
+def convert_openai_assistant_message_to_string(
+    message: Dict, is_after_user_message: bool
+):
     assistant_content = message.get("content", "")
     if assistant_content is None:
         assistant_content = ""
@@ -172,21 +174,23 @@ def convert_openai_assistant_message_to_string(message):
             function_name = tool_call["function"]["name"]
             arguments = tool_call["function"]["arguments"]
             if function_name == "python":
-                arguments = json.dumps(
-                    {"code": arguments}, ensure_ascii=False
-                )
-            tool_call_str = (
-                f"✿FUNCTION✿: {function_name}\n✿ARGS✿: {arguments}"
-            )
+                arguments = f"```\n{arguments}\n```"
+            tool_call_str = f"✿FUNCTION✿: code_interpreter\n✿ARGS✿: {arguments}"
             tool_call_info.append(tool_call_str)
-            
-        assistant_content += "\n".join(tool_call_info)
-    return assistant_content
+
+        if is_after_user_message:
+            assistant_content += "\n".join(tool_call_info)
+        else:  # previous message is tool
+            if assistant_content:
+                assistant_content = f"✿RETURN✿: {assistant_content}\n" + "\n".join(
+                    tool_call_info
+                )
+    return assistant_content + "\n"
 
 
 def convert_openai_tool_message_to_string(message):
     content = message["content"]
-    return f"✿RESULT✿: {content}"
+    return f"✿RESULT✿: {content}\n"
 
 
 class Qwen2VLTemplate(PromptTemplate):
@@ -210,7 +214,7 @@ class Qwen2VLTemplate(PromptTemplate):
         return prompt_utils.reorder_tool_messages_by_tool_call_ids(messages)
 
     def get_stop_tokens_for_generation(self) -> List[str]:
-        return ["<|im_end|>", '✿RESULT✿', '✿RETURN✿']
+        return ["<|im_end|>", "✿RESULT✿", "✿RETURN✿"]
 
     def get_chat_template_jinja(self):
         return super().get_chat_template_jinja()
@@ -231,26 +235,42 @@ class Qwen2VLTemplate(PromptTemplate):
         Returns:
             str: the prompt for inference/training
         """
+        if not tools_or_functions:  # if no functions are available
+            return self._jinja_template.render(
+                messages=messages,
+                tools=tools_or_functions,
+                bos_token=bos_token,
+                add_generation_prompt=add_generation_prompt,
+            )
+
         functions = []
         for func in tools_or_functions:
             if func["type"] == "function":
-                functions.append(function)
+                functions.append(func["function"])
             elif func["type"] == "code_interpreter":
-                functions.append(
-                    {
-                        "name": "python",
-                        "description": 'When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at "/mnt/data" can be used to save and persist user files.',
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "code": {"type": "string", "description": "Python code"}
-                            },
-                            "required": ["code"],
-                        },
-                    }
-                )
+                functions.append({
+                    "name": "code_interpreter",
+                    "description": "",
+                    "parameters": {}
+                })
+                # functions.append(
+                #     {
+                #         "name": "python",
+                #         "description": 'When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at "/mnt/data" can be used to save and persist user files.',
+                #         "parameters": {
+                #             "type": "object",
+                #             "properties": {
+                #                 "code": {"type": "string", "description": "Python code"}
+                #             },
+                #             "required": ["code"],
+                #         },
+                #     }
+                # )
 
-        tool_system_message_content = convert_tools_to_system_message_content(functions)
+        tool_system_message_content = "You are a helpful assistant.\n\n"
+        tool_system_message_content += convert_tools_to_system_message_content(
+            functions
+        )
         new_messages = [{"role": "system", "content": tool_system_message_content}]
         # merge tool messages into assistant message
 
@@ -258,7 +278,9 @@ class Qwen2VLTemplate(PromptTemplate):
         while index < len(messages):
             if messages[index]["role"] == "assistant":
                 tool_calls = messages[index].get("tool_calls", [])
-                if tool_calls: # at this time, assistant decided to use tools, need to find the final assistant message (no tool_calls)
+                if (
+                    tool_calls
+                ):  # at this time, assistant decided to use tools, need to find the final assistant message (no tool_calls)
                     final_assistant_index = -1
                     for j in range(index + 1, len(messages)):
                         if messages[j]["role"] == "assistant":
@@ -266,18 +288,38 @@ class Qwen2VLTemplate(PromptTemplate):
                             if not tool_calls:
                                 final_assistant_index = j
                                 break
-                    if final_assistant_index == -1: # if this request wasn't handled completely, set this as the last message
+                    if (
+                        final_assistant_index == -1
+                    ):  # if this request wasn't handled completely, set this as the last message
                         final_assistant_index = len(messages) - 1
-                    
-                    total_assistant_content = messages[index].get("content", "")
-                    if total_assistant_content is None:
-                        total_assistant_content = ""
-                        
+
+                    total_assistant_content = ""
                     for j in range(index, final_assistant_index + 1):
                         assert messages[j]["role"] in ["assistant", "tool"]
                         if messages[j]["role"] == "assistant":
-                            total_assistant_content += convert_openai_assistant_message_to_string(messages[j])
-                    
+                            if not messages[j].get(
+                                "tool_calls", []
+                            ):  # no more tool_call --> this is the final response
+                                final_response = messages[j]["content"]
+                                total_assistant_content += f"✿RETURN✿: {final_response}"
+                            else:
+                                is_after_user_message = True if j == index else False
+                                total_assistant_content += (
+                                    convert_openai_assistant_message_to_string(
+                                        messages[j], is_after_user_message
+                                    )
+                                )
+                        else:  # role == tool
+                            total_assistant_content += (
+                                convert_openai_tool_message_to_string(messages[j])
+                            )
+                    new_messages.append(
+                        {
+                            "role": "assistant",
+                            "content": total_assistant_content.strip(),
+                        }
+                    )
+                    index = final_assistant_index + 1
                 else:
                     new_messages.append(messages[index])
                     index += 1
@@ -285,13 +327,18 @@ class Qwen2VLTemplate(PromptTemplate):
                 new_messages.append(messages[index])
                 index += 1
 
-
         prompt = self._jinja_template.render(
-            messages=messages,
+            messages=new_messages,
             tools=tools_or_functions,
             bos_token=bos_token,
-            add_generation_prompt=add_generation_prompt,
+            add_generation_prompt=False,
         )
-
+        # check last message to decide if the assistant turn is completed or not
+        # last message is: system, user, assistant, tool 
+        prompt = prompt.strip()
+        if messages[-1]["role"] == "tool": # incomplete assistant's handling
+            if prompt.endswith("<|im_end|>"):
+                prompt = prompt[: -len("<|im_end|>")]
+        else:
+            prompt += "\n<|im_start|>assistant\n"
         return prompt
-    
