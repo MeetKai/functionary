@@ -11,8 +11,7 @@ from functionary.train.custom_datasets import prepare_training_inputs
 from transformers import AutoProcessor, Qwen2VLImageProcessor, Qwen2VLProcessor
 from functionary.prompt_template.base_template import PromptTemplate
 from functionary.train import custom_datasets
-
-IMAGE_TOKEN_INDEX = -200
+from functionary.train_vision.base_datasets import CustomCollator, VisionDataset
 
 
 def pad_inputs(inputs: Dict, tokenizer: Any, length: int) -> Dict:
@@ -169,7 +168,7 @@ def concatenate_pad_inputs(
     return inputs
 
 
-class LazyQwen2VLDataset(Dataset):
+class LazyQwen2VLDataset(VisionDataset):
     """Dataset for supervised fine-tuning."""
 
     def __init__(
@@ -181,37 +180,22 @@ class LazyQwen2VLDataset(Dataset):
         max_length: int,
         use_img_pad_token: bool = True,
     ):
-        super().__init__()
-        self.tokenizer = tokenizer
-
-        # sampler = UniformSampler(raw_data, batch_size)
-        # self.loop_indices = sampler.loop_indices
-        # print(f"batch_size: {batch_size}; loop_index: {self.loop_indices[: 20]}")
-        # # make sure that raw_data is in the correct order of reading data
-        # self.raw_data = [raw_data[index] for index in self.loop_indices]
-
-        self.raw_data = raw_data
-        self.cached_data_dict = {}
-
-        self.pad_img = None
-        self.pad_img_path = pad_img_path
+        super().__init__(
+            raw_data,
+            tokenizer,
+            pretrained_path,
+            pad_img_path,
+            max_length,
+            use_img_pad_token,
+        )
         self.input_processor = AutoProcessor.from_pretrained(pretrained_path)
-
-        self.prompt_template = get_prompt_template_from_tokenizer(tokenizer)
-        self.max_length = max_length # tokenizer.model_max_length
         self.vision_start_id = tokenizer.convert_tokens_to_ids("<|vision_start|>")
         self.vision_end_id = tokenizer.convert_tokens_to_ids("<|vision_end|>")
-
-        # compute the number of tokens for this image
-        self.pad_img = Image.open(open(pad_img_path, "rb"))
         self.pad_token_inputs = self.process_inputs(
             "<|vision_start|><|image_pad|><|vision_end|>",
             images=[self.pad_img],
             padding="do_not_pad",
         )
-        # print("--------pad_token_inputs")
-        # print(self.pad_token_inputs)
-        self.use_img_pad_token = use_img_pad_token
 
     def process_inputs(
         self,
@@ -319,11 +303,50 @@ class LazyQwen2VLDataset(Dataset):
             == inputs["attention_mask"].shape[-1]
             == self.max_length
         ), f'{inputs["input_ids"].shape[-1]}, {inputs["labels"].shape[-1]}, {inputs["attention_mask"].shape[-1]}, {self.max_length}'
-        
+
         # Assert the number of images == number of start_image_token
-        assert (inputs["input_ids"] == self.vision_start_id).sum() == inputs["image_grid_thw"].shape[0]
+        assert (inputs["input_ids"] == self.vision_start_id).sum() == inputs[
+            "image_grid_thw"
+        ].shape[0]
         # assert to make sure that number of image tokens in image_grid_thw == number of tokens in pixel_values
-        assert sum([inputs["image_grid_thw"][i].prod() for i in range(inputs["image_grid_thw"].shape[0])]) == inputs["pixel_values"].shape[0]
+        assert (
+            sum(
+                [
+                    inputs["image_grid_thw"][i].prod()
+                    for i in range(inputs["image_grid_thw"].shape[0])
+                ]
+            )
+            == inputs["pixel_values"].shape[0]
+        )
         return inputs
 
 
+class Qwen2VLCollator(CustomCollator):
+    def __call__(self, features: Any) -> Any:
+        result = {}
+        first = features[0]
+        for k, v in first.items():
+            if k in ["input_ids", "attention_mask", "labels"]:
+                if isinstance(v, torch.Tensor):
+                    result[k] = torch.stack([f[k] for f in features])
+                elif isinstance(v, np.ndarray):
+                    result[k] = torch.tensor(np.stack([f[k] for f in features]))
+                else:
+                    result[k] = torch.tensor([f[k] for f in features])
+
+        # pixel_values, concatenate
+        pixel_value_list = []
+        image_grid_thw_list = []
+
+        for feature in features:
+            pixel_values = feature.get("pixel_values", None)
+            if pixel_values is not None:
+                pixel_value_list.append(pixel_values)
+
+            image_grid_thw = feature.get("image_grid_thw", None)
+            if image_grid_thw is not None:
+                image_grid_thw_list.append(image_grid_thw)
+
+        result["pixel_values"] = torch.concat(pixel_value_list, dim=0)
+        result["image_grid_thw"] = torch.concat(image_grid_thw_list, dim=0)
+        return result

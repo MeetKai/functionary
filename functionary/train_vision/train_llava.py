@@ -17,7 +17,6 @@ from llava.mm_utils import process_images
 from llava.model.language_model.llava_llama import LlavaConfig
 from PIL import Image
 from torch.optim.lr_scheduler import LambdaLR
-from functionary.train_vision.vision_datasets import get_vision_dataset_class, get_collate_fn
 
 import transformers
 from functionary.train_vision.llava_dataset import LazyVisionDataset
@@ -121,12 +120,6 @@ class DataArguments:
         metadata={
             "help": "maximum number of data points can be merged. For example, max_packed_size=3, we can only merge 2 or 3 data points into a new one"
         },
-    )
-    dataset_type: str = field(
-        default="LazyQwen2VLDataset",
-        metadata={
-            "help": "The type of dataset to use"
-        }
     )
 
 
@@ -242,7 +235,7 @@ def train():
     if "v1.5" in model_args.model_name_or_path.lower():
         llava_cfg.delay_load = True  # a workaround for correctly loading v1.5 models
 
-    model = transformers.AutoModelForCausalLM.from_pretrained(
+    model = LlavaLlamaForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         torch_dtype=compute_dtype,
         config=llava_cfg,
@@ -254,7 +247,15 @@ def train():
         model.config.tokenizer_model_max_length = training_args.model_max_length
     model.config.use_cache = False
 
-    
+    vision_tower = model.get_vision_tower()
+    if not vision_tower.is_loaded:
+        vision_tower.load_model(device_map="auto")
+    # if device_map != "auto":
+    #    vision_tower.to(device="cuda", dtype=torch.float16)
+    image_processor = vision_tower.image_processor
+
+    # model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, config=llava_cfg, **kwargs)
+
     print_rank0("Prompt template to use: ", training_args.prompt_template_version)
     prompt_template = get_prompt_template_by_version(
         training_args.prompt_template_version
@@ -290,16 +291,7 @@ def train():
     with open(data_args.train_data_path, "r") as f:
         raw_train_ds = [json.loads(line) for line in f]
 
-
-    dataset_class = get_vision_dataset_class(data_args.dataset_type)
-    train_dataset = dataset_class(raw_train_ds,
-        tokenizer,
-        model_args.model_name_or_path,
-        data_args.pad_img_path,
-        training_args.model_max_length,
-        use_img_pad_token = True
-    )
-    
+    train_dataset = LazyVisionDataset(raw_train_ds, tokenizer, data_args.pad_img_path)
     if torch.distributed.get_rank() == 0:
         print(f"Training Data Loaded: #{len(train_dataset)}")
 
@@ -459,28 +451,108 @@ def train():
         metrics.update(compute_accuracy_metrics(prediction_list, label_list))
         return metrics
 
-    collate_fn = get_collate_fn(data_args.dataset_type, model, tokenizer)
+    def collate_examples(features):
+        result = {}
+        first = features[0]
+        for k, v in first.items():
+            if k in ["input_ids", "attention_mask", "labels"]:
+                if isinstance(v, torch.Tensor):
+                    result[k] = torch.stack([f[k] for f in features])
+                elif isinstance(v, np.ndarray):
+                    result[k] = torch.tensor(np.stack([f[k] for f in features]))
+                else:
+                    result[k] = torch.tensor([f[k] for f in features])
+        # aggregate images & image_sizes
+        images = []
+        for feature in features:
+            images.extend(feature["images"])
+
+        image_sizes = [image.size for image in images]
+        if len(images) > 0:
+            image_tensor = process_images(images, image_processor, model.config)
+        else:
+            image_tensor = None
+        # if type(image_tensor) is not list:
+        #    image_tensor = image_tensor.to(model.dtype)
+
+        result["images"] = image_tensor
+        result["image_sizes"] = image_sizes
+        return result
+
+    class FunctionAccuracyTrackingTrainer(Trainer):
+        """This trainer will also log the metrics for each training step
+
+        Args:
+            Trainer (_type_): _description_
+        """
+
+        def compute_loss(self, model, inputs, return_outputs=False):
+            """
+            How the loss is computed by Trainer. By default, all models return the loss in the first element.
+
+            Subclass and override for custom behavior.
+            Besides return the loss, this function also compute the metrics for each training step
+            """
+            outputs = model(**inputs)
+            loss = outputs.loss
+            if (
+                model.training
+            ):  # only compute the metrics in the training loop, not eval loop
+                logits = outputs.logits["logits"]
+                labels = outputs.logits["labels"]
+
+                pred_ids = torch.argmax(logits, dim=-1)
+
+                # compute the metrics
+                predictions = pred_ids[:, :-1]
+                predictions = self.accelerator.pad_across_processes(
+                    predictions, dim=1, pad_index=-100
+                )
+                predictions = self.accelerator.gather_for_metrics((predictions))
+
+                labels = labels[:, 1:]
+                labels = self.accelerator.pad_across_processes(
+                    labels, dim=1, pad_index=-100
+                )
+                labels = self.accelerator.gather_for_metrics((labels))
+
+                prediction_list, label_list = (
+                    predictions.flatten().tolist(),
+                    labels.flatten().tolist(),
+                )
+                metrics = compute_accuracy_metrics(prediction_list, label_list)
+                prefix_metrics = {}
+                for key in metrics:
+                    prefix_metrics[f"train_{key}"] = metrics[key]
+                # Log to wandb
+                self.log(prefix_metrics)
+            return (loss, outputs) if return_outputs else loss
+
+    # if set log_train_metrics=true will compute the metrics after each training step
+    trainer_class = (
+        FunctionAccuracyTrackingTrainer if training_args.log_train_metrics else Trainer
+    )
 
     if training_args.do_eval:
-        trainer = Trainer(
+        trainer = trainer_class(
             model=model,
             tokenizer=tokenizer,
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            compute_metrics=None,
-            preprocess_logits_for_metrics=None,
-            data_collator=collate_fn,
+            compute_metrics=compute_metrics,
+            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+            data_collator=collate_examples,
         )
     else:
-        trainer = Trainer(
+        trainer = trainer_class(
             model=model,
             tokenizer=tokenizer,
             args=training_args,
             train_dataset=train_dataset,
-            data_collator=collate_fn,
-            compute_metrics=None,
-            preprocess_logits_for_metrics=None,
+            data_collator=collate_examples,
+            compute_metrics=compute_metrics,
+            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
         )
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
