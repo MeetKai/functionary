@@ -1,7 +1,7 @@
 import typer
 from transformers import AutoTokenizer
 from functionary.prompt_template import get_prompt_template_by_version
-from functionary.train_vision.qwen2_dataset import LazyVisionDataset
+from functionary.train_vision.qwen2_vl_dataset import LazyVisionDataset
 import torch
 from transformers import Qwen2VLForConditionalGeneration
 import math

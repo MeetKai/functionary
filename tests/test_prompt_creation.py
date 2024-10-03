@@ -42,6 +42,7 @@ class TestPromptTemplate(unittest.TestCase):
             "v2.llama3": "meetkai/functionary-small-v2.5",
             "v3.llama3": "meetkai/functionary-medium-v3.0",
             "v3-llama3.1": "meetkai/functionary-small-v3.1",
+            "qwen2-vl": "Qwen/Qwen2-VL-7B-Instruct"
         }
         self.image_template_version_to_model_name = {
             "v3.llava_llama": "meetkai/functionary-vision-small-v0.1"
@@ -130,10 +131,11 @@ class TestPromptTemplate(unittest.TestCase):
     ):
         """this function is used to test function: prepare_training_inputs"""
         # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
-        tokenizer = AutoTokenizer.from_pretrained(pretrained)
+        tokenizer = AutoTokenizer.from_pretrained(pretrained, legacy=True)
         tokenizer.pad_token = tokenizer.eos_token
         # first we add stop_tokens to the tokenizer
         prompt_template = get_prompt_template_by_version(template_version)
+        tokenizer.chat_template = prompt_template.get_chat_template_jinja()
 
         added_tokens = prompt_template.get_additional_tokens()
         special_tokens = {"additional_special_tokens": added_tokens}

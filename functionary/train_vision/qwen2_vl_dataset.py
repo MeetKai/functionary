@@ -169,7 +169,7 @@ def concatenate_pad_inputs(
     return inputs
 
 
-class LazyVisionDataset(Dataset):
+class LazyQwen2VLDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
     def __init__(
@@ -319,4 +319,11 @@ class LazyVisionDataset(Dataset):
             == inputs["attention_mask"].shape[-1]
             == self.max_length
         ), f'{inputs["input_ids"].shape[-1]}, {inputs["labels"].shape[-1]}, {inputs["attention_mask"].shape[-1]}, {self.max_length}'
+        
+        # Assert the number of images == number of start_image_token
+        assert (inputs["input_ids"] == self.vision_start_id).sum() == inputs["image_grid_thw"].shape[0]
+        # assert to make sure that number of image tokens in image_grid_thw == number of tokens in pixel_values
+        assert sum([inputs["image_grid_thw"][i].prod() for i in range(inputs["image_grid_thw"].shape[0])]) == inputs["pixel_values"].shape[0]
         return inputs
+
+

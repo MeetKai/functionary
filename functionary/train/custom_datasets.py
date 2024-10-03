@@ -79,19 +79,6 @@ def get_matching_prefix(
     return None
 
 
-def get_longest_matching_prefix(masking_tuples: List[Tuple[List[int], List[int], bool]], sequence_ids: List[int]) -> Tuple[Tuple[List[int], List[int], bool], int]:
-    result = None
-    for masking_tuple in masking_tuples:
-        matched_tokens = get_matching_prefix(masking_tuple[0], sequence_ids)
-        if matched_tokens is not None:
-            if result is None:
-                result = masking_tuple
-            else:
-                if len(result[0]) < len(masking_tuple[0]):
-                    result = masking_tuple
-    return result
-
-
 def get_cached_folder(data_path, model_path):
     current_folder = os.path.dirname(os.path.abspath(__file__))
     cached_folder = os.path.join(current_folder, "_data_cached")
@@ -247,6 +234,8 @@ def get_masked_labels(
     *,
     input_token_ids: List[int],
     tokenizer: Any,
+    assistant_prefix_tokens: List[List[int]],
+    assistant_stop_tokens: List[int],
     keep_assistant_prefix: bool = False,
     verbose: bool = False,
     masked_assistant_indices: Optional[List[int]] = None,
@@ -276,23 +265,20 @@ def get_masked_labels(
     # prefix_token_ids = get_prefix_assistant_token_ids(tokenizer)
     # if verbose:
     #    print("prefix_token_ids: ", prefix_token_ids)
-    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
-    masking_tupples = prompt_template.get_assistant_masking_start_end_tuples(tokenizer)
-    
     index = 0
     total_input_leng = len(input_token_ids)
     assistant_index = -1
     while index < total_input_leng:
         # finding the index that start with: "<endtoken>assistant" --> we will unmask labels from this position
-        matched_tuple = get_longest_matching_prefix(
-            masking_tupples, input_token_ids[index:]
+        matched_prefix = get_matching_prefix(
+            assistant_prefix_tokens, input_token_ids[index:]
         )
-        if matched_tuple is not None:
+        if matched_prefix is not None:
             assistant_index += 1
             end_index = -1
             # unmask until reach <end_of_function> or <end_of_assistant>
-            start_masked_index = index + len(matched_tuple[0])
-            if keep_assistant_prefix or matched_tuple[-1]:  # unmask prefix of assistant
+            start_masked_index = index + len(matched_prefix)
+            if keep_assistant_prefix:  # unmask prefix of assistant
                 start_masked_index = index
 
             unmask_this = True
@@ -302,11 +288,11 @@ def get_masked_labels(
                 unmask_this = False
 
             for i in range(start_masked_index, total_input_leng):
-                matched_prefix = get_matching_prefix(matched_tuple[1], input_token_ids[i: ])
-                if matched_prefix:  # check if this is end of turn
+                tok_id = input_token_ids[i]
+                if tok_id in assistant_stop_tokens:  # check if this is end of turn
                     if unmask_this:  # if we include this to training
-                        labels[i: i + len(matched_prefix)] = input_token_ids[i: i + len(matched_prefix)]  # unmask labels at this position
-                    end_index = i + len(matched_prefix)
+                        labels[i] = input_token_ids[i]  # unmask labels at this position
+                    end_index = i
                     break
                 else:
                     if unmask_this:  # if we include this to training
@@ -406,6 +392,8 @@ def prepare_training_inputs_batch(
     """
     # a dictionary mapping from end_token_ --> end_token
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+    assistant_stop_token_ids = get_assistant_stop_token_ids(prompt_template, tokenizer)
+    assistant_prefix_tokens = get_prefix_assistant_token_ids(prompt_template, tokenizer)
     prompt_str_list = []
     for messages in batch_messages:
         # old format: functions, new format: tools
@@ -434,6 +422,8 @@ def prepare_training_inputs_batch(
         labels = get_masked_labels(
             input_token_ids=input_token_ids,
             tokenizer=tokenizer,
+            assistant_prefix_tokens=assistant_prefix_tokens,
+            assistant_stop_tokens=assistant_stop_token_ids,
             keep_assistant_prefix=keep_assistant_prefix,
             verbose=verbose,
             masked_assistant_indices=masked_assistant_indices,

@@ -1,7 +1,8 @@
-from functionary.train_vision.qwen2_dataset import LazyVisionDataset
 from transformers import AutoTokenizer
 from functionary.prompt_template import get_prompt_template_by_version
 from torch.utils.data import DataLoader
+from functionary.train_vision.vision_datasets import get_collate_fn, get_vision_dataset_class
+
 
 pretrained_path = "Qwen/Qwen2-VL-7B-Instruct"
 prompt_template = get_prompt_template_by_version("qwen2-vl")
@@ -65,28 +66,20 @@ raw_data = [
 # 85 for partially truncated;
 # 155: all images are included;
 # 67: only the first image is included
-tokenizer.model_max_length = 155
-
-ds = LazyVisionDataset(
+dataset_type = "LazyQwen2VLDataset"
+ds = get_vision_dataset_class(dataset_type)(
     raw_data,
     tokenizer,
     pretrained_path=pretrained_path,
     pad_img_path="functionary/train_vision/pad_img2.png",
-    use_img_pad_token=False,
+    max_length = 155,
+    use_img_pad_token=True,
 )
 
 
-def display_data(index):
-    dt = ds[index]
-    for key in dt:
-        print(f"{key}; shape: {dt[key].shape}: {dt[key]}")
-        print(f"---------------------")
-    input_ids = dt["input_ids"].tolist()
-    print(f"text: {tokenizer.decode(input_ids)}")
-    labels = dt["labels"]
-    labels[labels == -100] = tokenizer.pad_token_id
-    print(f"---------------------")
-    print(f"labels: {tokenizer.decode(labels)}")
+loader = DataLoader(ds, collate_fn=get_collate_fn(dataset_type, None, tokenizer), batch_size=3, shuffle=False)
 
-
-display_data(2)
+for batch in loader:
+    for key in batch:
+        print(f"{key}, shape={batch[key].shape}")
+    print(batch["image_grid_thw"])

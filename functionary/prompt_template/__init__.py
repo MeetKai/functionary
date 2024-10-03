@@ -29,7 +29,7 @@ def get_available_prompt_template_versions() -> List[PromptTemplate]:
     # directly add LLavaLlama as it is not a direct subclass of PromptTemplate but the subclass of: Llama3TemplateV3
     # we don't use get_prompt_template or this will return the parent class
     all_templates_obj.append(LlavaLlama.get_prompt_template())
-
+    all_templates_obj.append(Qwen2VLTemplate.get_prompt_template())
     return all_templates_obj
 
 
