@@ -27,6 +27,24 @@ def tojson(x, ensure_ascii=False, indent=None, separators=None, sort_keys=False)
     )
 
 
+def get_list_of_token_ids(texts: List[str], tokenizer: Any) -> List[List[int]]:
+    """Get list of token_ids (without adding special tokens) for texts
+    Args:
+        texts: List of strings
+        tokenizer (Any): Tokenizer
+
+    Returns:
+        List[List[int]]: List of token_ids of texts
+    """
+    result = []
+    for text in texts:
+        token_ids = tokenizer.encode(text, add_special_tokens=False)
+        if token_ids[0] == 29871:
+            token_ids = token_ids[1:]
+        result.append(token_ids)
+    return result
+
+
 class PromptTemplate:
     _jinja_env = jinja2.Environment()
     _jinja_env.filters["tojson"] = tojson
@@ -366,6 +384,17 @@ class PromptTemplate:
             + "\n"
             + template[template.index("{%") :]
         )
+
+    def get_assistant_masking_start_end_tuples(
+        self, tokenizer: Any
+    ) -> List[Tuple[List[int], List[int], bool]]:
+        assistant_prefixs = self.get_assistant_prefixes()
+        assistant_stop_tokens = self.get_stop_tokens_for_generation()
+        assistant_prefix_token_ids = get_list_of_token_ids(assistant_prefixs, tokenizer)
+        assistant_stop_token_ids = get_list_of_token_ids(
+            assistant_stop_tokens, tokenizer
+        )
+        return [(assistant_prefix_token_ids, assistant_stop_token_ids, False)]
 
     def get_generation_prefix_for_tool_choice(self, tool_choice: Any):
         if tool_choice == "auto" or tool_choice is None:
