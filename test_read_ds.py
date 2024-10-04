@@ -39,7 +39,7 @@ raw_data = [
             {
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "image_url": {"url": "file://assets/s.png"}},
+                    {"type": "image_url", "image_url": {"url": "file://assets/Functionary_32.png"}},
                     {"type": "text", "text": "can you describe this image"},
                 ],
             },
@@ -48,7 +48,7 @@ raw_data = [
                 "role": "user",
                 "content": [
                     {"type": "text", "text": "how about this image ?"},
-                    {"type": "image_url", "image_url": {"url": "file://assets/as.png"}},
+                    {"type": "image_url", "image_url": {"url": "file://assets/SGD_acc.png"}},
                 ],
             },
             {

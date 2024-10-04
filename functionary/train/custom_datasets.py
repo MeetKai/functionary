@@ -459,6 +459,8 @@ def map_raw_data_to_input_dic(
     padding: str,
     batch_size: int = 5000,
     keep_assistant_prefix: bool = False,
+    remove_invalid_data: bool = True,
+    max_length: Optional[int] = None
 ) -> List[Dict]:
     """This function is used to map list of raw_data to list of processed data points for packing
     Args:
@@ -482,14 +484,15 @@ def map_raw_data_to_input_dic(
             padding=padding,
             return_tensor=False,
             keep_assistant_prefix=keep_assistant_prefix,
+            max_length=max_length
         )
 
         assert len(batch_result["batch_inputs"]) == len(raw_data[start:end])
         for item in batch_result["batch_inputs"]:
-            if is_valid_labels(item["labels"]):
-                data_points.append(item)
-            else:
+            if remove_invalid_data and (not is_valid_labels(item["labels"])):
                 invalid_count += 1
+            else:
+                data_points.append(item)
 
         t2 = datetime.datetime.now()
         avg_time = (t2 - t1).total_seconds() / len(data_points)
@@ -497,11 +500,15 @@ def map_raw_data_to_input_dic(
         print(
             f"{len(data_points)}/{data_size}, avg_time per 1000 data points: {avg_time * 1000}, remaining time: {remaining_time}"
         )
-    if invalid_count > 0:
-        print(
-            f"*****WARNING: invalid data points: {invalid_count} because of labels=-100 all the time"
-        )
+    
+    if remove_invalid_data:
+        if invalid_count > 0:
+            print(
+                f"*****WARNING: invalid data points: {invalid_count} because of labels=-100 all the time"
+            )
     assert len(data_points) == data_size - invalid_count
+    if not remove_invalid_data:
+        assert len(data_points) == data_size
     return data_points
 
 
@@ -632,7 +639,7 @@ def pack_data_points(data_points: List[Dict], tokenizer: Any, pack_length: int) 
     }
 
 
-def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
+def pack_data_points_FA(data_points: List[Dict], tokenizer: Any, pack_length: Optional[int]) -> Dict:
     """This method is used to pack multiple data_points into a single data point usable for Flash Attention
 
     For example, we want to pack 2 inputs with padding_size=right:
@@ -658,6 +665,8 @@ def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
     lengths = []
     label_ids = []
     attention_mask = []
+    if pack_length is None:
+        pack_length = tokenizer.model_max_length
 
     for index, item in enumerate(data_points):
         input_ids += item["input_ids"]
@@ -668,7 +677,7 @@ def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
         lengths.append(len(item["input_ids"]))
         attention_mask += [index + 1 for _ in range(len(item["input_ids"]))]
 
-    pad_leng = tokenizer.model_max_length - len(
+    pad_leng = pack_length - len(
         input_ids
     )  # padding to model_max_length
 
@@ -685,7 +694,7 @@ def pack_data_points_FA(data_points: List[Dict], tokenizer: Any) -> Dict:
         len(input_ids)
         == len(label_ids)
         == len(attention_mask)
-        == tokenizer.model_max_length
+        == pack_length
     )
     return {
         "input_ids": torch.tensor(input_ids),

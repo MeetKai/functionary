@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional
 import torch
 from PIL import Image
 from torch.utils.data import Dataset, Sampler
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import transformers
 from functionary.prompt_template import prompt_utils, get_prompt_template_from_tokenizer
@@ -12,6 +12,39 @@ from transformers import AutoProcessor, Qwen2VLImageProcessor, Qwen2VLProcessor
 from functionary.prompt_template.base_template import PromptTemplate
 from functionary.train import custom_datasets
 from functionary.train_vision.base_datasets import CustomCollator, VisionDataset
+import numpy as np
+import datetime
+
+
+class Qwen2VLCollator(CustomCollator):
+    def __call__(self, features: Any) -> Any:
+        result = {}
+        first = features[0]
+        for k, v in first.items():
+            if k in ["input_ids", "attention_mask", "labels"]:
+                if isinstance(v, torch.Tensor):
+                    result[k] = torch.stack([f[k] for f in features])
+                elif isinstance(v, np.ndarray):
+                    result[k] = torch.tensor(np.stack([f[k] for f in features]))
+                else:
+                    result[k] = torch.tensor([f[k] for f in features])
+
+        # pixel_values, concatenate
+        pixel_value_list = []
+        image_grid_thw_list = []
+
+        for feature in features:
+            pixel_values = feature.get("pixel_values", None)
+            if pixel_values is not None:
+                pixel_value_list.append(pixel_values)
+
+            image_grid_thw = feature.get("image_grid_thw", None)
+            if image_grid_thw is not None:
+                image_grid_thw_list.append(image_grid_thw)
+
+        result["pixel_values"] = torch.concat(pixel_value_list, dim=0)
+        result["image_grid_thw"] = torch.concat(image_grid_thw_list, dim=0)
+        return result
 
 
 def pad_inputs(inputs: Dict, tokenizer: Any, length: int) -> Dict:
@@ -107,16 +140,16 @@ def truncate_inputs_for_training(
     """
     input_ids = inputs["input_ids"].tolist()
     img_indices = find_image_token_indices(input_ids, start_img_token, end_img_token)
-    print("img_indices: ", img_indices, "img_num: ", img_num)
+    #print("img_indices: ", img_indices, "img_num: ", img_num)
     if len(img_indices) == 0:  # all image tokens were truncated
-        print("all images are truncated ....")
+        #print("all images are truncated ....")
         inputs["pixel_values"] = None
         inputs["image_grid_thw"] = None
         return inputs
 
     last_img_indices = img_indices[-1]
     if last_img_indices[1] == -1:  # the last image was partially truncated
-        print("an image was partially truncated")
+       # print("an image was partially truncated")
         last_start_img_index = last_img_indices[0]
         inputs["input_ids"] = inputs["input_ids"][:last_start_img_index]
         inputs["attention_mask"] = inputs["attention_mask"][:last_start_img_index]
@@ -128,10 +161,10 @@ def truncate_inputs_for_training(
 
     # pixel_values; image_grid_thw must be truncated
     if len(img_indices) < img_num:  # if there exists images that were not used
-        print("some images was truncated")
+        #print("some images was truncated")
         inputs = truncate_images_in_pixel_values(inputs, len(img_indices))
-    else:
-        print("no images were truncated")
+    #else:
+     #   print("no images were truncated")
     return inputs
 
 
@@ -168,6 +201,31 @@ def concatenate_pad_inputs(
     return inputs
 
 
+def assert_model_inputs(inputs: Dict, max_length: int, vision_start_id: int):
+    assert (
+        inputs["input_ids"].shape[-1]
+        == inputs["labels"].shape[-1]
+        == inputs["attention_mask"].shape[-1]
+        == max_length
+    ), f'{inputs["input_ids"].shape[-1]}, {inputs["labels"].shape[-1]}, {inputs["attention_mask"].shape[-1]}, {max_length}'
+
+    # Assert the number of images == number of start_image_token
+    num_imgs = (inputs["input_ids"] == vision_start_id).sum()
+    assert (
+        num_imgs == inputs["image_grid_thw"].shape[0]
+    ), f'num_imgs={num_imgs}; shape: {inputs["image_grid_thw"].shape}'
+    # assert to make sure that number of image tokens in image_grid_thw == number of tokens in pixel_values
+    assert (
+        sum(
+            [
+                inputs["image_grid_thw"][i].prod()
+                for i in range(inputs["image_grid_thw"].shape[0])
+            ]
+        )
+        == inputs["pixel_values"].shape[0]
+    )
+
+
 class LazyQwen2VLDataset(VisionDataset):
     """Dataset for supervised fine-tuning."""
 
@@ -199,23 +257,54 @@ class LazyQwen2VLDataset(VisionDataset):
 
     def process_inputs(
         self,
-        prompt: str,
+        prompt: Union[str, List[str]],
         images: List[Any],
         padding: str = "max_length",
         max_length: Optional[int] = None,
     ) -> Dict:
+        is_str = True
+        if type(prompt) is list:
+            is_str = False
+
         inputs = self.input_processor(
-            text=[prompt],
+            text=[prompt] if is_str else prompt,
             images=images,
             padding=padding,
             max_length=max_length,
             return_tensors="pt",
             truncation=True,
         )
-        for key in inputs:
-            if key in ["input_ids", "attention_mask"]:
-                inputs[key] = inputs[key].squeeze(0)
+        if is_str:
+            for key in inputs:
+                if key in ["input_ids", "attention_mask"]:
+                    inputs[key] = inputs[key].squeeze(0)
         return inputs
+
+    def get_labels_from_input_ids(
+        self, input_ids: List[int], example: Dict
+    ) -> List[int]:
+        assistant_stop_token_ids = custom_datasets.get_assistant_stop_token_ids(
+            self.prompt_template, self.tokenizer
+        )
+        assistant_prefix_tokens = custom_datasets.get_prefix_assistant_token_ids(
+            self.prompt_template, self.tokenizer
+        )
+
+        masked_assistant_indices = (
+            custom_datasets.get_masked_indices_of_assistant_messages(
+                example["messages"]
+            )
+        )
+
+        labels = custom_datasets.get_masked_labels(
+            input_token_ids=input_ids,
+            tokenizer=self.tokenizer,
+            assistant_prefix_tokens=assistant_prefix_tokens,
+            assistant_stop_tokens=assistant_stop_token_ids,
+            keep_assistant_prefix=False,
+            masked_assistant_indices=masked_assistant_indices,
+        )
+        return labels
 
     def __len__(self):
         return len(self.raw_data)
@@ -238,7 +327,7 @@ class LazyQwen2VLDataset(VisionDataset):
             else self.max_length
         )
         # print(f"-----------prompt: {prompt}")
-        print(f"max_length: {max_length}")
+        # print(f"max_length: {max_length}")
         inputs = self.process_inputs(
             prompt,
             images,
@@ -269,84 +358,229 @@ class LazyQwen2VLDataset(VisionDataset):
 
         # this chunk of code if for computing the labels
         input_ids = inputs["input_ids"].tolist()
-        assistant_stop_token_ids = custom_datasets.get_assistant_stop_token_ids(
-            self.prompt_template, self.tokenizer
-        )
-        assistant_prefix_tokens = custom_datasets.get_prefix_assistant_token_ids(
-            self.prompt_template, self.tokenizer
-        )
-
-        masked_assistant_indices = (
-            custom_datasets.get_masked_indices_of_assistant_messages(
-                example["messages"]
-            )
-        )
-
-        labels = custom_datasets.get_masked_labels(
-            input_token_ids=input_ids,
-            tokenizer=self.tokenizer,
-            assistant_prefix_tokens=assistant_prefix_tokens,
-            assistant_stop_tokens=assistant_stop_token_ids,
-            keep_assistant_prefix=False,
-            masked_assistant_indices=masked_assistant_indices,
-        )
-
+        labels = self.get_labels_from_input_ids(input_ids, example)
         labels = torch.tensor(labels)
         labels = labels * inputs["attention_mask"]  # padded tokens --> 0
         labels[labels == 0] = -100  # padded tokens --> -100
         # mask pad_input_tokens
         inputs["labels"] = labels
 
-        assert (
-            inputs["input_ids"].shape[-1]
-            == inputs["labels"].shape[-1]
-            == inputs["attention_mask"].shape[-1]
-            == self.max_length
-        ), f'{inputs["input_ids"].shape[-1]}, {inputs["labels"].shape[-1]}, {inputs["attention_mask"].shape[-1]}, {self.max_length}'
-
-        # Assert the number of images == number of start_image_token
-        assert (inputs["input_ids"] == self.vision_start_id).sum() == inputs[
-            "image_grid_thw"
-        ].shape[0]
-        # assert to make sure that number of image tokens in image_grid_thw == number of tokens in pixel_values
-        assert (
-            sum(
-                [
-                    inputs["image_grid_thw"][i].prod()
-                    for i in range(inputs["image_grid_thw"].shape[0])
-                ]
-            )
-            == inputs["pixel_values"].shape[0]
-        )
+        assert_model_inputs(inputs, self.max_length, self.vision_start_id)
         return inputs
 
 
-class Qwen2VLCollator(CustomCollator):
-    def __call__(self, features: Any) -> Any:
-        result = {}
-        first = features[0]
-        for k, v in first.items():
-            if k in ["input_ids", "attention_mask", "labels"]:
-                if isinstance(v, torch.Tensor):
-                    result[k] = torch.stack([f[k] for f in features])
-                elif isinstance(v, np.ndarray):
-                    result[k] = torch.tensor(np.stack([f[k] for f in features]))
-                else:
-                    result[k] = torch.tensor([f[k] for f in features])
+class PackedQwen2VLDataset(LazyQwen2VLDataset):
+    def __init__(
+        self,
+        raw_data,
+        tokenizer: transformers.PreTrainedTokenizer,
+        pretrained_path: str,
+        pad_img_path: str,
+        max_length: int,
+        use_img_pad_token: bool = True,
+        store_img_data_in_memory: bool = False,
+        max_packed_size: Optional[int] = -1,
+    ):
+        super().__init__(
+            raw_data,
+            tokenizer,
+            pretrained_path,
+            pad_img_path,
+            max_length,
+            use_img_pad_token,
+        )
+        self.max_packed_size = max_packed_size
+        text_only_data = []
+        img_data = []
 
-        # pixel_values, concatenate
+        id_2_raw_data = {}
+        id_2_length = {}
+
+        for i, example in enumerate(self.raw_data):
+            id_2_raw_data[i] = example
+            example["original_index"] = i
+
+            images = prompt_utils.extract_images_from_messages(example["messages"])
+            if len(images) == 0:
+                text_only_data.append(example)
+            else:
+                img_data.append(example)
+
+        print(
+            f"number of text_only data points: {len(text_only_data)}; number of data points with images: {len(img_data)}"
+        )
+        print("start to tokenize text-only images")
+        pad_token_num = self.pad_token_inputs["input_ids"].shape[-1]
+        text_data_points = custom_datasets.map_raw_data_to_input_dic(
+            raw_data=text_only_data,
+            tokenizer=tokenizer,
+            padding="do_not_pad",
+            batch_size=5000,
+            keep_assistant_prefix=False,
+            remove_invalid_data=False,
+            max_length=self.max_length - pad_token_num,
+        )
+        assert len(text_only_data) == len(text_data_points)
+
+        self.invalid_data_ids = []
+        for dt, item in zip(text_only_data, text_data_points):
+            if not custom_datasets.is_valid_labels(item["labels"]):
+                self.invalid_data_ids.append(dt["original_index"])
+
+        lengths = [len(item["input_ids"]) for item in text_data_points]
+        for dt, length in zip(text_only_data, lengths):
+            id_2_length[dt["original_index"]] = length
+
+        print(f"start to tokenize {len(img_data)} data points containing images")
+        t1 = datetime.datetime.now()
+        for i, example in enumerate(img_data):
+            images = prompt_utils.extract_images_from_messages(example["messages"])
+            assert len(images) > 0
+            prompt = self.prompt_template.get_prompt_from_messages(
+                example["messages"], example["tools"], add_generation_prompt=False
+            )
+
+            inputs = self.process_inputs(
+                prompt,
+                images,
+                padding="do_not_pad",
+                max_length=self.max_length - pad_token_num,
+            )
+            # consider
+            id_2_length[example["original_index"]] = inputs["input_ids"].shape[-1]
+            labels = self.get_labels_from_input_ids(
+                inputs["input_ids"].tolist(), example
+            )
+            if not custom_datasets.is_valid_labels(labels):
+                self.invalid_data_ids.append(example["original_index"])
+
+            if i % 50 == 1:
+                t2 = datetime.datetime.now()
+                exe_time = (t2 - t1).total_seconds()
+                avg_time = exe_time / (i + 1)
+                remaining_time = (len(img_data) - i - 1) * avg_time
+                print(
+                    f"+ {i}/{len(img_data)} avg_time: {avg_time}s, remaining time: {remaining_time / 60} minutes "
+                )
+
+        # shuffle combinations of text_data_points & self.img_data
+        if len(self.invalid_data_ids) > 0:
+            print(f"******** NUMBER OF INVALID DATA: {len(self.invalid_data_ids)}")
+
+        # remove all invalid datapoints
+        self.final_raw_data = []
+        self.final_lengths = []
+        for i in range(len(raw_data)):
+            if i not in self.invalid_data_ids:
+                self.final_raw_data.append(raw_data[i])
+                self.final_lengths.append(id_2_length[i])
+
+        assert len(self.final_lengths) == len(raw_data) - len(self.invalid_data_ids)
+
+        self.groups = custom_datasets.pack_data_points_by_length(
+            self.final_lengths, self.max_length - pad_token_num, self.max_packed_size
+        )
+
+        print("final_lengths: ", self.final_lengths)
+        print("groups: ", self.groups)
+
+    def __len__(self):
+        return len(self.groups)
+
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        group = self.groups[i]
+        lengths = [self.final_lengths[index] for index in group]
+        print(f"packed data point: {i}: {group}, lengths: {lengths}")
+        examples = [self.final_raw_data[index] for index in group]
+        pad_token_num = self.pad_token_inputs["input_ids"].shape[-1]
+        data_points = []
         pixel_value_list = []
         image_grid_thw_list = []
 
-        for feature in features:
-            pixel_values = feature.get("pixel_values", None)
-            if pixel_values is not None:
-                pixel_value_list.append(pixel_values)
+        for example in examples:
+            prompt = self.prompt_template.get_prompt_from_messages(
+                example["messages"], example["tools"], add_generation_prompt=False
+            )
+            images = prompt_utils.extract_images_from_messages(example["messages"])
+            if len(images) == 0:
+                images = None
+            inputs = self.process_inputs(
+                prompt,
+                images,
+                padding="do_not_pad",
+                max_length=self.max_length - pad_token_num,
+            )
+            labels = self.get_labels_from_input_ids(
+                inputs["input_ids"].tolist(), example
+            )
+            inputs["labels"] = torch.tensor(labels)
+            data_points.append(
+                {key: inputs[key] for key in ["input_ids", "labels", "attention_mask"]}
+            )
 
-            image_grid_thw = feature.get("image_grid_thw", None)
-            if image_grid_thw is not None:
-                image_grid_thw_list.append(image_grid_thw)
+            if inputs.get("pixel_values", None) is not None:
+                pixel_value_list.append(inputs["pixel_values"])
+                image_grid_thw_list.append(inputs["image_grid_thw"])
 
-        result["pixel_values"] = torch.concat(pixel_value_list, dim=0)
-        result["image_grid_thw"] = torch.concat(image_grid_thw_list, dim=0)
+        # if this group is only 1 data point, some images might be truncated so far
+        # if group is > 2 data points, no images were truncated
+        if (
+            len(group) == 1
+            and data_points[0]["input_ids"].shape[-1] == self.max_length - pad_token_num
+        ):
+            final_inputs = data_points[0]
+            final_inputs["pixel_values"] = (
+                None if len(pixel_value_list) == 0 else pixel_value_list[0]
+            )
+            final_inputs["image_grid_thw"] = (
+                None if len(pixel_value_list) == 0 else image_grid_thw_list[0]
+            )
+            images = prompt_utils.extract_images_from_messages(examples[0]["messages"])
+            img_num = len(images)
+            final_inputs = truncate_inputs_for_training(
+                final_inputs,
+                self.max_length - pad_token_num,
+                self.vision_start_id,
+                self.vision_end_id,
+                self.tokenizer,
+                img_num,
+            )
+        else:
+            final_inputs = custom_datasets.pack_data_points_FA(
+                data_points, self.tokenizer, self.max_length - pad_token_num
+            )
+            final_inputs["pixel_values"] = (
+                torch.concat(pixel_value_list, dim=0) if pixel_value_list else None
+            )
+            final_inputs["image_grid_thw"] = (
+                torch.concat(image_grid_thw_list, dim=0)
+                if image_grid_thw_list
+                else None
+            )
+
+        result = concatenate_pad_inputs(
+            final_inputs, self.pad_token_inputs, self.tokenizer.padding_side
+        )
+        # add labels = [-100] to
+        label_pads = torch.tensor([-100 for _ in range(pad_token_num)])
+        if self.tokenizer.padding_side == "right":
+            result["labels"] = torch.concat((result["labels"], label_pads), dim=0)
+        else:
+            result["labels"] = torch.concat((label_pads, result["labels"]), dim=0)
+
+        assert_model_inputs(result, self.max_length, self.vision_start_id)
         return result
+
+    def stat(self):
+        print(
+            f"number of original data points:{len(self.raw_data)}; packed to: {len(self.groups)} data points"
+        )
+        original_avg_length = sum(self.final_lengths) / len(self.final_lengths)
+        packed_lengths = []
+        for group in self.groups:
+            lengths = [self.final_lengths[index] for index in group]
+            packed_lengths.append(sum(lengths))
+        avg_packed_length = sum(packed_lengths) / len(packed_lengths)
+        print(
+            f"original avg length: {original_avg_length}; avg packed length: {avg_packed_length}"
+        )

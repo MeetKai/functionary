@@ -13,17 +13,16 @@ import numpy as np
 import torch
 import torch.distributed
 from aenum import extend_enum
-from llava.mm_utils import process_images
-from llava.model.language_model.llava_llama import LlavaConfig
 from PIL import Image
 from torch.optim.lr_scheduler import LambdaLR
-from functionary.train_vision.vision_datasets import get_vision_dataset_class, get_collate_fn
+from functionary.train_vision.vision_datasets import (
+    get_vision_dataset_class,
+    get_collate_fn,
+)
+import re
+from typing import Any
 
 import transformers
-from functionary.train_vision.llava_dataset import LazyVisionDataset
-from functionary.train_vision.models.modeling_llava import (
-    FixedLlavaLlamaForCausalLM as LlavaLlamaForCausalLM,
-)
 from functionary.train.metrics import (
     extract_indices_of_first_tokens_of_param_values_in_assistant_response,
     extract_unmasked_chunks,
@@ -87,6 +86,18 @@ def print_rank0(*arg):
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="meta-llama/Llama-2-7b-hf")
+    model_class: str = field(
+        default="",
+        metadata={
+            "help": "the model_class to load model"
+        }
+    )
+    frozen_pattern: str = field(
+        default="",
+        metadata={
+            "help": "regular expression of parameter names to be frozen during training"
+        }
+    )
 
 
 @dataclass
@@ -123,10 +134,7 @@ class DataArguments:
         },
     )
     dataset_type: str = field(
-        default="LazyQwen2VLDataset",
-        metadata={
-            "help": "The type of dataset to use"
-        }
+        default="LazyQwen2VLDataset", metadata={"help": "The type of dataset to use"}
     )
 
 
@@ -161,6 +169,19 @@ def trainer_save_model_safe(trainer: transformers.Trainer):
     if trainer.accelerator.state.fsdp_plugin.state_dict_type.name != "FULL_STATE_DICT":
         trainer.accelerator.state.fsdp_plugin.set_state_dict_type("FULL_STATE_DICT")
     trainer.save_model()
+
+
+def freeze_model_parameters(model: Any, frozen_pattern: str):
+    trainable_params = []
+    for name, param in model.named_parameters():
+        if re.search(frozen_pattern, name):
+            print(f"-----Freeze parameter in the training: {name}")
+            param.requires_grad = False
+        else:
+            trainable_params.append(name)
+    print("------------TRAINABLE PARAMETERS--------")
+    print("\n".join(trainable_params))
+    print("------------------")
 
 
 def initialize_tokenizer(
@@ -217,6 +238,12 @@ def initialize_tokenizer(
     return tokenizer
 
 
+def get_model_class(model_args):
+    if model_args.model_class.lower() == "Qwen2VLForConditionalGeneration".lower():
+        return transformers.Qwen2VLForConditionalGeneration
+    return transformers.AutoModelForCausalLM
+
+
 def train():
     argument_parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments)
@@ -225,7 +252,6 @@ def train():
     # this is a must
     training_args.remove_unused_columns = False
     # this is a must
-    training_args.prompt_template_version = "v3.llava_llama"
     print(
         "---------------------training_args.remove_unused_columns: ",
         training_args.remove_unused_columns,
@@ -237,24 +263,22 @@ def train():
         else (torch.bfloat16 if training_args.bf16 else torch.float32)
     )
 
-    # Copy this from: https://github.com/LLaVA-VL/LLaVA-NeXT/blob/inference/llava/model/builder.py#L169
-    llava_cfg = LlavaConfig.from_pretrained(model_args.model_name_or_path)
-    if "v1.5" in model_args.model_name_or_path.lower():
-        llava_cfg.delay_load = True  # a workaround for correctly loading v1.5 models
-
-    model = transformers.AutoModelForCausalLM.from_pretrained(
+    model_class = get_model_class(model_args)
+    model = model_class.from_pretrained(
         model_args.model_name_or_path,
         torch_dtype=compute_dtype,
-        config=llava_cfg,
         cache_dir=training_args.cache_dir,
         use_flash_attention_2=True,
     )
+    
+    print(model)
+    if model_args.frozen_pattern:
+        freeze_model_parameters(model, model_args.frozen_pattern)
 
     if hasattr(model.config, "tokenizer_model_max_length"):
         model.config.tokenizer_model_max_length = training_args.model_max_length
     model.config.use_cache = False
 
-    
     print_rank0("Prompt template to use: ", training_args.prompt_template_version)
     prompt_template = get_prompt_template_by_version(
         training_args.prompt_template_version
@@ -290,16 +314,16 @@ def train():
     with open(data_args.train_data_path, "r") as f:
         raw_train_ds = [json.loads(line) for line in f]
 
-
     dataset_class = get_vision_dataset_class(data_args.dataset_type)
-    train_dataset = dataset_class(raw_train_ds,
+    train_dataset = dataset_class(
+        raw_train_ds,
         tokenizer,
         model_args.model_name_or_path,
         data_args.pad_img_path,
         training_args.model_max_length,
-        use_img_pad_token = True
+        use_img_pad_token=True,
     )
-    
+
     if torch.distributed.get_rank() == 0:
         print(f"Training Data Loaded: #{len(train_dataset)}")
 
@@ -307,7 +331,14 @@ def train():
         with open(data_args.eval_data_path, "r") as f:
             raw_eval_ds = [json.loads(line) for line in f]
 
-        eval_dataset = LazyVisionDataset(raw_eval_ds, tokenizer, data_args.pad_img_path)
+        eval_dataset = dataset_class(
+            raw_eval_ds,
+            tokenizer,
+            model_args.model_name_or_path,
+            data_args.pad_img_path,
+            training_args.model_max_length,
+            use_img_pad_token=True,
+        )
 
         if torch.distributed.get_rank() == 0:
             print(f"Eval Data Loaded: #{len(eval_dataset)}")
