@@ -153,6 +153,8 @@ def truncate_inputs_for_training(
         last_start_img_index = last_img_indices[0]
         inputs["input_ids"] = inputs["input_ids"][:last_start_img_index]
         inputs["attention_mask"] = inputs["attention_mask"][:last_start_img_index]
+        if "labels" in inputs:
+            inputs["labels"] = inputs["labels"][: last_start_img_index]
         inputs = pad_inputs(inputs, tokenizer, max_length)
         # pixel_values; image_grid_thw must be truncated
         inputs = truncate_images_in_pixel_values(inputs, len(img_indices) - 1)
@@ -281,8 +283,9 @@ class LazyQwen2VLDataset(VisionDataset):
         return inputs
 
     def get_labels_from_input_ids(
-        self, input_ids: List[int], example: Dict
+        self, inputs: Dict, example: Dict
     ) -> List[int]:
+        input_ids = inputs["input_ids"].tolist()        
         assistant_stop_token_ids = custom_datasets.get_assistant_stop_token_ids(
             self.prompt_template, self.tokenizer
         )
@@ -304,7 +307,11 @@ class LazyQwen2VLDataset(VisionDataset):
             keep_assistant_prefix=False,
             masked_assistant_indices=masked_assistant_indices,
         )
-        return labels
+        
+        labels_tensor = torch.tensor(labels)
+        # Make sure that labels == 0 for all padded tokens
+        labels_tensor[inputs["attention_mask"] == 0] = -100
+        return labels_tensor
 
     def __len__(self):
         return len(self.raw_data)
@@ -357,13 +364,7 @@ class LazyQwen2VLDataset(VisionDataset):
             )
 
         # this chunk of code if for computing the labels
-        input_ids = inputs["input_ids"].tolist()
-        labels = self.get_labels_from_input_ids(input_ids, example)
-        labels = torch.tensor(labels)
-        labels = labels * inputs["attention_mask"]  # padded tokens --> 0
-        labels[labels == 0] = -100  # padded tokens --> -100
-        # mask pad_input_tokens
-        inputs["labels"] = labels
+        inputs["labels"] = self.get_labels_from_input_ids(inputs, example)
 
         assert_model_inputs(inputs, self.max_length, self.vision_start_id)
         return inputs
@@ -449,9 +450,9 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
             # consider
             id_2_length[example["original_index"]] = inputs["input_ids"].shape[-1]
             labels = self.get_labels_from_input_ids(
-                inputs["input_ids"].tolist(), example
+                inputs, example
             )
-            if not custom_datasets.is_valid_labels(labels):
+            if not custom_datasets.is_valid_labels(labels.tolist()):
                 self.invalid_data_ids.append(example["original_index"])
 
             if i % 50 == 1:
@@ -510,10 +511,9 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
                 padding="do_not_pad",
                 max_length=self.max_length - pad_token_num,
             )
-            labels = self.get_labels_from_input_ids(
-                inputs["input_ids"].tolist(), example
+            inputs["labels"] = self.get_labels_from_input_ids(
+                inputs, example
             )
-            inputs["labels"] = torch.tensor(labels)
             data_points.append(
                 {key: inputs[key] for key in ["input_ids", "labels", "attention_mask"]}
             )
@@ -537,6 +537,7 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
             )
             images = prompt_utils.extract_images_from_messages(examples[0]["messages"])
             img_num = len(images)
+            print("final_inputs keys: ", final_inputs.keys())
             final_inputs = truncate_inputs_for_training(
                 final_inputs,
                 self.max_length - pad_token_num,
@@ -569,6 +570,7 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
             result["labels"] = torch.concat((label_pads, result["labels"]), dim=0)
 
         assert_model_inputs(result, self.max_length, self.vision_start_id)
+        # count label tokens
         return result
 
     def stat(self):
