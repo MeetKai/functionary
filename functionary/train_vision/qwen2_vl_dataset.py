@@ -14,6 +14,7 @@ from functionary.train import custom_datasets
 from functionary.train_vision.base_datasets import CustomCollator, VisionDataset
 import numpy as np
 import datetime
+import json
 
 
 class Qwen2VLCollator(CustomCollator):
@@ -140,21 +141,21 @@ def truncate_inputs_for_training(
     """
     input_ids = inputs["input_ids"].tolist()
     img_indices = find_image_token_indices(input_ids, start_img_token, end_img_token)
-    #print("img_indices: ", img_indices, "img_num: ", img_num)
+    # print("img_indices: ", img_indices, "img_num: ", img_num)
     if len(img_indices) == 0:  # all image tokens were truncated
-        #print("all images are truncated ....")
+        # print("all images are truncated ....")
         inputs["pixel_values"] = None
         inputs["image_grid_thw"] = None
         return inputs
 
     last_img_indices = img_indices[-1]
     if last_img_indices[1] == -1:  # the last image was partially truncated
-       # print("an image was partially truncated")
+        # print("an image was partially truncated")
         last_start_img_index = last_img_indices[0]
         inputs["input_ids"] = inputs["input_ids"][:last_start_img_index]
         inputs["attention_mask"] = inputs["attention_mask"][:last_start_img_index]
         if "labels" in inputs:
-            inputs["labels"] = inputs["labels"][: last_start_img_index]
+            inputs["labels"] = inputs["labels"][:last_start_img_index]
         inputs = pad_inputs(inputs, tokenizer, max_length)
         # pixel_values; image_grid_thw must be truncated
         inputs = truncate_images_in_pixel_values(inputs, len(img_indices) - 1)
@@ -163,10 +164,10 @@ def truncate_inputs_for_training(
 
     # pixel_values; image_grid_thw must be truncated
     if len(img_indices) < img_num:  # if there exists images that were not used
-        #print("some images was truncated")
+        # print("some images was truncated")
         inputs = truncate_images_in_pixel_values(inputs, len(img_indices))
-    #else:
-     #   print("no images were truncated")
+    # else:
+    #   print("no images were truncated")
     return inputs
 
 
@@ -239,6 +240,7 @@ class LazyQwen2VLDataset(VisionDataset):
         pad_img_path: str,
         max_length: int,
         use_img_pad_token: bool = True,
+        **kwargs,
     ):
         super().__init__(
             raw_data,
@@ -247,6 +249,7 @@ class LazyQwen2VLDataset(VisionDataset):
             pad_img_path,
             max_length,
             use_img_pad_token,
+            kwargs=kwargs,
         )
         self.input_processor = AutoProcessor.from_pretrained(pretrained_path)
         self.vision_start_id = tokenizer.convert_tokens_to_ids("<|vision_start|>")
@@ -282,10 +285,8 @@ class LazyQwen2VLDataset(VisionDataset):
                     inputs[key] = inputs[key].squeeze(0)
         return inputs
 
-    def get_labels_from_input_ids(
-        self, inputs: Dict, example: Dict
-    ) -> List[int]:
-        input_ids = inputs["input_ids"].tolist()        
+    def get_labels_from_input_ids(self, inputs: Dict, example: Dict) -> List[int]:
+        input_ids = inputs["input_ids"].tolist()
         assistant_stop_token_ids = custom_datasets.get_assistant_stop_token_ids(
             self.prompt_template, self.tokenizer
         )
@@ -307,7 +308,7 @@ class LazyQwen2VLDataset(VisionDataset):
             keep_assistant_prefix=False,
             masked_assistant_indices=masked_assistant_indices,
         )
-        
+
         labels_tensor = torch.tensor(labels)
         # Make sure that labels == 0 for all padded tokens
         labels_tensor[inputs["attention_mask"] == 0] = -100
@@ -379,8 +380,7 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
         pad_img_path: str,
         max_length: int,
         use_img_pad_token: bool = True,
-        store_img_data_in_memory: bool = False,
-        max_packed_size: Optional[int] = -1,
+        **kwargs,
     ):
         super().__init__(
             raw_data,
@@ -389,84 +389,102 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
             pad_img_path,
             max_length,
             use_img_pad_token,
+            kwargs=kwargs,
         )
-        self.max_packed_size = max_packed_size
+        self.max_packed_size = kwargs.get("max_packed_size", -1)
+        cached_path = kwargs.get("cached_path", "")
         text_only_data = []
         img_data = []
 
         id_2_raw_data = {}
-        id_2_length = {}
-
-        for i, example in enumerate(self.raw_data):
-            id_2_raw_data[i] = example
-            example["original_index"] = i
-
-            images = prompt_utils.extract_images_from_messages(example["messages"])
-            if len(images) == 0:
-                text_only_data.append(example)
-            else:
-                img_data.append(example)
-
-        print(
-            f"number of text_only data points: {len(text_only_data)}; number of data points with images: {len(img_data)}"
-        )
-        print("start to tokenize text-only images")
+        self.id_2_length = {}
         pad_token_num = self.pad_token_inputs["input_ids"].shape[-1]
-        text_data_points = custom_datasets.map_raw_data_to_input_dic(
-            raw_data=text_only_data,
-            tokenizer=tokenizer,
-            padding="do_not_pad",
-            batch_size=5000,
-            keep_assistant_prefix=False,
-            remove_invalid_data=False,
-            max_length=self.max_length - pad_token_num,
-        )
-        assert len(text_only_data) == len(text_data_points)
+        if cached_path:
+            with open(cached_path, "r") as f:
+                cached_data = json.loads(f.read())
+                id_2_length = cached_data["id_2_length"]
+                for key in id_2_length:
+                    self.id_2_length[int(key)] = id_2_length[key]
 
-        self.invalid_data_ids = []
-        for dt, item in zip(text_only_data, text_data_points):
-            if not custom_datasets.is_valid_labels(item["labels"]):
-                self.invalid_data_ids.append(dt["original_index"])
+                self.invalid_data_ids = cached_data["invalid_data_ids"]
+                assert (
+                    self.max_length == cached_data["max_length"]
+                ), f'max_length in cached_data ({cached_data["max_length"]}) != {self.max_length}'
+                assert (
+                    self.pretrained_path == cached_data["pretrained_path"]
+                ), f'pretrained_path ({cached_data["pretrained_path"]}) in cached data != {self.pretrained_path}'
+                assert len(self.id_2_length) == len(raw_data)
+        else:
+            for i, example in enumerate(self.raw_data):
+                id_2_raw_data[i] = example
+                example["original_index"] = i
 
-        lengths = [len(item["input_ids"]) for item in text_data_points]
-        for dt, length in zip(text_only_data, lengths):
-            id_2_length[dt["original_index"]] = length
+                images = prompt_utils.extract_images_from_messages(example["messages"])
+                if len(images) == 0:
+                    text_only_data.append(example)
+                else:
+                    img_data.append(example)
 
-        print(f"start to tokenize {len(img_data)} data points containing images")
-        t1 = datetime.datetime.now()
-        for i, example in enumerate(img_data):
-            images = prompt_utils.extract_images_from_messages(example["messages"])
-            assert len(images) > 0
-            prompt = self.prompt_template.get_prompt_from_messages(
-                example["messages"], example["tools"], add_generation_prompt=False
+            print(
+                f"number of text_only data points: {len(text_only_data)}; number of data points with images: {len(img_data)}"
             )
+            print("start to tokenize text-only images")
 
-            inputs = self.process_inputs(
-                prompt,
-                images,
+            text_data_points = custom_datasets.map_raw_data_to_input_dic(
+                raw_data=text_only_data,
+                tokenizer=tokenizer,
                 padding="do_not_pad",
+                batch_size=5000,
+                keep_assistant_prefix=False,
+                remove_invalid_data=False,
                 max_length=self.max_length - pad_token_num,
             )
-            # consider
-            id_2_length[example["original_index"]] = inputs["input_ids"].shape[-1]
-            labels = self.get_labels_from_input_ids(
-                inputs, example
-            )
-            if not custom_datasets.is_valid_labels(labels.tolist()):
-                self.invalid_data_ids.append(example["original_index"])
+            assert len(text_only_data) == len(text_data_points)
 
-            if i % 50 == 1:
-                t2 = datetime.datetime.now()
-                exe_time = (t2 - t1).total_seconds()
-                avg_time = exe_time / (i + 1)
-                remaining_time = (len(img_data) - i - 1) * avg_time
-                print(
-                    f"+ {i}/{len(img_data)} avg_time: {avg_time}s, remaining time: {remaining_time / 60} minutes "
+            self.invalid_data_ids = []
+            for dt, item in zip(text_only_data, text_data_points):
+                if not custom_datasets.is_valid_labels(item["labels"]):
+                    self.invalid_data_ids.append(dt["original_index"])
+
+            lengths = [len(item["input_ids"]) for item in text_data_points]
+            for dt, length in zip(text_only_data, lengths):
+                self.id_2_length[dt["original_index"]] = length
+
+            print(f"start to tokenize {len(img_data)} data points containing images")
+            t1 = datetime.datetime.now()
+            for i, example in enumerate(img_data):
+                images = prompt_utils.extract_images_from_messages(example["messages"])
+                assert len(images) > 0
+                prompt = self.prompt_template.get_prompt_from_messages(
+                    example["messages"], example["tools"], add_generation_prompt=False
                 )
 
-        # shuffle combinations of text_data_points & self.img_data
-        if len(self.invalid_data_ids) > 0:
-            print(f"******** NUMBER OF INVALID DATA: {len(self.invalid_data_ids)}")
+                inputs = self.process_inputs(
+                    prompt,
+                    images,
+                    padding="do_not_pad",
+                    max_length=self.max_length - pad_token_num,
+                )
+                # consider
+                self.id_2_length[example["original_index"]] = inputs["input_ids"].shape[
+                    -1
+                ]
+                labels = self.get_labels_from_input_ids(inputs, example)
+                if not custom_datasets.is_valid_labels(labels.tolist()):
+                    self.invalid_data_ids.append(example["original_index"])
+
+                if i % 50 == 1:
+                    t2 = datetime.datetime.now()
+                    exe_time = (t2 - t1).total_seconds()
+                    avg_time = exe_time / (i + 1)
+                    remaining_time = (len(img_data) - i - 1) * avg_time
+                    print(
+                        f"+ {i}/{len(img_data)} avg_time: {avg_time}s, remaining time: {remaining_time / 60} minutes "
+                    )
+
+            # shuffle combinations of text_data_points & self.img_data
+            if len(self.invalid_data_ids) > 0:
+                print(f"******** NUMBER OF INVALID DATA: {len(self.invalid_data_ids)}")
 
         # remove all invalid datapoints
         self.final_raw_data = []
@@ -474,7 +492,7 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
         for i in range(len(raw_data)):
             if i not in self.invalid_data_ids:
                 self.final_raw_data.append(raw_data[i])
-                self.final_lengths.append(id_2_length[i])
+                self.final_lengths.append(self.id_2_length[i])
 
         assert len(self.final_lengths) == len(raw_data) - len(self.invalid_data_ids)
 
@@ -482,8 +500,9 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
             self.final_lengths, self.max_length - pad_token_num, self.max_packed_size
         )
 
-        print("final_lengths: ", self.final_lengths)
-        print("groups: ", self.groups)
+        self.stat()
+        # print("final_lengths: ", self.final_lengths)
+        # print("groups: ", self.groups)
 
     def __len__(self):
         return len(self.groups)
@@ -510,9 +529,7 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
                 padding="do_not_pad",
                 max_length=self.max_length - pad_token_num,
             )
-            inputs["labels"] = self.get_labels_from_input_ids(
-                inputs, example
-            )
+            inputs["labels"] = self.get_labels_from_input_ids(inputs, example)
             data_points.append(
                 {key: inputs[key] for key in ["input_ids", "labels", "attention_mask"]}
             )
@@ -584,3 +601,14 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
         print(
             f"original avg length: {original_avg_length}; avg packed length: {avg_packed_length}"
         )
+
+    def save_cached(self, save_path: str):
+        data = {
+            "max_length": self.max_length,
+            "pretrained_path": self.pretrained_path,
+            "id_2_length": self.id_2_length,
+            "invalid_data_ids": self.invalid_data_ids,
+        }
+
+        with open(save_path, "w") as f:
+            f.write(json.dumps(data, ensure_ascii=False))

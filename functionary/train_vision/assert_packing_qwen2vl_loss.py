@@ -13,16 +13,23 @@ from functionary.train_vision.qwen2_vl_dataset import (
 )
 import random
 from transformers import Qwen2VLForConditionalGeneration
-import torch 
-from functionary.train.packing.monkey_patch_packing import monkey_patch_packing_for_model
+import torch
+from functionary.train.packing.monkey_patch_packing import (
+    monkey_patch_packing_for_model,
+)
 from typing import Any
 import typer
-import json 
-import math 
+import json
+import math
 
 
 def compute_loss_from_ds(model: Any, tokenizer: Any, ds: Dataset, batch_size: int = 5):
-    data_loader = DataLoader(ds, collate_fn=Qwen2VLCollator(tokenizer, model), batch_size=batch_size, shuffle=False)
+    data_loader = DataLoader(
+        ds,
+        collate_fn=Qwen2VLCollator(tokenizer, model),
+        batch_size=batch_size,
+        shuffle=False,
+    )
     total_loss = 0
     model.eval()
     total_num_loss_tokens = 0  # this is the total number of tokens for computing loss
@@ -44,7 +51,7 @@ def compute_loss_from_ds(model: Any, tokenizer: Any, ds: Dataset, batch_size: in
             total_num_loss_tokens += num_tokens.item()
             total_loss += avg_loss * num_tokens.item()
     return total_loss / total_num_loss_tokens, total_num_loss_tokens
-        
+
 
 def main(
     data_path: str,
@@ -52,7 +59,7 @@ def main(
     data_size: int = 100,
     max_length: int = 8192,
     seed: int = 10,
-    batch_size: int = 5
+    batch_size: int = 5,
 ):
     random.seed(seed)
     prompt_template = get_prompt_template_by_version("qwen2-vl")
@@ -80,10 +87,12 @@ def main(
         pretrained_path,
         torch_dtype=torch.bfloat16,
         use_flash_attention_2=True,
-        device_map="auto"
+        device_map="auto",
     )
-    
-    normal_loss, normal_label_tokens = compute_loss_from_ds(model, tokenizer, normal_ds, batch_size)
+
+    normal_loss, normal_label_tokens = compute_loss_from_ds(
+        model, tokenizer, normal_ds, batch_size
+    )
     print(f"Normal ds: avg_loss: {normal_loss}, lab_tokens: {normal_loss}")
 
     print("Start packing: ")
@@ -95,16 +104,18 @@ def main(
         pad_img_path=pad_img_path,
         max_length=max_length,
         use_img_pad_token=True,
-        store_img_data_in_memory=False,
         max_packed_size=-1,
     )
     packed_ds.stat()
-    
-    packed_loss, packed_label_tokens = compute_loss_from_ds(model, tokenizer, packed_ds, batch_size)
+
+    packed_loss, packed_label_tokens = compute_loss_from_ds(
+        model, tokenizer, packed_ds, batch_size
+    )
     print(f"Packed ds: avg_loss: {packed_loss}, lab_tokens: {packed_label_tokens}")
     print(f"Normal ds: avg_loss: {normal_loss}, lab_tokens: {normal_label_tokens}")
     difference_percentage = math.fabs(packed_loss - normal_loss) * 100 / normal_loss
     print(f"difference_percentage: {difference_percentage} %")
+
 
 if __name__ == "__main__":
     typer.run(main)

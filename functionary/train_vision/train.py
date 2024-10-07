@@ -87,16 +87,13 @@ def print_rank0(*arg):
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="meta-llama/Llama-2-7b-hf")
     model_class: str = field(
-        default="",
-        metadata={
-            "help": "the model_class to load model"
-        }
+        default="", metadata={"help": "the model_class to load model"}
     )
     frozen_pattern: str = field(
         default="",
         metadata={
             "help": "regular expression of parameter names to be frozen during training"
-        }
+        },
     )
 
 
@@ -121,12 +118,6 @@ class DataArguments:
     packing: bool = field(
         default=False, metadata={"help": "Whether use packing or not"}
     )
-    pack_length: int = field(
-        default=0,
-        metadata={
-            "help": "pack_length used to pack data points, default = 0 --> = model_max_length"
-        },
-    )
     max_packed_size: int = field(
         default=-1,
         metadata={
@@ -135,6 +126,14 @@ class DataArguments:
     )
     dataset_type: str = field(
         default="LazyQwen2VLDataset", metadata={"help": "The type of dataset to use"}
+    )
+    train_data_cached: str = field(
+        default="",
+        metadata={"help": "the path to the cached data for loading training data"},
+    )
+    validation_data_cached: str = field(
+        default="",
+        metadata={"help": "the path to the cached data for loading validation data"},
     )
 
 
@@ -175,13 +174,13 @@ def freeze_model_parameters(model: Any, frozen_pattern: str):
     trainable_params = []
     for name, param in model.named_parameters():
         if re.search(frozen_pattern, name):
-            print(f"-----Freeze parameter in the training: {name}")
+            print_rank0(f"-----Freeze parameter in the training: {name}")
             param.requires_grad = False
         else:
             trainable_params.append(name)
-    print("------------TRAINABLE PARAMETERS--------")
-    print("\n".join(trainable_params))
-    print("------------------")
+    print_rank0("------------TRAINABLE PARAMETERS--------")
+    print_rank0("\n".join(trainable_params))
+    print_rank0("------------------")
 
 
 def initialize_tokenizer(
@@ -217,7 +216,7 @@ def initialize_tokenizer(
 
     # add chat_template for tokenizer
     tokenizer.chat_template = prompt_template.get_chat_template_jinja()
-    print("tokenizer: ", tokenizer)
+    # print("tokenizer: ", tokenizer)
 
     # Resize embedding if in the prompt template we add new tokens
     model.resize_token_embeddings(len(tokenizer))
@@ -270,8 +269,7 @@ def train():
         cache_dir=training_args.cache_dir,
         use_flash_attention_2=True,
     )
-    
-    print(model)
+
     if model_args.frozen_pattern:
         freeze_model_parameters(model, model_args.frozen_pattern)
 
@@ -314,7 +312,16 @@ def train():
     with open(data_args.train_data_path, "r") as f:
         raw_train_ds = [json.loads(line) for line in f]
 
-    dataset_class = get_vision_dataset_class(data_args.dataset_type)
+    dataset_class = get_vision_dataset_class(
+        data_args.dataset_type, packing=data_args.packing
+    )
+    print("dataset_class: ", dataset_class)
+    if data_args.packing:
+        add_params = {"max_packed_size": data_args.max_packed_size}
+        if data_args.train_data_cached:
+            add_params["cached_path"] = data_args.train_data_cached
+            print("Use cached to load training dataset")
+
     train_dataset = dataset_class(
         raw_train_ds,
         tokenizer,
@@ -322,6 +329,7 @@ def train():
         data_args.pad_img_path,
         training_args.model_max_length,
         use_img_pad_token=True,
+        **add_params,
     )
 
     if torch.distributed.get_rank() == 0:
@@ -331,6 +339,10 @@ def train():
         with open(data_args.eval_data_path, "r") as f:
             raw_eval_ds = [json.loads(line) for line in f]
 
+        if data_args.validation_data_cached:
+            add_params["cached_path"] = data_args.validation_data_cached
+            print("use cached to load validation dataset")
+
         eval_dataset = dataset_class(
             raw_eval_ds,
             tokenizer,
@@ -338,6 +350,7 @@ def train():
             data_args.pad_img_path,
             training_args.model_max_length,
             use_img_pad_token=True,
+            **add_params,
         )
 
         if torch.distributed.get_rank() == 0:

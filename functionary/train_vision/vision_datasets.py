@@ -1,13 +1,16 @@
-from functionary.train_vision.qwen2_vl_dataset import LazyQwen2VLDataset, Qwen2VLCollator
+from functionary.train_vision.qwen2_vl_dataset import LazyQwen2VLDataset, PackedQwen2VLDataset, Qwen2VLCollator
 from torch.utils.data import Dataset
 from typing import Any
 import torch 
 import numpy as np 
 
 
-def get_vision_dataset_class(dataset_type: str) -> Dataset:
+def get_vision_dataset_class(dataset_type: str, packing: bool) -> Dataset:
     if dataset_type.lower() == "LazyQwen2VLDataset".lower():
-        return LazyQwen2VLDataset
+        if not packing:
+            return LazyQwen2VLDataset
+        else:
+            return PackedQwen2VLDataset
     raise Exception(f"dataset_type: {dataset_type} not found")
 
 def get_collate_fn(dataset_type: str, model: Any, tokenizer: Any):

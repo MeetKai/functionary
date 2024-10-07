@@ -15,6 +15,7 @@ class VisionDataset(Dataset):
         pad_img_path: str,
         max_length: int,
         use_img_pad_token: bool = True,
+        **kwargs
     ):
         super().__init__()
         self.tokenizer = tokenizer
