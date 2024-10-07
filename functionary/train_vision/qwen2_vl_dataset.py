@@ -510,6 +510,7 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         group = self.groups[i]
         lengths = [self.final_lengths[index] for index in group]
+        # print(f"group: {group}; lengths: {lengths}")
         examples = [self.final_raw_data[index] for index in group]
         pad_token_num = self.pad_token_inputs["input_ids"].shape[-1]
         data_points = []
@@ -518,7 +519,7 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
 
         for example in examples:
             prompt = self.prompt_template.get_prompt_from_messages(
-                example["messages"], example["tools"], add_generation_prompt=False
+                example.get("messages", []), example.get("tools", []), add_generation_prompt=False
             )
             images = prompt_utils.extract_images_from_messages(example["messages"])
             if len(images) == 0:
@@ -585,6 +586,8 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
             result["labels"] = torch.concat((label_pads, result["labels"]), dim=0)
 
         assert_model_inputs(result, self.max_length, self.vision_start_id)
+        numb_of_imgs = (result["input_ids"] == self.vision_start_id).sum()
+        # print(f'number of imgs: {numb_of_imgs}, images: {result["image_grid_thw"]}')
         # count label tokens
         return result
 

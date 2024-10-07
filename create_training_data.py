@@ -18,19 +18,19 @@ def main():
     for item in [text_train_data, text_dev_data, img_train_data, img_dev_data]:
         random.shuffle(item)
     
-    total_train = text_train_data[: 4000] + img_train_data
-    total_dev = text_dev_data[: 100] + img_dev_data
+    total_train = text_train_data + img_train_data
+    total_dev = text_dev_data + img_dev_data
     
     random.shuffle(total_train)
     random.shuffle(total_dev)
     
     print(f"number of total_train: {len(total_train)}; total_dev: {len(total_dev)}")
     
-    with open("train_4k_text_4k_img.jsonl", "w") as f:
+    with open("total_train.jsonl", "w") as f:
         for item in total_train:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
     
-    with open("dev_100_text_100_img.jsonl", "w") as f:
+    with open("total_dev.jsonl", "w") as f:
         for item in total_dev:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
 

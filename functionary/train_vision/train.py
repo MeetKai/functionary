@@ -27,6 +27,9 @@ from functionary.train.metrics import (
     extract_indices_of_first_tokens_of_param_values_in_assistant_response,
     extract_unmasked_chunks,
 )
+from functionary.train.packing.monkey_patch_packing import (
+    monkey_patch_packing_for_model,
+)
 
 # set this so we can reproduce
 random.seed(100)
@@ -316,7 +319,10 @@ def train():
         data_args.dataset_type, packing=data_args.packing
     )
     print("dataset_class: ", dataset_class)
+    add_params = {}
     if data_args.packing:
+        # monkey-patch the model to support packing
+        monkey_patch_packing_for_model(model_args.model_name_or_path)
         add_params = {"max_packed_size": data_args.max_packed_size}
         if data_args.train_data_cached:
             add_params["cached_path"] = data_args.train_data_cached
