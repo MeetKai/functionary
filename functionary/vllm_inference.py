@@ -30,6 +30,8 @@ from functionary.prompt_template.prompt_utils import (
     enforce_tool_choice,
     get_random_tool_call_id,
     prepare_messages_for_inference,
+    extract_images_from_messages,
+    get_prompt_str_from_inputs,
 )
 
 
@@ -165,6 +167,26 @@ async def process_chat_completion(
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     if error_check_ret is not None:
         return error_check_ret
+    images = extract_images_from_messages([mess.dict() for mess in request.messages])
+
+    if len(images) == 0:  # inputs without image
+        prompt_token_ids = prepare_messages_for_inference(
+            tokenizer=tokenizer,
+            messages=request.messages,
+            tools_or_functions=tools_or_functions,
+            tool_choice=tool_func_choice,
+        ).tolist()[0]
+    else:
+        final_prompt = get_prompt_str_from_inputs(
+            tokenizer=tokenizer,
+            messages=request.messages,
+            tools_or_functions=tools_or_functions,
+            tool_choice=tool_func_choice,
+        )
+        vision_inputs = {
+            "prompt": final_prompt,
+            "multi_modal_data": {"image": images},
+        }
 
     model_name = request.model
     request_id = f"cmpl-{random_uuid()}"
@@ -207,7 +229,11 @@ async def process_chat_completion(
 
     if enable_grammar_sampling:
         result_generator = engine.generate(
-            inputs=TokensPrompt(prompt_token_ids=prompt_token_ids),
+            inputs=(
+                TokensPrompt(prompt_token_ids=prompt_token_ids)
+                if len(images) == 0
+                else vision_inputs
+            ),
             sampling_params=sampling_params,
             request_id=request_id,
             tools_or_functions=tools_or_functions,
@@ -216,7 +242,11 @@ async def process_chat_completion(
         )
     else:
         result_generator = engine.generate(
-            inputs=TokensPrompt(prompt_token_ids=prompt_token_ids),
+            inputs=(
+                TokensPrompt(prompt_token_ids=prompt_token_ids)
+                if len(images) == 0
+                else vision_inputs
+            ),
             sampling_params=sampling_params,
             request_id=request_id,
         )
