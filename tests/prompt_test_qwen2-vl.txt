@@ -31,7 +31,7 @@ who is the CEO of Meetkai<|im_end|>
 >>>all
 James Kaplan is the Co-Founder and CEO of MeetKai Inc.<|im_end|>
 <|im_start|>user
-is the car Song more expensive than car Tang?<|im_end|>
+is the car Song more expensive than car Tang?<|vision_start|><|image_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|><|im_end|>
 <|im_start|>assistant
 >>>all
 I will get the price of 2 cars and compare>>>get_car_price
@@ -45,7 +45,7 @@ I will get the price of 2 cars and compare>>>get_car_price
 >>>all
 No, the car Tang is less expensive than the car Song. The car Song is priced at $25,000, while the car Tang is priced at $20,000.<|im_end|>
 <|im_start|>user
-what's the weather like in Hanoi?<|im_end|>
+<|vision_start|><|image_pad|><|vision_end|>what's the weather like in Hanoi?<|im_end|>
 <|im_start|>assistant
 >>>get_weather
 {"location": "Hanoi"}<|im_end|>

@@ -19,7 +19,6 @@ def get_max_seqlen_in_batch(attention_mask):
 
 
 def get_unpad_data(attention_mask):
-    print("inside monkey-patched code ...")
     seqlens_in_batch = get_max_seqlen_in_batch(
         attention_mask
     )  # attention_mask.sum(dim=-1, dtype=torch.int32)

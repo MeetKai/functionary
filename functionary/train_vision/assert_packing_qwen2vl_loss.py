@@ -18,10 +18,11 @@ from functionary.train.packing.monkey_patch_packing import monkey_patch_packing_
 from typing import Any
 import typer
 import json 
+import math 
 
 
-def compute_loss_from_ds(model: Any, tokenizer: Any, ds: Dataset):
-    data_loader = DataLoader(ds, collate_fn=get_collate_fn("qwen2vl", None, tokenizer), batch_size=3, shuffle=False)
+def compute_loss_from_ds(model: Any, tokenizer: Any, ds: Dataset, batch_size: int = 5):
+    data_loader = DataLoader(ds, collate_fn=Qwen2VLCollator(tokenizer, model), batch_size=batch_size, shuffle=False)
     total_loss = 0
     model.eval()
     total_num_loss_tokens = 0  # this is the total number of tokens for computing loss
@@ -33,7 +34,6 @@ def compute_loss_from_ds(model: Any, tokenizer: Any, ds: Dataset):
 
         with torch.no_grad():
             avg_loss = model.forward(**batch).loss.item()
-            print("avg_loss: ", avg_loss)
             # compute number of tokens used for computing loss
             labels = batch["labels"]
             shift_labels = labels[..., 1:].contiguous()
@@ -52,7 +52,9 @@ def main(
     data_size: int = 100,
     max_length: int = 8192,
     seed: int = 10,
+    batch_size: int = 5
 ):
+    random.seed(seed)
     prompt_template = get_prompt_template_by_version("qwen2-vl")
     tokenizer = AutoTokenizer.from_pretrained(pretrained_path)
     tokenizer.chat_template = prompt_template.get_chat_template_jinja()
@@ -81,8 +83,8 @@ def main(
         device_map="auto"
     )
     
-    avg_loss, label_tokens = compute_loss_from_ds(model, tokenizer, normal_ds)
-    print(f"Normal ds: avg_loss: {avg_loss}, lab_tokens: {label_tokens}")
+    normal_loss, normal_label_tokens = compute_loss_from_ds(model, tokenizer, normal_ds, batch_size)
+    print(f"Normal ds: avg_loss: {normal_loss}, lab_tokens: {normal_loss}")
 
     print("Start packing: ")
     monkey_patch_packing_for_model(pretrained_path)
@@ -98,9 +100,11 @@ def main(
     )
     packed_ds.stat()
     
-    packed_loss, packed_label_tokens = compute_loss_from_ds(model, tokenizer, packed_ds)
+    packed_loss, packed_label_tokens = compute_loss_from_ds(model, tokenizer, packed_ds, batch_size)
     print(f"Packed ds: avg_loss: {packed_loss}, lab_tokens: {packed_label_tokens}")
-    print(f"Normal ds: avg_loss: {avg_loss}, lab_tokens: {label_tokens}")
+    print(f"Normal ds: avg_loss: {normal_loss}, lab_tokens: {normal_label_tokens}")
+    difference_percentage = math.fabs(packed_loss - normal_loss) * 100 / normal_loss
+    print(f"difference_percentage: {difference_percentage} %")
 
 if __name__ == "__main__":
     typer.run(main)

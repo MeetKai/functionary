@@ -491,7 +491,6 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         group = self.groups[i]
         lengths = [self.final_lengths[index] for index in group]
-        print(f"packed data point: {i}: {group}, lengths: {lengths}")
         examples = [self.final_raw_data[index] for index in group]
         pad_token_num = self.pad_token_inputs["input_ids"].shape[-1]
         data_points = []
@@ -537,7 +536,6 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
             )
             images = prompt_utils.extract_images_from_messages(examples[0]["messages"])
             img_num = len(images)
-            print("final_inputs keys: ", final_inputs.keys())
             final_inputs = truncate_inputs_for_training(
                 final_inputs,
                 self.max_length - pad_token_num,
