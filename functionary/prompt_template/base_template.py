@@ -9,6 +9,7 @@ import jinja2
 
 from functionary.openai_types import Function, Tool
 from functionary.prompt_template import prompt_utils
+from PIL import Image
 
 
 def raise_exception(message):
@@ -381,6 +382,9 @@ class PromptTemplate:
         raise Exception(
             "tool-choice must be one of: None, none, auto, required, or a specific tool"
         )
+
+    def preprocess_image_input(self, image: Image) -> Image:
+        return image
 
     @classmethod
     def get_prompt_template(cls):

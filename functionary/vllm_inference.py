@@ -155,6 +155,7 @@ async def process_chat_completion(
     if error_check_ret is not None:
         return error_check_ret
 
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
     tools_or_functions, tool_func_choice = analyze_tools_and_tool_choice(request)
 
     prompt_token_ids = prepare_messages_for_inference(
@@ -164,29 +165,23 @@ async def process_chat_completion(
         tool_choice=tool_func_choice,
     ).tolist()[0]
 
-    error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
-    if error_check_ret is not None:
-        return error_check_ret
+    # error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
+    # if error_check_ret is not None:
+    #     return error_check_ret
     images = extract_images_from_messages([mess.dict() for mess in request.messages])
+    images = [prompt_template.preprocess_image_input(img) for img in images]
 
-    if len(images) == 0:  # inputs without image
-        prompt_token_ids = prepare_messages_for_inference(
-            tokenizer=tokenizer,
-            messages=request.messages,
-            tools_or_functions=tools_or_functions,
-            tool_choice=tool_func_choice,
-        ).tolist()[0]
-    else:
-        final_prompt = get_prompt_str_from_inputs(
-            tokenizer=tokenizer,
-            messages=request.messages,
-            tools_or_functions=tools_or_functions,
-            tool_choice=tool_func_choice,
-        )
-        vision_inputs = {
-            "prompt": final_prompt,
-            "multi_modal_data": {"image": images},
-        }
+    inputs = {}
+    final_prompt = get_prompt_str_from_inputs(
+        tokenizer=tokenizer,
+        messages=request.messages,
+        tools_or_functions=tools_or_functions,
+        tool_choice=tool_func_choice,
+    )
+    inputs["prompt"] = final_prompt
+    if len(images) > 0:  # inputs without image
+        print("images: ", images)
+        inputs["multi_modal_data"] = {"image": images}
 
     model_name = request.model
     request_id = f"cmpl-{random_uuid()}"
@@ -194,7 +189,7 @@ async def process_chat_completion(
 
     # compute stop_token_ids
     stop_token_ids = []
-    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+
     for stop_tok in prompt_template.get_stop_tokens_for_generation():
         tok_ids = tokenizer.encode(stop_tok, add_special_tokens=False)
         stop_token_ids.append(tok_ids[-1])
@@ -220,7 +215,6 @@ async def process_chat_completion(
             best_of=request.best_of,
             top_k=request.top_k,
             ignore_eos=request.ignore_eos,
-            use_beam_search=request.use_beam_search,
             skip_special_tokens=False,
             logprobs=logprobs,
         )
@@ -242,11 +236,7 @@ async def process_chat_completion(
         )
     else:
         result_generator = engine.generate(
-            inputs=(
-                TokensPrompt(prompt_token_ids=prompt_token_ids)
-                if len(images) == 0
-                else vision_inputs
-            ),
+            inputs,
             sampling_params=sampling_params,
             request_id=request_id,
         )
