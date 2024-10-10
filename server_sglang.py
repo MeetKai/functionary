@@ -16,6 +16,7 @@
 # limitations under the License.
 import argparse
 import asyncio
+import atexit
 import dataclasses
 import json
 import logging
@@ -27,6 +28,8 @@ import threading
 import time
 from http import HTTPStatus
 from typing import Dict, List, Optional, Union
+
+import requests
 
 # Fix a bug of Python threading
 setattr(threading, "_register_atexit", lambda *args, **kwargs: None)
@@ -48,8 +51,8 @@ from sglang.srt.server import Runtime, _set_envs_and_config, _wait_and_warmup
 from sglang.srt.server_args import PortArgs, ServerArgs
 from sglang.srt.utils import (
     add_api_key_middleware,
-    allocate_init_ports,
     configure_logger,
+    is_port_available,
     prepare_model_and_tokenizer,
 )
 
@@ -101,7 +104,7 @@ async def health_generate(request: Request) -> Response:
 
 @app.get("/get_model_info")
 async def get_model_info():
-    global tokenizer_manager
+    """Get the model information."""
     result = {
         "model_path": tokenizer_manager.model_path,
         "is_generation": tokenizer_manager.is_generation,
@@ -111,11 +114,13 @@ async def get_model_info():
 
 @app.get("/get_server_args")
 async def get_server_args():
+    """Get the server arguments."""
     return dataclasses.asdict(tokenizer_manager.server_args)
 
 
 @app.get("/flush_cache")
 async def flush_cache():
+    """Flush the radix cache."""
     tokenizer_manager.flush_cache()
     return Response(
         content="Cache flushed.\nPlease check backend logs for more details. "
@@ -124,6 +129,7 @@ async def flush_cache():
     )
 
 
+# fastapi implicitly converts json in the request to obj (dataclass)
 async def generate_request(obj: GenerateReqInput, request: Request):
     """Handle a generate request."""
     if obj.stream:
@@ -174,11 +180,11 @@ def available_models():
     return ModelList(data=model_cards)
 
 
-def launch_server(
-    server_args: ServerArgs,
-    pipe_finish_writer: Optional[mp.connection.Connection] = None,
-):
-    """Launch an HTTP server."""
+def launch_engine(server_args: ServerArgs):
+    """
+    Launch the Tokenizer Manager in the main process, the Scheduler in a subprocess, and the Detokenizer Manager in another subprocess.
+    """
+
     global tokenizer_manager
 
     # Configure global environment
@@ -187,18 +193,7 @@ def launch_server(
     _set_envs_and_config(server_args)
 
     # Allocate ports for inter-process communications
-    server_args.port, server_args.additional_ports = allocate_init_ports(
-        server_args.port,
-        server_args.additional_ports,
-        server_args.dp_size,
-    )
-    ports = server_args.additional_ports
-    port_args = PortArgs(
-        tokenizer_port=ports[0],
-        scheduler_port=ports[1],
-        detokenizer_port=ports[2],
-        nccl_ports=ports[3:],
-    )
+    port_args = PortArgs.init_new(server_args)
     logger.info(f"{server_args=}")
 
     # If using model from www.modelscope.cn, first download the model.
@@ -255,6 +250,29 @@ def launch_server(
     for i in range(len(scheduler_pipe_readers)):
         scheduler_pipe_readers[i].recv()
 
+
+def launch_server(
+    server_args: ServerArgs,
+    pipe_finish_writer: Optional[mp.connection.Connection] = None,
+):
+    """
+    Launch SRT (SGLang Runtime) Server
+
+    The SRT server consists of an HTTP server and the SRT engine.
+
+    1. HTTP server: A FastAPI server that routes requests to the engine.
+    2. SRT engine:
+        1. Tokenizer Manager: Tokenizes the requests and sends them to the scheduler.
+        2. Scheduler (subprocess): Receives requests from the Tokenizer Manager, schedules batches, forwards them, and sends the output tokens to the Detokenizer Manager.
+        3. Detokenizer Manager (subprocess): Detokenizes the output tokens and sends the result back to the Tokenizer Manager.
+
+    Note:
+    1. The HTTP server and Tokenizer Manager both run in the main process.
+    2. Inter-process communication is done through ICP (each process uses a different port) via the ZMQ library.
+    """
+
+    launch_engine(server_args=server_args)
+
     # Add api key authorization
     if server_args.api_key:
         add_api_key_middleware(app, server_args.api_key)
@@ -279,27 +297,6 @@ def launch_server(
         t.join()
 
 
-def find_free_port(exclude_port: int) -> int:
-    """
-    This function finds a free port that is not the excluded port.
-
-    Args:
-        exclude_port (int): The port number to exclude from selection.
-
-    Returns:
-        int: A free port number that is not the excluded port.
-    """
-    port = 10000
-    while True:
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(("", port))
-                if s.getsockname()[1] != exclude_port:
-                    return s.getsockname()[1]
-        except socket.error:
-            port += 1
-
-
 class FunctionaryRuntime(Runtime):
     """
     A wrapper for the server.
@@ -316,17 +313,18 @@ class FunctionaryRuntime(Runtime):
         """See the arguments in server_args.py::ServerArgs"""
         self.server_args = ServerArgs(*args, log_level=log_level, **kwargs)
 
+        # before python program terminates, call shutdown implicitly. Therefore, users don't have to explicitly call .shutdown()
+        atexit.register(self.shutdown)
+
         # Pre-allocate ports
-        self.server_args.port, self.server_args.additional_ports = allocate_init_ports(
-            self.server_args.port,
-            self.server_args.additional_ports,
-            self.server_args.dp_size,
-        )
+        for port in range(10000, 40000):
+            if is_port_available(port):
+                break
+            port += 1
+        self.server_args.port = port
 
         self.url = self.server_args.url()
-        self.generate_url = (
-            f"http://{self.server_args.host}:{self.server_args.port}/generate"
-        )
+        self.generate_url = self.url + "/generate"
 
         self.pid = None
         pipe_reader, pipe_writer = mp.Pipe(duplex=False)
@@ -373,21 +371,19 @@ if __name__ == "__main__":
     server_args = ServerArgs.from_cli_args(args)
 
     if args.grammar_sampling:
-        wrapper_port = server_args.port
-        # Find a new random free port for the backend server runtime
-        server_args.port = find_free_port(exclude_port=wrapper_port)
         backend = FunctionaryRuntime(**vars(server_args))
         sgl.set_default_backend(
-            sgl.RuntimeEndpoint(f"http://{server_args.host}:{server_args.port}")
+            sgl.RuntimeEndpoint(
+                f"http://{backend.server_args.host}:{backend.server_args.port}"
+            )
         )
         uvicorn.run(
             app,
             host=server_args.host,
-            port=wrapper_port,
+            port=server_args.port,
             log_level=server_args.log_level_http or server_args.log_level,
             timeout_keep_alive=5,
             loop="uvloop",
         )
-        backend.shutdown()
     else:
         launch_server(server_args)

@@ -1,4 +1,4 @@
 jsonref~=1.1.0
-sglang[all]==0.2.13
+sglang[all]==0.3.3
 --find-links https://flashinfer.ai/whl/cu121/torch2.4/flashinfer/
-flashinfer==0.1.5
+flashinfer==0.1.6

@@ -409,6 +409,7 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
     request_json = await raw_request.json()
     request = ChatCompletionRequest(**request_json)
     tokenizer = backend.get_tokenizer()
+    request_id = f"cmpl-{uuid.uuid4().hex}"
 
     # Convert legacy functions to tools
     if request.functions is not None:
@@ -453,12 +454,14 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
         return_text=True,
     )
 
-    content_var = "content"
+    content_var = "content_"
     completion_tokens = 0
 
     @sgl.function
     def generate_response(s: ProgramState, gen_state: Dict):
         nonlocal completion_tokens
+
+        idx = 0
 
         s += prompt
 
@@ -484,6 +487,7 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
             return stop_match in stop_tokens
 
         while True:
+            content_var = f"content_{idx}"
             if gen_state["stage"] == "function":
                 choices = [
                     tool["function"]["name"]
@@ -503,6 +507,7 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
                 completion_tokens += len(
                     tokenizer.encode(s[content_var], add_special_tokens=False)
                 )
+                idx += 1
             elif gen_state["stage"] == "pre-parameter":
                 s += prompt_template.fn_param_sep_token
                 new_token = prompt_template.fn_param_sep_token
@@ -515,17 +520,20 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
                 s += sgl.gen(name=content_var, regex=regex, stop=function_call_token)
                 new_token = s[content_var]
                 completion_tokens += s.get_meta_info(content_var)["completion_tokens"]
+                idx += 1
                 if check_stop_condition():
                     break
             elif gen_state["stage"] in ["text-gen", "code-interpreter"]:
                 s += sgl.gen(name=content_var, stop=function_call_token)
                 completion_tokens += s.get_meta_info(content_var)["completion_tokens"]
+                idx += 1
                 if check_stop_condition():
                     break
                 else:
                     s += function_call_token
                     new_token = s[content_var] + function_call_token
             elif gen_state["stage"] == "pre-function":
+                breakpoint()
                 s += function_call_token
                 new_token = function_call_token
 
@@ -547,6 +555,69 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
         presence_penalty=request.presence_penalty,
         stream=request.stream,
     )
+
+    async def wrap_sgl_generator():
+        nonlocal tokenizer, state
+
+        for out in state.text_iter():
+            if out.startswith(prompt):
+                continue
+            yield out, None
+        yield "", "stop"
+
+    async def completion_stream_generator(functions):
+        generator = wrap_sgl_generator()
+
+        tool_call_count = 0
+        async for response in generate_openai_format_from_stream_async(
+            generator, prompt_template, tool_func_choice, tools_or_functions
+        ):
+            # Convert tool_calls to function_call if request.functions is provided
+            if (
+                functions
+                and len(functions) > 0
+                and "tool_calls" in response["delta"]
+                and response["delta"]["tool_calls"]
+                and len(response["delta"]["tool_calls"]) > 0
+            ):
+                tool_name = response["delta"]["tool_calls"][0]["function"]["name"]
+                tool_args = response["delta"]["tool_calls"][0]["function"]["arguments"]
+                response["delta"]["function_call"] = response["delta"]["tool_calls"][0][
+                    "function"
+                ]
+                response["delta"]["tool_calls"] = None
+                if tool_name and len(tool_name) > 0 and tool_args == "":
+                    tool_call_count += 1
+
+            # Workaround Fixes
+            response["delta"]["role"] = "assistant"
+            if (
+                "tool_calls" in response["delta"]
+                and response["delta"]["tool_calls"]
+                and len(response["delta"]["tool_calls"]) > 0
+            ):
+                for tool_call in response["delta"]["tool_calls"]:
+                    if tool_call.get("type") is None:
+                        tool_call["type"] = "function"
+
+            chunk = StreamChoice(**response)
+            result = ChatCompletionChunk(
+                id=request_id, choices=[chunk], model=request.model
+            )
+            chunk_dic = result.dict(exclude_unset=True)
+            chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
+            yield f"data: {chunk_data}\n\n"
+            # Break from for loop after the first tool_call is streamed if functions is provided
+            if functions and tool_call_count == 2:
+                break
+        yield "data: [DONE]\n\n"
+
+    if request.stream:
+        return StreamingResponse(
+            completion_stream_generator(functions=request.functions),
+            media_type="text/event-stream",
+            # background=tokenizer_manager.create_abort_task(adapted_request),
+        )
 
     chat_mess = prompt_template.parse_assistant_response(
         llm_output=state.text()[len(prompt) :], tool_choice=tool_func_choice
@@ -629,4 +700,5 @@ def to_openai_style_logprobs(
     if output_top_logprobs is not None:
         append_top_logprobs(output_top_logprobs)
 
+    return ret_logprobs
     return ret_logprobs
