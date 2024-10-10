@@ -236,7 +236,7 @@ class Llama3TemplateV3(PromptTemplate):
             if gen_state["func_name"] is not None and gen_state["func_name"] != "all":
                 finish_reason = "tool_calls"
             return gen_state, prompt_utils.get_text_delta_response(
-                None, False, finish_reason
+                None, True, finish_reason
             )
 
         responses = []
@@ -262,13 +262,13 @@ class Llama3TemplateV3(PromptTemplate):
                 if gen_state["first_time_func"]:
                     responses.append(
                         prompt_utils.get_function_delta_response(
-                            gen_state, "", True, False, finish_reason
+                            gen_state, "", True, True, finish_reason
                         )
                     )
                     gen_state["first_time_func"] = False
                 responses.append(
                     prompt_utils.get_function_delta_response(
-                        gen_state, delta_text, False, False, finish_reason
+                        gen_state, delta_text, True, True, finish_reason
                     )
                 )
 

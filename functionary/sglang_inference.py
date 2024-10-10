@@ -360,17 +360,6 @@ async def v1_chat_completions(tokenizer_manager, raw_request: Request):
                     response["delta"] = {}
                     response["finish_reason"] = "function_call"
 
-                # Workaround Fixes
-                response["delta"]["role"] = "assistant"
-                if (
-                    "tool_calls" in response["delta"]
-                    and response["delta"]["tool_calls"]
-                    and len(response["delta"]["tool_calls"]) > 0
-                ):
-                    for tool_call in response["delta"]["tool_calls"]:
-                        if tool_call.get("type") is None:
-                            tool_call["type"] = "function"
-
                 chunk = StreamChoice(**response)
                 result = ChatCompletionChunk(
                     id=adapted_request.rid, choices=[chunk], model=request.model
@@ -527,7 +516,6 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
                     s += function_call_token
                     new_token = s[content_var] + function_call_token
             elif gen_state["stage"] == "pre-function":
-                breakpoint()
                 s += function_call_token
                 new_token = function_call_token
 
@@ -551,8 +539,6 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
     )
 
     async def wrap_sgl_generator():
-        nonlocal tokenizer, state
-
         for out in state.text_iter():
             if out.startswith(prompt):
                 continue
@@ -583,17 +569,6 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
                 if tool_name and len(tool_name) > 0 and tool_args == "":
                     tool_call_count += 1
 
-            # Workaround Fixes
-            response["delta"]["role"] = "assistant"
-            if (
-                "tool_calls" in response["delta"]
-                and response["delta"]["tool_calls"]
-                and len(response["delta"]["tool_calls"]) > 0
-            ):
-                for tool_call in response["delta"]["tool_calls"]:
-                    if tool_call.get("type") is None:
-                        tool_call["type"] = "function"
-
             chunk = StreamChoice(**response)
             result = ChatCompletionChunk(
                 id=request_id, choices=[chunk], model=request.model
@@ -610,7 +585,6 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
         return StreamingResponse(
             completion_stream_generator(functions=request.functions),
             media_type="text/event-stream",
-            # background=tokenizer_manager.create_abort_task(adapted_request),
         )
 
     chat_mess = prompt_template.parse_assistant_response(

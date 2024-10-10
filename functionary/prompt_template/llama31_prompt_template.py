@@ -173,7 +173,7 @@ class Llama31Template(PromptTemplate):
             if gen_state["stage"] in ["parameter", "code-interpreter"]:
                 finish_reason = "tool_calls"
             return gen_state, prompt_utils.get_text_delta_response(
-                None, False, finish_reason
+                None, True, finish_reason
             )
 
         responses = []
@@ -219,12 +219,12 @@ class Llama31Template(PromptTemplate):
                 gen_state["first_time_func"] = False
                 responses.append(
                     prompt_utils.get_function_delta_response(
-                        gen_state, "", True, False, finish_reason
+                        gen_state, "", True, True, finish_reason
                     )
                 )
                 responses.append(
                     prompt_utils.get_function_delta_response(
-                        gen_state, gen_state["curr_text"], False, False, finish_reason
+                        gen_state, gen_state["curr_text"], True, True, finish_reason
                     )
                 )
 
@@ -233,7 +233,7 @@ class Llama31Template(PromptTemplate):
                 if len(delta_args) > 0:
                     responses.append(
                         prompt_utils.get_function_delta_response(
-                            gen_state, delta_args, False, False, finish_reason
+                            gen_state, delta_args, True, True, finish_reason
                         )
                     )
             elif "</" in gen_state["curr_text"] and (
@@ -247,19 +247,19 @@ class Llama31Template(PromptTemplate):
             else:
                 responses.append(
                     prompt_utils.get_function_delta_response(
-                        gen_state, delta_text, False, False, finish_reason
+                        gen_state, delta_text, True, True, finish_reason
                     )
                 )
         elif gen_state["stage"] == "code-interpreter":
             if gen_state["first_time_func"]:
                 gen_state["first_time_func"] = False
                 first_function_response = prompt_utils.get_function_delta_response(
-                    gen_state, "", True, False, finish_reason
+                    gen_state, "", True, True, finish_reason
                 )
                 responses.append(first_function_response)
             responses.append(
                 prompt_utils.get_function_delta_response(
-                    gen_state, delta_text, False, False, finish_reason
+                    gen_state, delta_text, True, True, finish_reason
                 )
             )
 
