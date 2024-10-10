@@ -454,14 +454,12 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
         return_text=True,
     )
 
-    content_var = "content_"
+    content_var = "content"
     completion_tokens = 0
 
     @sgl.function
     def generate_response(s: ProgramState, gen_state: Dict):
         nonlocal completion_tokens
-
-        idx = 0
 
         s += prompt
 
@@ -487,7 +485,6 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
             return stop_match in stop_tokens
 
         while True:
-            content_var = f"content_{idx}"
             if gen_state["stage"] == "function":
                 choices = [
                     tool["function"]["name"]
@@ -507,7 +504,6 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
                 completion_tokens += len(
                     tokenizer.encode(s[content_var], add_special_tokens=False)
                 )
-                idx += 1
             elif gen_state["stage"] == "pre-parameter":
                 s += prompt_template.fn_param_sep_token
                 new_token = prompt_template.fn_param_sep_token
@@ -520,13 +516,11 @@ async def v1_chat_completions_grammar_sampling(backend, raw_request: Request):
                 s += sgl.gen(name=content_var, regex=regex, stop=function_call_token)
                 new_token = s[content_var]
                 completion_tokens += s.get_meta_info(content_var)["completion_tokens"]
-                idx += 1
                 if check_stop_condition():
                     break
             elif gen_state["stage"] in ["text-gen", "code-interpreter"]:
                 s += sgl.gen(name=content_var, stop=function_call_token)
                 completion_tokens += s.get_meta_info(content_var)["completion_tokens"]
-                idx += 1
                 if check_stop_condition():
                     break
                 else:
