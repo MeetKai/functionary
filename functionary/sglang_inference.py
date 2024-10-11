@@ -247,13 +247,12 @@ def generate_sglang_srt_response(
             new_token = prompt_template.fn_param_sep_token
         elif gen_state["stage"] == "parameter":
             tool = next(t for t in tools if t["name"] == gen_state["func_name"])
-            regex = (
-                build_regex_from_schema(json.dumps(tool["parameters"]))
-                + f"({re.escape(function_call_token)})?"
-            )
+            regex = build_regex_from_schema(json.dumps(tool["parameters"]))
             s += sgl.gen(name=CONTENT_VAR, regex=regex, stop=function_call_token)
             new_token = s[CONTENT_VAR]
             completion_tokens += s.get_meta_info(CONTENT_VAR)["completion_tokens"]
+            # Generate new token to determin if there is another tool call
+            s += sgl.gen(name=CONTENT_VAR, stop=function_call_token)
             if check_stop_condition():
                 break
         elif gen_state["stage"] in ["text-gen", "code-interpreter"]:
