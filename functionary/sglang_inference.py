@@ -21,8 +21,9 @@ import os
 import re
 import time
 import uuid
+from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional, Tuple, Union
 
 import sglang as sgl
 from fastapi import Request
@@ -31,16 +32,10 @@ from outlines.fsm.json_schema import build_regex_from_schema
 from sglang.lang.choices import greedy_token_selection
 from sglang.lang.interpreter import ProgramState
 from sglang.srt.managers.io_struct import GenerateReqInput
-from sglang.srt.openai_api.protocol import (
-    BatchResponse,
-    ChatCompletionTokenLogprob,
-    ChoiceLogprobs,
-    DeltaMessage,
-    ErrorResponse,
-    FileResponse,
-    LogProbs,
-    TopLogprob,
-)
+from sglang.srt.managers.tokenizer_manager import TokenizerManager
+from sglang.srt.openai_api.protocol import ErrorResponse
+from sglang.srt.server import Runtime
+from transformers import AutoTokenizer
 
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.inference_utils import analyze_tools_and_tool_choice
@@ -55,7 +50,10 @@ from functionary.openai_types import (
     Tool,
     UsageInfo,
 )
-from functionary.prompt_template import get_prompt_template_from_tokenizer
+from functionary.prompt_template import (
+    PromptTemplate,
+    get_prompt_template_from_tokenizer,
+)
 from functionary.prompt_template.prompt_utils import prepare_messages_for_inference
 
 
@@ -65,22 +63,27 @@ class FileMetadata:
         self.purpose = purpose
 
 
-# In-memory storage for batch jobs and files
-batch_storage: Dict[str, BatchResponse] = {}
-file_id_request: Dict[str, FileMetadata] = {}
-file_id_response: Dict[str, FileResponse] = {}
-# map file id to file path in SGLang backend
-file_id_storage: Dict[str, str] = {}
-
-
-# backend storage directory
-storage_dir = None
-
-
 # Choices sampling method for sgl.select
 CHOICES_SAMPLING_METHOD = greedy_token_selection
 # Variable name for sgl frontend runtime generation
 CONTENT_VAR = "content"
+
+
+@dataclass
+class ChatCompletionParams:
+    """Parameters and context used across various chat completion functions"""
+
+    adapted_request: GenerateReqInput
+    raw_request: Request
+    request: ChatCompletionRequest
+    tokenizer: AutoTokenizer
+    tokenizer_manager: Optional[TokenizerManager]
+    srt_backend: Optional[Runtime]
+    prompt_template: PromptTemplate
+    tools_or_functions: List[Dict]
+    tool_func_choice: Optional[Union[str, Tool, Function]]
+    frontend_state: Optional[ProgramState]
+    grammar_sampling: bool
 
 
 def create_error_response(
@@ -104,7 +107,7 @@ def create_streaming_error_response(
 
 def convert_tool_calls_to_function_call(
     functions: Optional[List[Function]], chat_message: Dict
-):
+) -> Dict:
     if (
         functions
         and len(functions) > 0
@@ -122,8 +125,34 @@ def convert_tool_calls_to_function_call(
 
 
 def v1_chat_generate_request(
-    request, tokenizer, tools_or_functions, tool_func_choice, return_text=False
-):
+    request: ChatCompletionRequest,
+    tokenizer: AutoTokenizer,
+    tools_or_functions: List[Dict],
+    tool_func_choice: Optional[Union[str, Tool, Function]],
+    return_text: bool = False,
+) -> Tuple[GenerateReqInput, ChatCompletionRequest]:
+    """
+    Generate an adapted request that SGLang uses.
+
+    This function prepares the input for SGLang inference by processing the chat completion request,
+    applying the appropriate tokenization, and setting up the sampling parameters.
+
+    Args:
+        request (ChatCompletionRequest): The original chat completion request.
+        tokenizer (AutoTokenizer): The tokenizer to use for encoding the text input, if any.
+        tools_or_functions (List[Dict]): List of available tools or functions.
+        tool_func_choice (Optional[Union[str, Tool, Function]]): The chosen tool or function, if any.
+        return_text (bool, optional): Whether to return the input as text instead of token IDs. Defaults to False.
+
+    Returns:
+        Tuple[GenerateReqInput, ChatCompletionRequest]: A tuple containing:
+            - The adapted request (GenerateReqInput) to be used by SGLang.
+            - The original request (ChatCompletionRequest), NOT modified.
+
+    Note:
+        This function handles the conversion of the chat messages into a format suitable for SGLang,
+        applies the chat template, sets up stopping criteria, and configures sampling parameters.
+    """
     # Apply chat template and its stop strings.
     input_ids = prepare_messages_for_inference(
         tokenizer=tokenizer,
@@ -184,6 +213,24 @@ def generate_sglang_srt_response(
     tool_func_choice,
     tokenizer,
 ):
+    """
+    Generate a response using SGLang Frontend Runtime (SRT).
+
+    This function is used when grammar-sampling is enabled. It uses the SRT program
+    state to update the specific prompt-template Finite State Machine (FSM) generation
+    state. Constrained generation is performed at specific stages of the FSM.
+
+    Args:
+        s (ProgramState): The current program state in SGLang.
+        prompt (str): The input prompt to generate a response for.
+        prompt_template: The template used to structure the prompt and response.
+        tools_or_functions (list): Available tools or functions for the model to use.
+        tool_func_choice (str): The chosen tool or function choice.
+        tokenizer: The tokenizer used for encoding and decoding text.
+
+    Returns:
+        ProgramState: The updated program state after generating the response.
+    """
     completion_tokens = 0
     stop_tokens = prompt_template.get_stop_tokens_for_generation()
     function_call_token = prompt_template.get_start_of_function_call_token()
@@ -275,34 +322,38 @@ def generate_sglang_srt_response(
         )
 
 
-async def wrap_sgl_generator(
-    adapted_request,
-    raw_request,
-    request,
-    tokenizer,
-    tokenizer_manager,
-    backend,
-    prompt_template,
-    tools_or_functions,
-    tool_func_choice,
-    frontend_state,
-    grammar_sampling,
-):
-    if grammar_sampling:
+async def wrap_sgl_generator(params: ChatCompletionParams):
+    """
+    This asynchronous generator function yields generated text chunks along
+    with their finish reasons.
+
+    Args:
+        params (ChatCompletionParams): A dataclass containing all necessary
+            parameters for the chat completion, including the request details,
+            tokenizer, backend, and other configuration options.
+
+    Yields:
+        Tuple[str, Optional[str]]: A tuple containing:
+            - str: The generated text chunk.
+            - Optional[str]: The finish reason, if any (e.g., "stop", "length", etc.).
+    """
+    if params.grammar_sampling:
         prompt = (
-            adapted_request.text
-            if adapted_request.text
-            else tokenizer.decode(adapted_request.input_ids)
+            params.adapted_request.text
+            if params.adapted_request.text
+            else params.tokenizer.decode(params.adapted_request.input_ids)
         )
-        for out in frontend_state.text_iter():
+        # Iterates over the text generated by the SGLang Frontend Runtime
+        for out in params.frontend_state.text_iter():
             if out.startswith(prompt):
                 continue
             yield out, None
         yield "", "stop"
     else:
+        # Iterates over the text generated by the tokenizer manager
         stream_buffer = ""
-        async for content in tokenizer_manager.generate_request(
-            adapted_request, raw_request
+        async for content in params.tokenizer_manager.generate_request(
+            params.adapted_request, params.raw_request
         ):
             text = content["text"]
             delta = text[len(stream_buffer) :]
@@ -316,41 +367,43 @@ async def wrap_sgl_generator(
             yield delta, finish_reason
 
 
-async def completion_stream_generator(
-    adapted_request,
-    raw_request,
-    request,
-    tokenizer,
-    tokenizer_manager,
-    backend,
-    prompt_template,
-    tools_or_functions,
-    tool_func_choice,
-    frontend_state,
-    grammar_sampling,
-):
-    generator = wrap_sgl_generator(
-        adapted_request,
-        raw_request,
-        request,
-        tokenizer,
-        tokenizer_manager,
-        backend,
-        prompt_template,
-        tools_or_functions,
-        tool_func_choice,
-        frontend_state,
-        grammar_sampling,
-    )
+async def completion_stream_generator(params: ChatCompletionParams):
+    """
+    This asynchronous generator function produces a stream of ChatCompletionChunk
+    objects. It handles both grammar-sampling and regular generations,
+    depending on the parameters provided.
+
+    Args:
+        params (ChatCompletionParams): A dataclass containing all necessary
+            parameters for the chat completion, including the request details,
+            tokenizer, backend, and other configuration options.
+
+    Yields:
+        str: JSON-formatted strings representing chunks of the chat completion
+             response, including delta updates and finish reasons.
+
+    Notes:
+        - The function adapts its behavior based on whether grammar sampling
+          is enabled or not.
+        - It handles the conversion of tool calls to function calls when
+          appropriate.
+        - The stream is terminated with a "[DONE]" message.
+    """
+    # Initialize the text generator
+    generator = wrap_sgl_generator(params)
 
     tool_call_count = 0
+    # Generate the text in openai format
     async for response in generate_openai_format_from_stream_async(
-        generator, prompt_template, tool_func_choice, tools_or_functions
+        generator,
+        params.prompt_template,
+        params.tool_func_choice,
+        params.tools_or_functions,
     ):
         # Convert tool_calls to function_call if request.functions is provided
         if (
-            request.functions
-            and len(request.functions) > 0
+            params.request.functions
+            and len(params.request.functions) > 0
             and "tool_calls" in response["delta"]
             and response["delta"]["tool_calls"]
             and len(response["delta"]["tool_calls"]) > 0
@@ -365,71 +418,75 @@ async def completion_stream_generator(
                 tool_call_count += 1
 
             # Return finish_reason after the first tool_call is streamed if functions is provided
-            if request.functions and tool_call_count == 2:
+            if params.request.functions and tool_call_count == 2:
                 response["delta"] = {}
                 response["finish_reason"] = "function_call"
 
         chunk = StreamChoice(**response)
         result = ChatCompletionChunk(
-            id=adapted_request.rid, choices=[chunk], model=request.model
+            id=params.adapted_request.rid, choices=[chunk], model=params.request.model
         )
         chunk_dic = result.dict(exclude_unset=True)
         chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
         yield f"data: {chunk_data}\n\n"
         # Break from for loop after the first tool_call is streamed if functions is provided
-        if request.functions and tool_call_count == 2:
+        if params.request.functions and tool_call_count == 2:
             break
     yield "data: [DONE]\n\n"
 
 
 async def v1_chat_generate_completion(
-    adapted_request,
-    raw_request,
-    request,
-    tokenizer,
-    tokenizer_manager,
-    backend,
-    prompt_template,
-    tools_or_functions,
-    tool_func_choice,
-):
-    grammar_sampling = True if backend else False
-    if grammar_sampling:
+    params: ChatCompletionParams,
+) -> Tuple[Union[StreamingResponse, str], Optional[JSONResponse]]:
+    """
+    Generate a text completion.
+
+    This function handles both streaming and non-streaming responses for chat completions.
+    It supports both regular and grammar-sampling generations.
+
+    Args:
+        params (ChatCompletionParams): A dataclass containing all necessary parameters and context
+                                       for generating the text.
+
+    Returns:
+        Tuple[Union[StreamingResponse, str], Optional[JSONResponse]]:
+            - If streaming is requested, returns a StreamingResponse object.
+            - If non-streaming, returns the generated text as a string.
+            - The second element is an optional JSONResponse for error cases.
+
+    Note:
+        - For grammar-sampling, it uses the SGLang Frontend Runtime.
+        - For regular generation, it uses the tokenizer manager to generate the response.
+        - Streaming responses are handled by the completion_stream_generator function.
+    """
+    # If streaming, return the StreamingResponse else return the text
+    if params.grammar_sampling:
+        # Form the text prompt and run the SGLang Frontend Runtime
         prompt = (
-            adapted_request.text
-            if adapted_request.text
-            else tokenizer.decode(adapted_request.input_ids)
+            params.adapted_request.text
+            if params.adapted_request.text
+            else params.tokenizer.decode(params.adapted_request.input_ids)
         )
         state = generate_sglang_srt_response.run(
             prompt=prompt,
-            prompt_template=prompt_template,
-            tools_or_functions=tools_or_functions,
-            tool_func_choice=tool_func_choice,
-            tokenizer=tokenizer,
-            max_new_tokens=request.max_tokens,
-            temperature=request.temperature,
-            top_p=request.top_p,
-            top_k=request.top_k,
-            frequency_penalty=request.frequency_penalty,
-            presence_penalty=request.presence_penalty,
-            stream=request.stream,
+            prompt_template=params.prompt_template,
+            tools_or_functions=params.tools_or_functions,
+            tool_func_choice=params.tool_func_choice,
+            tokenizer=params.tokenizer,
+            max_new_tokens=params.request.max_tokens,
+            temperature=params.request.temperature,
+            top_p=params.request.top_p,
+            top_k=params.request.top_k,
+            frequency_penalty=params.request.frequency_penalty,
+            presence_penalty=params.request.presence_penalty,
+            stream=params.request.stream,
         )
-        if adapted_request.stream:
+
+        if params.adapted_request.stream:
+            params.frontend_state = state
             return (
                 StreamingResponse(
-                    completion_stream_generator(
-                        adapted_request,
-                        raw_request,
-                        request,
-                        tokenizer,
-                        tokenizer_manager,
-                        backend,
-                        prompt_template,
-                        tools_or_functions,
-                        tool_func_choice,
-                        state,
-                        grammar_sampling,
-                    ),
+                    completion_stream_generator(params),
                     media_type="text/event-stream",
                 ),
                 None,
@@ -437,31 +494,21 @@ async def v1_chat_generate_completion(
         else:
             return state.text()[len(prompt) :], None
     else:
-        if adapted_request.stream:
+        if params.adapted_request.stream:
             return (
                 StreamingResponse(
-                    completion_stream_generator(
-                        adapted_request,
-                        raw_request,
-                        request,
-                        tokenizer,
-                        tokenizer_manager,
-                        backend,
-                        prompt_template,
-                        tools_or_functions,
-                        tool_func_choice,
-                        None,
-                        grammar_sampling,
-                    ),
+                    completion_stream_generator(params),
                     media_type="text/event-stream",
-                    background=tokenizer_manager.create_abort_task(adapted_request),
+                    background=params.tokenizer_manager.create_abort_task(
+                        params.adapted_request
+                    ),
                 ),
                 None,
             )
         else:
             try:
-                ret = await tokenizer_manager.generate_request(
-                    adapted_request, raw_request
+                ret = await params.tokenizer_manager.generate_request(
+                    params.adapted_request, params.raw_request
                 ).__anext__()
             except ValueError as e:
                 return None, create_error_response(str(e))
@@ -469,19 +516,29 @@ async def v1_chat_generate_completion(
 
 
 def v1_chat_generate_response(
-    adapted_request,
-    raw_request,
-    request,
-    output_text,
-    prompt_template,
-    tokenizer,
-    tool_func_choice,
-):
-    chat_mess = prompt_template.parse_assistant_response(
-        llm_output=output_text, tool_choice=tool_func_choice
+    output_text: str, params: ChatCompletionParams
+) -> ChatCompletionResponse:
+    """
+    Generate a ChatCompletionResponse from the output text and parameters.
+
+    This function processes the output text, parses it according to the prompt template,
+    and constructs a ChatCompletionResponse object.
+
+    Args:
+        output_text (str): The raw output text from SGLang inference.
+        params (ChatCompletionParams): Parameters and context for the chat completion.
+
+    Returns:
+        ChatCompletionResponse: An OpenAI-compatible response containing the assistant's message,
+        usage information, and other metadata.
+    """
+    # Parse the output text using the specific prompt template
+    chat_mess = params.prompt_template.parse_assistant_response(
+        llm_output=output_text, tool_choice=params.tool_func_choice
     )
+    # Convert tool_calls to function_call if request.functions is provided
     chat_mess = convert_tool_calls_to_function_call(
-        functions=request.functions, chat_message=chat_mess
+        functions=params.request.functions, chat_message=chat_mess
     )
 
     # Postprocess finish reason
@@ -499,15 +556,17 @@ def v1_chat_generate_response(
         )
     ]
     prompt_tokens = (
-        len(adapted_request.input_ids)
-        if adapted_request.input_ids
-        else len(tokenizer.encode(adapted_request.text))
+        len(params.adapted_request.input_ids)
+        if params.adapted_request.input_ids
+        else len(params.tokenizer.encode(params.adapted_request.text))
     )
-    completion_tokens = len(tokenizer.encode(output_text, add_special_tokens=False)) + 1
+    completion_tokens = (
+        len(params.tokenizer.encode(output_text, add_special_tokens=False)) + 1
+    )  # +1 for the eos token
 
     response = ChatCompletionResponse(
-        id=adapted_request.rid,
-        model=request.model,
+        id=params.adapted_request.rid,
+        model=params.request.model,
         choices=choices,
         usage=UsageInfo(
             prompt_tokens=prompt_tokens,
@@ -518,82 +577,74 @@ def v1_chat_generate_response(
     return response
 
 
-async def v1_chat_completions(tokenizer_manager, backend, raw_request: Request):
+async def v1_chat_completions(
+    tokenizer_manager: Optional[TokenizerManager],
+    srt_backend: Optional[Runtime],
+    raw_request: Request,
+):
+    """
+    Handle chat completions for v1 of the API.
+
+    This function processes the incoming request, prepares the necessary parameters,
+    generates the chat completion, and returns the response. It supports both
+    streaming and non-streaming responses.
+
+    Args:
+        tokenizer_manager (Optional[TokenizerManager]): Manager for tokenization tasks.
+            None if grammar sampling is enabled.
+        srt_backend (Optional[Runtime]): The SRT backend for processing.
+            None if grammar sampling is disabled.
+        raw_request (Request): The raw incoming request object.
+
+    Returns:
+        Union[ChatCompletionResponse, StreamingResponse, JSONResponse]:
+            - ChatCompletionResponse for non-streaming successful responses.
+            - StreamingResponse for streaming responses.
+            - JSONResponse for error responses.
+
+    Raises:
+        No explicit raises, but may return error responses for various failure scenarios.
+    """
     request_json = await raw_request.json()
     request = ChatCompletionRequest(**request_json)
     tokenizer = (
-        tokenizer_manager.tokenizer if tokenizer_manager else backend.get_tokenizer()
+        tokenizer_manager.tokenizer
+        if tokenizer_manager
+        else srt_backend.get_tokenizer()
     )
-
     prompt_template = get_prompt_template_from_tokenizer(tokenizer=tokenizer)
     tools_or_functions, tool_func_choice = analyze_tools_and_tool_choice(request)
 
+    # Generate the adapted request
     adapted_request, request = v1_chat_generate_request(
         request, tokenizer, tools_or_functions, tool_func_choice, return_text=False
     )
 
-    output, error = await v1_chat_generate_completion(
+    # Prepare the parameters for generate_completion and generate_response functions
+    params = ChatCompletionParams(
         adapted_request=adapted_request,
         raw_request=raw_request,
         request=request,
         tokenizer=tokenizer,
         tokenizer_manager=tokenizer_manager,
-        backend=backend,
+        srt_backend=srt_backend,
         prompt_template=prompt_template,
         tools_or_functions=tools_or_functions,
         tool_func_choice=tool_func_choice,
+        frontend_state=None,  # None first. Set later if needed
+        grammar_sampling=True if srt_backend else False,
     )
+
+    # Generate the text completion
+    output, error = await v1_chat_generate_completion(params)
     if error:
         return error
 
+    # If streaming, return the output(StreamingResponse) directly
     if adapted_request.stream:
         return output
 
-    response = v1_chat_generate_response(
-        adapted_request=adapted_request,
-        raw_request=raw_request,
-        request=request,
-        output_text=output,
-        prompt_template=prompt_template,
-        tokenizer=tokenizer,
-        tool_func_choice=tool_func_choice,
-    )
+    # Generate the API response
+    response = v1_chat_generate_response(output_text=output, params=params)
 
     return response
-
-
-def to_openai_style_logprobs(
-    input_token_logprobs=None,
-    output_token_logprobs=None,
-    input_top_logprobs=None,
-    output_top_logprobs=None,
-):
-    ret_logprobs = LogProbs()
-
-    def append_token_logprobs(token_logprobs):
-        for logprob, _, token_text in token_logprobs:
-            ret_logprobs.tokens.append(token_text)
-            ret_logprobs.token_logprobs.append(logprob)
-
-            # Not supported yet
-            ret_logprobs.text_offset.append(-1)
-
-    def append_top_logprobs(top_logprobs):
-        for tokens in top_logprobs:
-            if tokens is not None:
-                ret_logprobs.top_logprobs.append(
-                    {token[2]: token[0] for token in tokens}
-                )
-            else:
-                ret_logprobs.top_logprobs.append(None)
-
-    if input_token_logprobs is not None:
-        append_token_logprobs(input_token_logprobs)
-    if output_token_logprobs is not None:
-        append_token_logprobs(output_token_logprobs)
-    if input_top_logprobs is not None:
-        append_top_logprobs(input_top_logprobs)
-    if output_top_logprobs is not None:
-        append_top_logprobs(output_top_logprobs)
-
-    return ret_logprobs
