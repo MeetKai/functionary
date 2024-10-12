@@ -56,13 +56,6 @@ from functionary.prompt_template import (
 )
 from functionary.prompt_template.prompt_utils import prepare_messages_for_inference
 
-
-class FileMetadata:
-    def __init__(self, filename: str, purpose: str):
-        self.filename = filename
-        self.purpose = purpose
-
-
 # Choices sampling method for sgl.select
 CHOICES_SAMPLING_METHOD = greedy_token_selection
 # Variable name for sgl frontend runtime generation
