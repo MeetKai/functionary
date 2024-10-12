@@ -663,6 +663,11 @@ Evaluation function call prediction in SGD dataset. The accuracy metric measures
 
 See training [README](functionary/train/README.md)
 
+## Safety & Security
+
+While its not strictly enforced, to ensure more *secure* function execution, one can enable grammar sampling to enforce type checking.
+Main safety checks needs to be done in the functions/actions themselves. Such as validation of the given input, or the ouput that will be given to the model.
+
 ## Roadmap
 
 - [ ] OpenAPI specification based plugin support.
