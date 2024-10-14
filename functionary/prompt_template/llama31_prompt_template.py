@@ -173,7 +173,7 @@ class Llama31Template(PromptTemplate):
             if gen_state["stage"] in ["parameter", "code-interpreter"]:
                 finish_reason = "tool_calls"
             return gen_state, prompt_utils.get_text_delta_response(
-                None, True, finish_reason
+                None, False, finish_reason
             )
 
         responses = []
@@ -189,7 +189,7 @@ class Llama31Template(PromptTemplate):
                 gen_state["gen_empty_text"] = False
                 responses.append(
                     prompt_utils.get_text_delta_response(
-                        gen_state["curr_text"], True, finish_reason
+                        gen_state["curr_text"], False, finish_reason
                     )
                 )
             text_in_buffer = "".join(gen_state["text_to_func_buffer"] + [delta_text])
@@ -201,7 +201,7 @@ class Llama31Template(PromptTemplate):
                     delta_text_to_stream = gen_state["text_to_func_buffer"][0]
                     responses.append(
                         prompt_utils.get_text_delta_response(
-                            delta_text_to_stream, True, finish_reason
+                            delta_text_to_stream, False, finish_reason
                         )
                     )
                     gen_state["text_to_func_buffer"] = gen_state["text_to_func_buffer"][
@@ -209,7 +209,7 @@ class Llama31Template(PromptTemplate):
                     ]
                 responses.append(
                     prompt_utils.get_text_delta_response(
-                        delta_text, True, finish_reason
+                        delta_text, False, finish_reason
                     )
                 )
             else:
@@ -222,18 +222,23 @@ class Llama31Template(PromptTemplate):
                         gen_state, "", True, True, finish_reason
                     )
                 )
-                responses.append(
-                    prompt_utils.get_function_delta_response(
-                        gen_state, gen_state["curr_text"], True, True, finish_reason
+                if gen_state["curr_text"] != "":
+                    responses.append(
+                        prompt_utils.get_function_delta_response(
+                            gen_state,
+                            gen_state["curr_text"],
+                            False,
+                            False,
+                            finish_reason,
+                        )
                     )
-                )
 
             if "</" in delta_text:
                 delta_args = delta_text.removesuffix("</")
                 if len(delta_args) > 0:
                     responses.append(
                         prompt_utils.get_function_delta_response(
-                            gen_state, delta_args, True, True, finish_reason
+                            gen_state, delta_args, False, False, finish_reason
                         )
                     )
             elif "</" in gen_state["curr_text"] and (
@@ -247,7 +252,7 @@ class Llama31Template(PromptTemplate):
             else:
                 responses.append(
                     prompt_utils.get_function_delta_response(
-                        gen_state, delta_text, True, True, finish_reason
+                        gen_state, delta_text, False, False, finish_reason
                     )
                 )
         elif gen_state["stage"] == "code-interpreter":
@@ -259,7 +264,7 @@ class Llama31Template(PromptTemplate):
                 responses.append(first_function_response)
             responses.append(
                 prompt_utils.get_function_delta_response(
-                    gen_state, delta_text, True, True, finish_reason
+                    gen_state, delta_text, False, False, finish_reason
                 )
             )
 

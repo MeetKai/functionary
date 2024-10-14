@@ -191,7 +191,7 @@ def v1_chat_generate_request(
         top_logprobs_num=request.top_logprobs,
         stream=request.stream,
         return_text_in_logprobs=True,
-        rid=f"cmpl-{uuid.uuid4().hex}",
+        rid=f"chatcmpl-{uuid.uuid4().hex}",
     )
 
     return adapted_request, request
@@ -355,8 +355,10 @@ async def wrap_sgl_generator(params: ChatCompletionParams):
 
             # If finish_reason is not None and delta_text is not empty,
             # the delta_text is the eos_token and just remove it
-            if finish_reason is not None and len(delta) > 0:
-                delta = ""
+            if finish_reason is not None:
+                finish_reason = finish_reason["type"]
+                if len(delta) > 0:
+                    delta = ""
             yield delta, finish_reason
 
 
@@ -419,7 +421,7 @@ async def completion_stream_generator(params: ChatCompletionParams):
         result = ChatCompletionChunk(
             id=params.adapted_request.rid, choices=[chunk], model=params.request.model
         )
-        chunk_dic = result.dict(exclude_unset=True)
+        chunk_dic = result.model_dump()
         chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
         yield f"data: {chunk_data}\n\n"
         # Break from for loop after the first tool_call is streamed if functions is provided
@@ -536,10 +538,14 @@ def v1_chat_generate_response(
 
     # Postprocess finish reason
     finish_reason = "stop"
-    if "function_call" in chat_mess and chat_mess["function_call"]:
-        finish_reason = "function_call"
-    if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
-        finish_reason = "tool_calls"
+    if params.tool_func_choice is None or params.tool_func_choice in [
+        "auto",
+        "required",
+    ]:
+        if "function_call" in chat_mess and chat_mess["function_call"]:
+            finish_reason = "function_call"
+        if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
+            finish_reason = "tool_calls"
 
     choices = [
         ChatCompletionResponseChoice(
