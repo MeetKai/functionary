@@ -212,8 +212,7 @@ class Llama3TemplateV3(PromptTemplate):
             "func_name": func_name,
             "func_index": -1,  # index of the tool in tool_calls
             "call_id": None,  # call_id of the current tool
-            "gen_empty_text": True,  # if first_time we return an empty delta with role=assistant
-            "first_time_func": True,
+            "first_chunk": True,
             "add_all_recipient": add_all_recipient,
             "add_code_interpreter": add_code_interpreter,
         }
@@ -247,11 +246,11 @@ class Llama3TemplateV3(PromptTemplate):
 
         if gen_state["stage"] == "text-gen":
             if delta_text != self.function_separator:
-                if gen_state["gen_empty_text"]:
+                if gen_state["first_chunk"]:
                     responses.append(
                         prompt_utils.get_text_delta_response("", True, finish_reason)
                     )
-                    gen_state["gen_empty_text"] = False
+                    gen_state["first_chunk"] = False
                 responses.append(
                     prompt_utils.get_text_delta_response(
                         delta_text, False, finish_reason
@@ -259,16 +258,16 @@ class Llama3TemplateV3(PromptTemplate):
                 )
         elif gen_state["stage"] in ["parameter", "code-interpreter"]:
             if delta_text != self.function_separator:
-                if gen_state["first_time_func"]:
+                if gen_state["first_chunk"]:
                     responses.append(
                         prompt_utils.get_function_delta_response(
                             gen_state, "", True, True, finish_reason
                         )
                     )
-                    gen_state["first_time_func"] = False
+                    gen_state["first_chunk"] = False
                 responses.append(
                     prompt_utils.get_function_delta_response(
-                        gen_state, delta_text, True, False, finish_reason
+                        gen_state, delta_text, False, False, finish_reason
                     )
                 )
 

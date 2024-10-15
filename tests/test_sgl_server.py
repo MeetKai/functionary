@@ -337,7 +337,7 @@ class TestSglServer(unittest.TestCase):
             # "meetkai/functionary-small-v2.4",
             # "meetkai/functionary-small-v2.5",
             "meetkai/functionary-small-v3.1",
-            # "meetkai/functionary-small-v3.2",
+            "meetkai/functionary-small-v3.2",
         ]
 
     def _check_nonstreaming_response(self, pred, label):
