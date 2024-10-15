@@ -148,8 +148,7 @@ class Llama31Template(PromptTemplate):
             "func_name": func_name,
             "func_index": -1,  # index of the tool in tool_calls
             "call_id": None,  # call_id of the current tool
-            "gen_empty_text": True,  # if first_time we return an empty delta with role=assistant
-            "first_time_func": True,
+            "first_chunk": True,
             "text_to_func_buffer": [],
             "clear_buffer": False,
             "add_code_interpreter": add_code_interpreter,
@@ -182,11 +181,11 @@ class Llama31Template(PromptTemplate):
         )
 
         if gen_state["stage"] == "text-gen":
-            if gen_state["gen_empty_text"]:
+            if gen_state["first_chunk"]:
                 responses.append(
                     prompt_utils.get_text_delta_response("", True, finish_reason)
                 )
-                gen_state["gen_empty_text"] = False
+                gen_state["first_chunk"] = False
                 responses.append(
                     prompt_utils.get_text_delta_response(
                         gen_state["curr_text"], False, finish_reason
@@ -215,8 +214,8 @@ class Llama31Template(PromptTemplate):
             else:
                 gen_state["text_to_func_buffer"].append(delta_text)
         elif gen_state["stage"] == "parameter":
-            if gen_state["first_time_func"]:
-                gen_state["first_time_func"] = False
+            if gen_state["first_chunk"]:
+                gen_state["first_chunk"] = False
                 responses.append(
                     prompt_utils.get_function_delta_response(
                         gen_state, "", True, True, finish_reason
@@ -256,8 +255,8 @@ class Llama31Template(PromptTemplate):
                     )
                 )
         elif gen_state["stage"] == "code-interpreter":
-            if gen_state["first_time_func"]:
-                gen_state["first_time_func"] = False
+            if gen_state["first_chunk"]:
+                gen_state["first_chunk"] = False
                 first_function_response = prompt_utils.get_function_delta_response(
                     gen_state, "", True, True, finish_reason
                 )

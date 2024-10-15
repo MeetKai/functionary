@@ -176,6 +176,7 @@ def v1_chat_generate_request(
         "repetition_penalty": request.repetition_penalty,
         "regex": request.regex,
         "n": request.n,
+        "skip_special_tokens": False,
     }
 
     if isinstance(input_ids, str):

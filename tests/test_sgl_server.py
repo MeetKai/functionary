@@ -126,7 +126,7 @@ def call_openai_api(
             functions=default_functions,
             function_call=test_case["choice"],
             temperature=0.0,
-            stream=False,
+            stream=stream,
         )
     return response
 
@@ -187,15 +187,15 @@ class TestSglServer(unittest.TestCase):
                 "code_interpreter": False,
                 "choice": "auto",
             },
-            # {
-            #     "test_aim": 'Single function_call with "auto"',
-            #     "messages": [
-            #         {"role": "user", "content": "What is the weather in Istanbul?"}
-            #     ],
-            #     "call_mode": "functions",
-            #     "code_interpreter": False,
-            #     "choice": "auto",
-            # },
+            {
+                "test_aim": 'Single function_call with "auto"',
+                "messages": [
+                    {"role": "user", "content": "What is the weather in Istanbul?"}
+                ],
+                "call_mode": "functions",
+                "code_interpreter": False,
+                "choice": "auto",
+            },
             {
                 "test_aim": 'Parallel tool_calls with "auto"',
                 "messages": [
@@ -208,30 +208,30 @@ class TestSglServer(unittest.TestCase):
                 "code_interpreter": False,
                 "choice": "auto",
             },
-            # {
-            #     "test_aim": 'Parallel function_calls with "auto"',
-            #     "messages": [
-            #         {
-            #             "role": "user",
-            #             "content": "What is the weather in Istanbul and Singapore respectively?",
-            #         }
-            #     ],
-            #     "call_mode": "functions",
-            #     "code_interpreter": False,
-            #     "choice": "auto",
-            # },
-            # {
-            #     "test_aim": 'Normal text gen + tool_calls with "auto"',
-            #     "messages": [
-            #         {
-            #             "role": "user",
-            #             "content": "How are you? Can you also check what is the weather in Istanbul?",
-            #         }
-            #     ],
-            #     "call_mode": "tools",
-            #     "code_interpreter": False,
-            #     "choice": "auto",
-            # },
+            {
+                "test_aim": 'Parallel function_calls with "auto"',
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "What is the weather in Istanbul and Singapore respectively?",
+                    }
+                ],
+                "call_mode": "functions",
+                "code_interpreter": False,
+                "choice": "auto",
+            },
+            {
+                "test_aim": 'Normal text gen + tool_calls with "auto"',
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "What is the weather in Istanbul? Answer this question: 'How are you?', before checking the weather.",
+                    }
+                ],
+                "call_mode": "tools",
+                "code_interpreter": False,
+                "choice": "auto",
+            },
             {
                 "test_aim": 'Normal text gen with "none"',
                 "messages": [
@@ -251,13 +251,13 @@ class TestSglServer(unittest.TestCase):
                     "function": {"name": cls.default_functions[0]["name"]},
                 },
             },
-            # {
-            #     "test_aim": "function_call with function_call",
-            #     "messages": [{"role": "user", "content": "How are you?"}],
-            #     "call_mode": "functions",
-            #     "code_interpreter": False,
-            #     "choice": {"name": cls.default_functions[0]["name"]},
-            # },
+            {
+                "test_aim": "function_call with function_call",
+                "messages": [{"role": "user", "content": "How are you?"}],
+                "call_mode": "functions",
+                "code_interpreter": False,
+                "choice": {"name": cls.default_functions[0]["name"]},
+            },
             {
                 "test_aim": 'parallel tool_calls with "required"',
                 "messages": [
@@ -270,30 +270,30 @@ class TestSglServer(unittest.TestCase):
                 "code_interpreter": False,
                 "choice": "required",
             },
-            # {
-            #     "test_aim": 'code generation using "python" tool',
-            #     "messages": [
-            #         {
-            #             "role": "user",
-            #             "content": "Use the Python tool to write a Python function that adds 2 integers.",
-            #         }
-            #     ],
-            #     "call_mode": "tools",
-            #     "code_interpreter": True,
-            #     "choice": "auto",
-            # },
-            # {
-            #     "test_aim": 'Normal text generation (CoT) + code generation using "python" tool',
-            #     "messages": [
-            #         {
-            #             "role": "user",
-            #             "content": "Write a Python function that adds 2 integers. Think step by step before generating code using the python tool.",
-            #         }
-            #     ],
-            #     "call_mode": "tools",
-            #     "code_interpreter": True,
-            #     "choice": "auto",
-            # },
+            {
+                "test_aim": 'code generation using "python" tool',
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Use the Python tool to write a Python function that adds 2 integers.",
+                    }
+                ],
+                "call_mode": "tools",
+                "code_interpreter": True,
+                "choice": "auto",
+            },
+            {
+                "test_aim": 'Normal text generation (CoT) + code generation using "python" tool',
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Write a Python function that adds 2 integers. Answer this question: 'How are you?', before using the python tool.",
+                    }
+                ],
+                "call_mode": "tools",
+                "code_interpreter": True,
+                "choice": "auto",
+            },
         ]
         cls.client = OpenAI()
         for i, test_case in enumerate(cls.request_handling_test_cases):
@@ -377,8 +377,6 @@ class TestSglServer(unittest.TestCase):
         assert pred.choices[0].finish_reason == label.choices[0].finish_reason
 
     def _check_streaming_response(self, pred, label):
-        if sum([chunk.choices[0].delta.role == "assistant" for chunk in label]) > 1:
-            breakpoint()
         tool_call_id = -1
         for i, chunk in enumerate(pred):
             # Check if both label.id and pred.id start with the same prefix
@@ -420,11 +418,15 @@ class TestSglServer(unittest.TestCase):
                 else:
                     assert name is None
                     assert call_type is None
-            # Function call seems bugged in OpenAI so not checking this
             # Check function_call
-            # if chunk.choices[0].delta.function_call is not None:
-            #     name = chunk.choices[0].delta.function_call.name
-            #     args = chunk.choices[0].delta.function_call.arguments
+            if chunk.choices[0].delta.function_call is not None:
+                name = chunk.choices[0].delta.function_call.name
+                args = chunk.choices[0].delta.function_call.arguments
+                assert args is not None
+                if len(args) == 0:
+                    assert name is not None
+                else:
+                    assert name is None
 
     def test_sgl_server(self):
         for model in self.served_models:
