@@ -241,6 +241,7 @@ class PromptTemplate:
         gen_state["func_name"] = func_name
         gen_state["func_index"] += 1
         gen_state["call_id"] = prompt_utils.get_random_tool_call_id()
+        gen_state["first_function_chunk"] = True
 
         return gen_state
 
