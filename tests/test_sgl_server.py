@@ -335,7 +335,7 @@ class TestSglServer(unittest.TestCase):
         super(TestSglServer, self).__init__(*args, **kwargs)
         self.served_models = [
             # "meetkai/functionary-small-v2.4",
-            # "meetkai/functionary-small-v2.5",
+            "meetkai/functionary-small-v2.5",
             "meetkai/functionary-small-v3.1",
             "meetkai/functionary-small-v3.2",
         ]
@@ -441,6 +441,13 @@ class TestSglServer(unittest.TestCase):
             self.client = OpenAI(base_url=f"{self.base_url}/v1", api_key="test")
             try:
                 for test_case in self.request_handling_test_cases:
+                    # v2.5 cannot generate this case
+                    if (
+                        model == "meetkai/functionary-small-v2.5"
+                        and test_case["test_aim"]
+                        == 'Normal text generation (CoT) + code generation using "python" tool'
+                    ):
+                        continue
                     pred = call_openai_api(
                         test_case=test_case,
                         client=self.client,
