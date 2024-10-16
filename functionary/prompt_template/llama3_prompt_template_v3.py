@@ -213,6 +213,7 @@ class Llama3TemplateV3(PromptTemplate):
             "func_index": -1,  # index of the tool in tool_calls
             "call_id": None,  # call_id of the current tool
             "first_chunk": True,
+            "first_function_chunk": True,
             "add_all_recipient": add_all_recipient,
             "add_code_interpreter": add_code_interpreter,
         }
@@ -251,6 +252,12 @@ class Llama3TemplateV3(PromptTemplate):
                         prompt_utils.get_text_delta_response("", True, finish_reason)
                     )
                     gen_state["first_chunk"] = False
+                    if gen_state["curr_text"] != "":
+                        responses.append(
+                            prompt_utils.get_text_delta_response(
+                                gen_state["curr_text"], False, finish_reason
+                            )
+                        )
                 responses.append(
                     prompt_utils.get_text_delta_response(
                         delta_text, False, finish_reason
@@ -258,13 +265,25 @@ class Llama3TemplateV3(PromptTemplate):
                 )
         elif gen_state["stage"] in ["parameter", "code-interpreter"]:
             if delta_text != self.function_separator:
-                if gen_state["first_chunk"]:
+                if gen_state["first_function_chunk"]:
                     responses.append(
                         prompt_utils.get_function_delta_response(
-                            gen_state, "", True, True, finish_reason
+                            gen_state, "", True, gen_state["first_chunk"], finish_reason
                         )
                     )
                     gen_state["first_chunk"] = False
+                    gen_state["first_function_chunk"] = False
+
+                    if gen_state["curr_text"] != "":
+                        responses.append(
+                            prompt_utils.get_function_delta_response(
+                                gen_state,
+                                gen_state["curr_text"],
+                                False,
+                                False,
+                                finish_reason,
+                            )
+                        )
                 responses.append(
                     prompt_utils.get_function_delta_response(
                         gen_state, delta_text, False, False, finish_reason
@@ -299,9 +318,13 @@ class Llama3TemplateV3(PromptTemplate):
         # v2: "{func_name}\n<content|>{param_names}\n<|from|> assistant\n<|recipient|>"
         if gen_state["stage"] == "pre-function":
             # Check if the new state is in "function" stage
-            if gen_state["curr_text"].endswith(self.get_start_of_function_call_token()):
+            if self.get_start_of_function_call_token() in gen_state["curr_text"]:
                 gen_state["stage"] = "function"
+                curr_text = gen_state["curr_text"]
                 gen_state = self._reset_fsm_curr_text_and_tokens(gen_state=gen_state)
+                gen_state["curr_text"] = curr_text.removeprefix(
+                    self.get_start_of_function_call_token()
+                )
                 gen_state["func_name"] = ""
 
         elif gen_state["stage"] == "function":
@@ -324,16 +347,21 @@ class Llama3TemplateV3(PromptTemplate):
                 # Use the suffix from curr_text as the prefix in "pre-parameter"
                 tool_name = options[options_mask.index(True)]
                 suffix = curr_text[len(tool_name) :]
-                gen_state = self._update_gen_state_for_fn_call(
-                    gen_state=gen_state, func_name=tool_name
-                )
+                if tool_name == "all":
+                    gen_state["func_name"] = tool_name
+                else:
+                    gen_state = self._update_gen_state_for_fn_call(
+                        gen_state=gen_state, func_name=tool_name
+                    )
                 gen_state = self._reset_fsm_curr_text_and_tokens(gen_state=gen_state)
                 # Jump to "parameter" stage if suffix is "\n"
                 gen_state["stage"] = "pre-parameter" if suffix == "" else "parameter"
 
         elif gen_state["stage"] == "pre-parameter":
             if self.fn_param_sep_token in gen_state["curr_text"]:
+                curr_text = gen_state["curr_text"]
                 gen_state = self._reset_fsm_curr_text_and_tokens(gen_state=gen_state)
+                gen_state["curr_text"] = curr_text.removeprefix(self.fn_param_sep_token)
                 # Check if the new state is "text-gen" or "code-interpreter" or "parameter"
                 if gen_state["func_name"] == "all":
                     gen_state["stage"] = "text-gen"
