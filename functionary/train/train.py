@@ -122,6 +122,10 @@ class TrainingArguments(transformers.TrainingArguments):
         default="v2", metadata={"help": "choose prompt template to use for training"}
     )
 
+    use_liger: bool = field(
+        default=False, metadata={"help": "Whether use liger or not"}
+    )
+
 
 def trainer_save_model_safe(trainer: transformers.Trainer):
     """Saves the model in fsdp.FULL_STATE_DICT mode to have the model weights
@@ -270,7 +274,15 @@ def train():
         else (torch.bfloat16 if training_args.bf16 else torch.float32)
     )
 
-    model = transformers.AutoModelForCausalLM.from_pretrained(
+    if training_args.use_liger:
+        from liger_kernel.transformers import AutoLigerKernelForCausalLM
+
+        print_rank0("---------------using LIGER------------")
+        model_class = AutoLigerKernelForCausalLM
+    else:
+        model_class = transformers.AutoModelForCausalLM
+
+    model = model_class.from_pretrained(
         model_args.model_name_or_path,
         torch_dtype=compute_dtype,
         config=config,
@@ -407,7 +419,7 @@ def train():
         perplexity = math.exp(loss)
 
         metrics = {
-            "accuracy": acc_count / total_num, 
+            "accuracy": acc_count / total_num,
             "perplexity": perplexity,
             "accuracy_first_token": first_token_correct_count / first_token_total_count,
             "total_number_first_token": first_token_total_count,
