@@ -112,6 +112,15 @@ you can start your environment like this:
 sudo docker run --gpus all -it --ipc=host --name functionary -v ${PWD}/functionary_workspace:/workspace -p 8000:8000 nvcr.io/nvidia/pytorch:23.10-py3
 ```
 
+#### Run in Docker
+
+You can also run functionary in Docker
+
+```shell
+docker build . -t functionary
+docker run -p 8000:8000 functionary
+```
+
 ### OpenAI Compatible Usage
 
 ```python
