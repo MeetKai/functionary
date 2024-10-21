@@ -68,6 +68,7 @@ asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 app = FastAPI()
 tokenizer_manager = None
+served_model = []
 
 app.add_middleware(
     CORSMiddleware,
@@ -163,18 +164,20 @@ app.put("/generate")(generate_request)
 async def openai_v1_chat_completions(raw_request: Request):
     global tokenizer_manager, backend
 
-    if not args.grammar_sampling:
-        backend = None
-    return await v1_chat_completions(tokenizer_manager, backend, raw_request)
+    # if not args.grammar_sampling:
+    #     backend = None
+    return await v1_chat_completions(tokenizer_manager, None, raw_request, served_model)
 
 
 @app.get("/v1/models")
 def available_models():
     """Show available models."""
-    served_model_names = [tokenizer_manager.served_model_name]
     model_cards = []
-    for served_model_name in served_model_names:
-        model_cards.append(ModelCard(id=served_model_name, root=served_model_name))
+    if isinstance(served_model, list):
+        for model in served_model:
+            model_cards.append(ModelCard(id=model, root=model))
+    else:
+        model_cards.append(ModelCard(id=served_model, root=served_model))
     return ModelList(data=model_cards)
 
 
@@ -357,31 +360,38 @@ if __name__ == "__main__":
         default=None,
         help="enable detailed request input/output logging by providing logfile",
     )
-    parser.add_argument(
-        "--enable-grammar-sampling",
-        dest="grammar_sampling",
-        action="store_true",
-        default=False,
-        help="enable grammar sampling for function names",
-    )
+    # parser.add_argument(
+    #     "--enable-grammar-sampling",
+    #     dest="grammar_sampling",
+    #     action="store_true",
+    #     default=False,
+    #     help="enable grammar sampling for function names",
+    # )
     ServerArgs.add_cli_args(parser)
     args = parser.parse_args()
+
+    served_model = [args.model_path]
+    if args.served_model_name is not None:
+        served_model += args.served_model_name
+
     server_args = ServerArgs.from_cli_args(args)
 
-    if args.grammar_sampling:
-        backend = FunctionaryRuntime(**vars(server_args))
-        sgl.set_default_backend(
-            sgl.RuntimeEndpoint(
-                f"http://{backend.server_args.host}:{backend.server_args.port}"
-            )
-        )
-        uvicorn.run(
-            app,
-            host=server_args.host,
-            port=server_args.port,
-            log_level=server_args.log_level_http or server_args.log_level,
-            timeout_keep_alive=5,
-            loop="uvloop",
-        )
-    else:
-        launch_server(server_args)
+    launch_server(server_args)
+
+    # if args.grammar_sampling:
+    #     backend = FunctionaryRuntime(**vars(server_args))
+    #     sgl.set_default_backend(
+    #         sgl.RuntimeEndpoint(
+    #             f"http://{backend.server_args.host}:{backend.server_args.port}"
+    #         )
+    #     )
+    #     uvicorn.run(
+    #         app,
+    #         host=server_args.host,
+    #         port=server_args.port,
+    #         log_level=server_args.log_level_http or server_args.log_level,
+    #         timeout_keep_alive=5,
+    #         loop="uvloop",
+    #     )
+    # else:
+    #     launch_server(server_args)

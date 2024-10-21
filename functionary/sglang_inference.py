@@ -38,7 +38,11 @@ from sglang.srt.server import Runtime
 from transformers import AutoTokenizer
 
 from functionary.inference_stream import generate_openai_format_from_stream_async
-from functionary.inference_utils import analyze_tools_and_tool_choice
+from functionary.inference_utils import (
+    analyze_tools_and_tool_choice,
+    check_all_errors,
+    create_error_response,
+)
 from functionary.openai_types import (
     ChatCompletionChunk,
     ChatCompletionRequest,
@@ -77,25 +81,6 @@ class ChatCompletionParams:
     tool_func_choice: Optional[Union[str, Tool, Function]]
     frontend_state: Optional[ProgramState]
     grammar_sampling: bool
-
-
-def create_error_response(
-    message: str,
-    err_type: str = "BadRequestError",
-    status_code: HTTPStatus = HTTPStatus.BAD_REQUEST,
-):
-    error = ErrorResponse(message=message, type=err_type, code=status_code.value)
-    return JSONResponse(content=error.model_dump(), status_code=error.code)
-
-
-def create_streaming_error_response(
-    message: str,
-    err_type: str = "BadRequestError",
-    status_code: HTTPStatus = HTTPStatus.BAD_REQUEST,
-) -> str:
-    error = ErrorResponse(message=message, type=err_type, code=status_code.value)
-    json_str = json.dumps({"error": error.model_dump()})
-    return json_str
 
 
 def convert_tool_calls_to_function_call(
@@ -507,7 +492,7 @@ async def v1_chat_generate_completion(
                     params.adapted_request, params.raw_request
                 ).__anext__()
             except ValueError as e:
-                return None, create_error_response(str(e))
+                return None, create_error_response(HTTPStatus.BAD_REQUEST, str(e))
             return ret["text"], None
 
 
@@ -581,6 +566,7 @@ async def v1_chat_completions(
     tokenizer_manager: Optional[TokenizerManager],
     srt_backend: Optional[Runtime],
     raw_request: Request,
+    served_model: List[str],
 ):
     """
     Handle chat completions for v1 of the API.
@@ -614,6 +600,11 @@ async def v1_chat_completions(
     )
     prompt_template = get_prompt_template_from_tokenizer(tokenizer=tokenizer)
     tools_or_functions, tool_func_choice = analyze_tools_and_tool_choice(request)
+
+    # Check for errors
+    error_check_ret = await check_all_errors(request, served_model)
+    if error_check_ret is not None:
+        return error_check_ret
 
     # Generate the adapted request
     adapted_request, request = v1_chat_generate_request(
