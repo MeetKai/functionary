@@ -167,7 +167,7 @@ async def process_chat_completion(
         return error_check_ret
 
     model_name = request.model
-    request_id = f"cmpl-{random_uuid()}"
+    request_id = f"chatcmpl-{random_uuid()}"
     created_time = int(time.time())
 
     # compute stop_token_ids
@@ -291,22 +291,11 @@ async def process_chat_completion(
                 if response["finish_reason"] == "function_call":
                     response["finish_reason"] = "tool_calls"
 
-            # Workaround Fixes
-            response["delta"]["role"] = "assistant"
-            if (
-                "tool_calls" in response["delta"]
-                and response["delta"]["tool_calls"]
-                and len(response["delta"]["tool_calls"]) > 0
-            ):
-                for tool_call in response["delta"]["tool_calls"]:
-                    if tool_call.get("type") is None:
-                        tool_call["type"] = "function"
-
             chunk = StreamChoice(**response)
             result = ChatCompletionChunk(
                 id=request_id, choices=[chunk], model=model_name
             )
-            chunk_dic = result.dict(exclude_unset=True)
+            chunk_dic = result.model_dump()
             chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
             yield f"data: {chunk_data}\n\n"
             # Break from for loop after the first tool_call is streamed if functions is provided
@@ -360,11 +349,11 @@ async def process_chat_completion(
             chat_mess["tool_calls"] = None
 
         # Postprocess finish reason
-        if "function_call" in chat_mess and chat_mess["function_call"]:
-            output.finish_reason = "function_call"
-
-        if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
-            output.finish_reason = "tool_calls"
+        if tool_func_choice is None or tool_func_choice in ["auto", "required"]:
+            if "function_call" in chat_mess and chat_mess["function_call"]:
+                output.finish_reason = "function_call"
+            if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
+                output.finish_reason = "tool_calls"
 
         # Convert v1 from function_call to tool_calls if tools are provided instead of functions
         if (
