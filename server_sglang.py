@@ -22,14 +22,12 @@ import json
 import logging
 import multiprocessing as mp
 import os
-import socket
-import sys
 import threading
 import time
 from http import HTTPStatus
-from typing import Dict, List, Optional, Union
+from typing import AsyncIterator, Dict, List, Optional, Union
 
-import requests
+import orjson
 
 # Fix a bug of Python threading
 setattr(threading, "_register_atexit", lambda *args, **kwargs: None)
@@ -39,8 +37,12 @@ import uvicorn
 import uvloop
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import ORJSONResponse, Response, StreamingResponse
+from uvicorn.config import LOGGING_CONFIG
 from sglang.lang.backend.runtime_endpoint import RuntimeEndpoint
+from sglang.srt.managers.data_parallel_controller import (
+    run_data_parallel_controller_process,
+)
 from sglang.srt.managers.detokenizer_manager import run_detokenizer_process
 from sglang.srt.managers.io_struct import GenerateReqInput
 from sglang.srt.managers.scheduler import run_scheduler_process
@@ -132,14 +134,18 @@ async def generate_request(obj: GenerateReqInput, request: Request):
     """Handle a generate request."""
     if obj.stream:
 
-        async def stream_results():
+        async def stream_results() -> AsyncIterator[bytes]:
             try:
                 async for out in tokenizer_manager.generate_request(obj, request):
-                    yield f"data: {json.dumps(out, ensure_ascii=False)}\n\n"
+                    yield b"data: " + orjson.dumps(
+                        out, option=orjson.OPT_NON_STR_KEYS
+                    ) + b"\n\n"
             except ValueError as e:
                 out = {"error": {"message": str(e)}}
-                yield f"data: {json.dumps(out, ensure_ascii=False)}\n\n"
-            yield "data: [DONE]\n\n"
+                yield b"data: " + orjson.dumps(
+                    out, option=orjson.OPT_NON_STR_KEYS
+                ) + b"\n\n"
+            yield b"data: [DONE]\n\n"
 
         return StreamingResponse(
             stream_results(),
@@ -151,7 +157,7 @@ async def generate_request(obj: GenerateReqInput, request: Request):
             ret = await tokenizer_manager.generate_request(obj, request).__anext__()
             return ret
         except ValueError as e:
-            return JSONResponse(
+            return ORJSONResponse(
                 {"error": {"message": str(e)}}, status_code=HTTPStatus.BAD_REQUEST
             )
 
@@ -169,7 +175,7 @@ async def openai_v1_chat_completions(raw_request: Request):
     return await v1_chat_completions(tokenizer_manager, None, raw_request, served_model)
 
 
-@app.get("/v1/models")
+@app.get("/v1/models", response_class=ORJSONResponse)
 def available_models():
     """Show available models."""
     model_cards = []
@@ -202,30 +208,40 @@ def launch_engine(server_args: ServerArgs):
         server_args.model_path, server_args.tokenizer_path
     )
 
-    # Launch tensor parallel scheduler processes
-    scheduler_procs = []
-    scheduler_pipe_readers = []
-    tp_size_per_node = server_args.tp_size // server_args.nnodes
-    tp_rank_range = range(
-        tp_size_per_node * server_args.node_rank,
-        tp_size_per_node * (server_args.node_rank + 1),
-    )
-    for tp_rank in tp_rank_range:
+    if server_args.dp_size == 1:
+        # Launch tensor parallel scheduler processes
+        scheduler_procs = []
+        scheduler_pipe_readers = []
+        tp_size_per_node = server_args.tp_size // server_args.nnodes
+        tp_rank_range = range(
+            tp_size_per_node * server_args.node_rank,
+            tp_size_per_node * (server_args.node_rank + 1),
+        )
+        for tp_rank in tp_rank_range:
+            reader, writer = mp.Pipe(duplex=False)
+            gpu_id = tp_rank % tp_size_per_node
+            proc = mp.Process(
+                target=run_scheduler_process,
+                args=(server_args, port_args, gpu_id, tp_rank, None, writer),
+            )
+            proc.start()
+            scheduler_procs.append(proc)
+            scheduler_pipe_readers.append(reader)
+
+        if server_args.node_rank >= 1:
+            # For other nodes, they do not need to run tokenizer or detokenizer,
+            # so they can just wait here.
+            while True:
+                pass
+    else:
+        # Launch the data parallel controller
         reader, writer = mp.Pipe(duplex=False)
-        gpu_id = tp_rank % tp_size_per_node
+        scheduler_pipe_readers = [reader]
         proc = mp.Process(
-            target=run_scheduler_process,
-            args=(server_args, port_args, gpu_id, tp_rank, writer),
+            target=run_data_parallel_controller_process,
+            args=(server_args, port_args, writer),
         )
         proc.start()
-        scheduler_procs.append(proc)
-        scheduler_pipe_readers.append(reader)
-
-    if server_args.node_rank >= 1:
-        # For other nodes, they do not need to run tokenizer or detokenizer,
-        # so they can just wait here.
-        while True:
-            pass
 
     # Launch detokenizer process
     detoken_proc = mp.Process(
@@ -286,6 +302,14 @@ def launch_server(
 
     try:
         # Listen for HTTP requests
+        LOGGING_CONFIG["formatters"]["default"][
+            "fmt"
+        ] = "[%(asctime)s] %(levelprefix)s %(message)s"
+        LOGGING_CONFIG["formatters"]["default"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
+        LOGGING_CONFIG["formatters"]["access"][
+            "fmt"
+        ] = '[%(asctime)s] %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'
+        LOGGING_CONFIG["formatters"]["access"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
         uvicorn.run(
             app,
             host=server_args.host,
@@ -327,6 +351,7 @@ class FunctionaryRuntime(Runtime):
         self.url = self.server_args.url()
         self.generate_url = self.url + "/generate"
 
+        # NOTE: We store pid instead of proc to fix some issues during __delete__
         self.pid = None
         pipe_reader, pipe_writer = mp.Pipe(duplex=False)
 
