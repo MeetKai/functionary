@@ -59,6 +59,7 @@ def prepare_messages_for_inference(
     messages: List[ChatMessage],
     tools_or_functions: List[Dict],
     tool_choice: Optional[Union[str, Tool, Function]] = None,
+    return_text: bool = False,
     device="cuda:0",
 ) -> torch.Tensor:
     """This function receives the messages and generates the final prompt tokenized by the
@@ -69,6 +70,7 @@ def prepare_messages_for_inference(
         messages (List[ChatMessage]): The list of messages for the conversation
         tools_or_functions (List[Dict]): list of tools or functions
         tool_choice (Optional[Union[str, Tool, Function]], optional): tool_choice provided by the user. Defaults to None.
+        return_text (bool, optional): whether to return the text of the prompt. Defaults to False.
         device (str, optional): device for the tokenized tensor. Defaults to "cuda:0".
 
     Returns:
@@ -95,6 +97,10 @@ def prepare_messages_for_inference(
 
     # add prefix based on tool-choice
     final_prompt += prompt_template.get_generation_prefix_for_tool_choice(tool_choice)
+
+    if return_text:
+        return final_prompt
+
     input_ids = tokenizer(final_prompt, return_tensors="pt").input_ids
     input_ids = input_ids.to(device)
     return input_ids

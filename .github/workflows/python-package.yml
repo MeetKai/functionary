@@ -40,4 +40,5 @@ jobs:
       env:
         HF_TOKEN: ${{ secrets.HF_TOKEN }}
       run: |
-        pytest
+        pytest tests --ignore=tests/test_server.py
+# Ignore test_server.py for now as it requires a GPU runner

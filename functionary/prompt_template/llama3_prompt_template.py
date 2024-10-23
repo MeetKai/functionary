@@ -193,17 +193,23 @@ class Llama3Template(PromptTemplate):
         else:
             stage = "pre-function"
 
-        return {
+        gen_state = {
             "stage": stage,
             "curr_tokens": curr_tokens,
             "curr_text": curr_text,
             "func_name": func_name,
             "func_index": -1,  # index of the tool in tool_calls
             "call_id": None,  # call_id of the current tool
-            "gen_empty_text": True,  # if first_time we return an empty delta with role=assistant
-            "first_time_func": True,
+            "first_chunk": True,
+            "first_function_chunk": True,
             "add_code_interpreter": add_code_interpreter,
         }
+
+        return (
+            self._update_gen_state_for_fn_call(gen_state, func_name)
+            if func_name is not None
+            else gen_state
+        )
 
     def stream_delta_text(
         self,
@@ -228,30 +234,32 @@ class Llama3Template(PromptTemplate):
         )
 
         if gen_state["stage"] == "text-gen":
-            if gen_state["gen_empty_text"]:
+            if gen_state["first_chunk"]:
                 responses.append(
                     prompt_utils.get_text_delta_response("", True, finish_reason)
                 )
-                gen_state["gen_empty_text"] = False
-                responses.append(
-                    prompt_utils.get_text_delta_response(
-                        gen_state["curr_text"], True, finish_reason
+                gen_state["first_chunk"] = False
+                if gen_state["curr_text"] != "":
+                    responses.append(
+                        prompt_utils.get_text_delta_response(
+                            gen_state["curr_text"], False, finish_reason
+                        )
                     )
-                )
             if delta_text != self.function_separator:
                 responses.append(
                     prompt_utils.get_text_delta_response(
-                        delta_text, True, finish_reason
+                        delta_text, False, finish_reason
                     )
                 )
         elif gen_state["stage"] in ["parameter", "code-interpreter"]:
-            if gen_state["first_time_func"]:
+            if gen_state["first_function_chunk"]:
                 responses.append(
                     prompt_utils.get_function_delta_response(
-                        gen_state, "", True, False, finish_reason
+                        gen_state, "", True, gen_state["first_chunk"], finish_reason
                     )
                 )
-                gen_state["first_time_func"] = False
+                gen_state["first_chunk"] = False
+                gen_state["first_function_chunk"] = False
             responses.append(
                 prompt_utils.get_function_delta_response(
                     gen_state, delta_text, False, False, finish_reason

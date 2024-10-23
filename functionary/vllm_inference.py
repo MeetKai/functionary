@@ -5,14 +5,17 @@ from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Un
 
 from fastapi import BackgroundTasks, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from vllm.entrypoints.openai.protocol import ErrorResponse
 from vllm.inputs import TokensPrompt
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
 from vllm.utils import random_uuid
 
 from functionary.inference_stream import generate_openai_format_from_stream_async
-from functionary.inference_utils import analyze_tools_and_tool_choice
+from functionary.inference_utils import (
+    analyze_tools_and_tool_choice,
+    check_all_errors,
+    create_error_response,
+)
 from functionary.openai_types import (
     ChatCompletionChunk,
     ChatCompletionRequest,
@@ -31,67 +34,6 @@ from functionary.prompt_template.prompt_utils import (
     get_random_tool_call_id,
     prepare_messages_for_inference,
 )
-
-
-def create_error_response(
-    status_code: HTTPStatus, message: str, param: Optional[str]
-) -> JSONResponse:
-    return JSONResponse(
-        ErrorResponse(
-            message=message,
-            type="invalid_request_error",
-            param=param,
-            code=status_code.value,
-        ).dict(),
-        status_code=status_code.value,
-    )
-
-
-async def check_all_errors(request, served_model) -> Optional[JSONResponse]:
-    if request.model not in served_model:
-        return create_error_response(
-            status_code=HTTPStatus.NOT_FOUND,
-            message=f"The model `{request.model}` does not exist.",
-            param=None,
-        )
-    if request.tools and request.functions:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message="'functions' and 'tools' cannot both be provided. 'functions' are deprecated; use the 'tools' parameter instead.",
-            param=None,
-        )
-    if isinstance(request.function_call, str) and request.function_call not in [
-        "none",
-        "auto",
-    ]:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message=f"Invalid value: '{request.function_call}'. Supported values are: 'none' and 'auto'.",
-            param="function_call",
-        )
-    if isinstance(request.tool_choice, str) and request.tool_choice not in [
-        "none",
-        "auto",
-        "required",
-    ]:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message=f"Invalid value: '{request.tool_choice}'. Supported values are: 'none', 'auto', and 'required'.",
-            param="tool_choice",
-        )
-    if request.functions is None and request.function_call is not None:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message=f"Invalid value for 'function_call': 'function_call' is only allowed when 'functions' are specified.",
-            param="function_call",
-        )
-    if request.tools is None and request.tool_choice is not None:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message=f"Invalid value for 'tool_choice': 'tool_choice' is only allowed when 'tools' are specified.",
-            param="tool_choice",
-        )
-    return
 
 
 async def check_length(request, input_ids, model_config):
@@ -167,7 +109,7 @@ async def process_chat_completion(
         return error_check_ret
 
     model_name = request.model
-    request_id = f"cmpl-{random_uuid()}"
+    request_id = f"chatcmpl-{random_uuid()}"
     created_time = int(time.time())
 
     # compute stop_token_ids
@@ -291,22 +233,11 @@ async def process_chat_completion(
                 if response["finish_reason"] == "function_call":
                     response["finish_reason"] = "tool_calls"
 
-            # Workaround Fixes
-            response["delta"]["role"] = "assistant"
-            if (
-                "tool_calls" in response["delta"]
-                and response["delta"]["tool_calls"]
-                and len(response["delta"]["tool_calls"]) > 0
-            ):
-                for tool_call in response["delta"]["tool_calls"]:
-                    if tool_call.get("type") is None:
-                        tool_call["type"] = "function"
-
             chunk = StreamChoice(**response)
             result = ChatCompletionChunk(
                 id=request_id, choices=[chunk], model=model_name
             )
-            chunk_dic = result.dict(exclude_unset=True)
+            chunk_dic = result.model_dump()
             chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
             yield f"data: {chunk_data}\n\n"
             # Break from for loop after the first tool_call is streamed if functions is provided
@@ -360,11 +291,11 @@ async def process_chat_completion(
             chat_mess["tool_calls"] = None
 
         # Postprocess finish reason
-        if "function_call" in chat_mess and chat_mess["function_call"]:
-            output.finish_reason = "function_call"
-
-        if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
-            output.finish_reason = "tool_calls"
+        if tool_func_choice is None or tool_func_choice in ["auto", "required"]:
+            if "function_call" in chat_mess and chat_mess["function_call"]:
+                output.finish_reason = "function_call"
+            if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
+                output.finish_reason = "tool_calls"
 
         # Convert v1 from function_call to tool_calls if tools are provided instead of functions
         if (
