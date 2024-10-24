@@ -396,10 +396,10 @@ Use the `deploy_skypilot.py` script to deploy a Functionary model onto various c
 
 ### Get Started
 
-1. Install Skypilot:
+1. Install night version of Skypilot (we currently use the 2024-10-23 version):
 
 ```bash
-pip install skypilot[all]
+pip install skypilot-nighty[all]==1.0.0.dev20241023
 ```
 
 2. Set up your cloud credentials by following the instructions [here](https://skypilot.readthedocs.io/en/latest/getting-started/installation.html#cloud-account-setup)
@@ -409,13 +409,13 @@ pip install skypilot[all]
 python deploy_skypilot.py --help
 ```
 
-4. SkyPilot does not support stopping instances and opening ports for both Lambdalabs and RunPod currently.
-For Lambdalabs, please expose the port for the server manually first [here](https://cloud.lambdalabs.com/firewall) before running `deploy_skypilot.py`.
-For Runpod, please run `deploy_skypilot.py` twice. After the first command, check the [RunPod Dashboard](https://www.runpod.io/console/pods) for the instance created by Skypilot. Once the instance is created, expose the port for the server manually. Thereafter, ctrl-c the first command and run the command again.
+4. For Lambdalabs, please expose the port for the server manually first [here](https://cloud.lambdalabs.com/firewall) before running `deploy_skypilot.py`.
 
-5. To stop the cluster, run the following command and manually stop the instance on RunPod/Lambdalabs:
+5. By default, `args.detach_run` is enabled. To stream the job logs, enter `sky logs <cluster_name>` If you want to run the command in the foreground, please set `args.detach_run` to `False`.
+
+6. SkyPilot does not support stopping instances both Lambdalabs and RunPod currently. To terminate the cluster, run the following command:
 ```bash
-sky stop <cluster_name>
+sky down <cluster_name>
 ```
 
 

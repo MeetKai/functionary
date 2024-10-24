@@ -72,9 +72,16 @@ def form_command() -> str:
     Returns:
         str: The formatted command string to run the vLLM server.
     """
-    command = f"cd functionary && python server_vllm.py --model {args.model} --port {args.port} --host {args.host}"
-    if args.max_model_len is not None:
-        command += f" --max-model-len {args.max_model_len}"
+    command = "cd functionary && "
+    if args.backend == "vllm":
+        command += f"python server_vllm.py --model {args.model} --port {args.port} --host {args.host}"
+        if args.max_model_len is not None:
+            command += f" --max-model-len {args.max_model_len}"
+    else:
+        command += f"python server_sglang.py --model {args.model} --port {args.port} --host {args.host}"
+        if args.max_model_len is not None:
+            command += f" --context-length {args.max_model_len}"
+
     if args.tensor_parallel_size is not None:
         command += f" --tensor-parallel-size {args.tensor_parallel_size}"
     return command
@@ -101,8 +108,18 @@ def main():
     cloud = get_cloud_provider(cloud_name=args.cloud)
     check_features(cloud=cloud)
 
+    setup = "if [ ! -d 'functionary' ]; then git clone https://github.com/meetkai/functionary.git"
+    if args.commit is not None:
+        setup += f" && cd functionary && git checkout {args.commit}; else cd functionary; fi && "
+    else:
+        setup = "; fi && cd functionary "
+    if args.backend == "vllm":
+        setup += "pip install -r requirements.txt"
+    else:
+        setup += "pip install -r requirements_sgl.txt"
+
     task = sky.Task(
-        setup="if [ ! -d 'functionary' ]; then git clone https://github.com/meetkai/functionary.git; fi && cd functionary && pip install -r requirements.txt",
+        setup=setup,
         run=form_command(),
         envs=None,
         workdir=None,
@@ -121,6 +138,7 @@ def main():
         cluster_name=args.cluster_name,
         idle_minutes_to_autostop=args.idle_timeout,
         down=args.down,
+        detach_run=args.detach_run,
     )
 
 
@@ -128,6 +146,19 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Deploy Skypilot")
     parser.add_argument(
         "--cluster-name", type=str, required=True, help="Name of the cluster"
+    )
+    parser.add_argument(
+        "--commit",
+        type=str,
+        default=None,
+        help="Provide a commit hash to deploy a specific version of Functionary. If None, the latest commit in the main branch will be deployed.",
+    )
+    parser.add_argument(
+        "--backend",
+        type=str,
+        choices=["vllm", "sglang"],
+        default="vllm",
+        help="Backend inference framework to use. (Currently either `vllm` or `sglang`)",
     )
     parser.add_argument(
         "--cloud",
@@ -180,6 +211,12 @@ def parse_args():
     )
     parser.add_argument("--port", type=int, default=8000, help="Port to use")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="host to use")
+    parser.add_argument(
+        "--detach-run",
+        type=bool,
+        default=True,
+        help="Detach run upon job to run server is submitted.",
+    )
 
     args = parser.parse_args()
 
