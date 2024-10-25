@@ -399,7 +399,7 @@ Use the `deploy_skypilot.py` script to deploy a Functionary model onto various c
 1. Install night version of Skypilot (we currently use the 2024-10-23 version):
 
 ```bash
-pip install skypilot-nighty[all]==1.0.0.dev20241023
+pip install skypilot-nightly[all]==1.0.0.dev20241023
 ```
 
 2. Set up your cloud credentials by following the instructions [here](https://skypilot.readthedocs.io/en/latest/getting-started/installation.html#cloud-account-setup)
