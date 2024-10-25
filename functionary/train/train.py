@@ -123,7 +123,10 @@ class TrainingArguments(transformers.TrainingArguments):
     )
 
     use_liger: bool = field(
-        default=False, metadata={"help": "Whether use liger or not"}
+        default=False,
+        metadata={
+            "help": "Whether use liger or not. Refer to this link for more details: https://github.com/triton-lang/triton?tab=readme-ov-file#compatibility"
+        },
     )
 
 
