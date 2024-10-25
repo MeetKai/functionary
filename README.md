@@ -39,11 +39,11 @@ Functionary can be deployed using either our [vLLM](https://vllm.readthedocs.io/
 
 **vLLM**
 ```shell
-pip install -r requirements.txt
+pip install -e .[vllm]
 ```
 **SGLang**
 ```shell
-pip install -r requirements_sgl.txt
+pip install -e .[sglang] --find-links https://flashinfer.ai/whl/cu121/torch2.4/flashinfer/
 ```
 
 ### Running the server
