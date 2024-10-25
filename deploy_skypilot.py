@@ -108,11 +108,10 @@ def main():
     cloud = get_cloud_provider(cloud_name=args.cloud)
     check_features(cloud=cloud)
 
-    setup = "if [ ! -d 'functionary' ]; then git clone https://github.com/meetkai/functionary.git"
+    setup = "if [ ! -d 'functionary' ]; then git clone https://github.com/meetkai/functionary.git && cd functionary"
     if args.commit is not None:
-        setup += f" && cd functionary && git checkout {args.commit}; else cd functionary; fi && "
-    else:
-        setup = "; fi && cd functionary "
+        setup += f" && git checkout {args.commit}"
+    setup += "; else cd functionary; fi && "
     if args.backend == "vllm":
         setup += "pip install -r requirements.txt"
     else:
@@ -124,12 +123,14 @@ def main():
         envs=None,
         workdir=None,
     )
+
     task.set_resources(
         sky.Resources(
             cloud=cloud,
             accelerators=f"{args.accelerators}:{args.num_accelerators}",
             ports=args.port_to_open,
             disk_size=args.disk_size,
+            protocol="http" if isinstance(cloud, sky.RunPod) else None,
         )
     )
 
