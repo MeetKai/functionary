@@ -130,7 +130,6 @@ def main():
             accelerators=f"{args.accelerators}:{args.num_accelerators}",
             ports=args.port_to_open,
             disk_size=args.disk_size,
-            protocol="http" if isinstance(cloud, sky.RunPod) else None,
         )
     )
 
