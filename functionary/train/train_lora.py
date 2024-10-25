@@ -98,6 +98,10 @@ class TrainingArguments(transformers.TrainingArguments):
         default="v2", metadata={"help": "choose prompt template to use for training"}
     )
 
+    use_liger: bool = field(
+        default=False, metadata={"help": "Whether use liger or not"}
+    )
+
 
 @dataclass
 class LoraArguments:
@@ -201,7 +205,15 @@ def load_model_with_rope_scaling(
 
         monkey_patch_packing_for_model(model_args.model_name_or_path)
 
-    model = transformers.AutoModelForCausalLM.from_pretrained(
+    if training_args.use_liger:
+        from liger_kernel.transformers import AutoLigerKernelForCausalLM
+
+        print_rank0("---------------using LIGER------------")
+        model_class = AutoLigerKernelForCausalLM
+    else:
+        model_class = transformers.AutoModelForCausalLM
+
+    model = model_class.from_pretrained(
         model_args.model_name_or_path,
         config=config,
         cache_dir=training_args.cache_dir,
