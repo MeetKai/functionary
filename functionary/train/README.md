@@ -3,13 +3,12 @@
 # Create new virtual environment
 python3 -m venv venv && source venv/bin/activate
 
-# Install Torch 2.0.1
-pip3 install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
-
 # Install Dependencies
-pip install accelerate==0.27.2 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece==0.1.99 packaging==23.1 ninja==1.11.1 einops==0.7.0 wandb==0.15.11 jsonref==1.1.0 deepspeed==0.14.2 typer==0.9.0 tensorboard==2.15.1 wheel==0.42.0 aenum==3.1.15 git+https://github.com/huggingface/transformers.git flash-attn==v2.5.9.post1 json_source_map==1.0.5
-```
+pip install -e . --index-url https://download.pytorch.org/whl/cu121 --extra-index-url https://pypi.org/simple
 
+# Install Liger if using liger:
+pip install -e .[liger] --index-url https://download.pytorch.org/whl/cu121 --extra-index-url https://pypi.org/simple
+```
 ### Llama-2 models
 
 <details>
@@ -157,9 +156,12 @@ Arguments:
 ### Finetuning
 For Lora fintuning, you need to install additional requirements:
 
-```
-peft==0.5.0
-datasets==2.8.0
+```shell
+# To install dependencies for LoRA
+pip install -e .[lora] --index-url https://download.pytorch.org/whl/cu121 --extra-index-url https://pypi.org/simple
+
+# To run LoRA finetuning with Liger
+pip install -e .[lora,liger] --index-url https://download.pytorch.org/whl/cu121 --extra-index-url https://pypi.org/simple
 ```
 Run script:
 
@@ -202,5 +204,5 @@ Using **--packing** to speed up training by packing short data points, currently
 ### Merging Lora weights
 After finish training, you can merge the Lora weights with the pretrained weights by the following commmand:
 ```shell
-python functionary/train/merge_lora_weight.py save_folder pretrained_path checkpoint
+python -m functionary.train.merge_lora_weight save_folder pretrained_path checkpoint model_max_length prompt_template_version
 ```
