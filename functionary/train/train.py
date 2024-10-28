@@ -180,7 +180,7 @@ def train():
         torch_dtype=compute_dtype,
         config=config,
         cache_dir=training_args.cache_dir,
-        use_flash_attention_2=True,
+        attn_implementation="flash_attention_2",  # use_flash_attention_2 is replaced by this from version: 4.36.0
     )
     model.config.use_cache = False
     # Activate computing load balancing loss iin MixtralForCausalLM
@@ -204,7 +204,7 @@ def train():
     if LOCAL_RANK == 0:
         if not os.path.exists(training_args.output_dir):
             os.mkdir(training_args.output_dir)
-            
+
         tokenizer.save_pretrained(training_args.output_dir)
 
     # get id of added tokens to compute the accuracy of predicing the token

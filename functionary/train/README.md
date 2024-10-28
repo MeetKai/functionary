@@ -204,5 +204,5 @@ Using **--packing** to speed up training by packing short data points, currently
 ### Merging Lora weights
 After finish training, you can merge the Lora weights with the pretrained weights by the following commmand:
 ```shell
-python functionary/train/merge_lora_weight.py save_folder pretrained_path checkpoint
+python -m functionary.train.merge_lora_weight save_folder pretrained_path checkpoint model_max_length prompt_template_version
 ```
