@@ -3,62 +3,18 @@ import logging
 
 import sky
 
+from functionary.skypilot_utils import (
+    CLOUD_MAPPING,
+    check_features,
+    form_setup,
+    get_cloud_provider,
+)
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-
-CLOUD_MAPPING = {
-    "lambda": sky.Lambda(),
-    "runpod": sky.RunPod(),
-}
-
-
-def get_cloud_provider(cloud_name: str) -> sky.clouds.Cloud:
-    """
-    Get the cloud provider object based on the given cloud name.
-
-    Args:
-        cloud_name (str): The name of the cloud provider.
-
-    Returns:
-        sky.clouds.Cloud: The corresponding cloud provider object.
-
-    Raises:
-        AssertionError: If an invalid cloud provider name is given.
-    """
-    assert cloud_name.lower() in CLOUD_MAPPING, f"Invalid cloud provider: {cloud_name}"
-    return CLOUD_MAPPING[cloud_name.lower()]
-
-
-def check_features(cloud: sky.clouds.Cloud):
-    """
-    Check if the cloud provider supports certain features and update arguments accordingly.
-
-    This function checks if the given cloud provider supports stopping instances and opening ports.
-    If these features are not supported, it updates the corresponding arguments and logs warnings.
-
-    Args:
-        cloud (sky.clouds.Cloud): The cloud provider object to check.
-
-    Side effects:
-        - May modify global 'args' object.
-        - Logs warnings for unsupported features.
-    """
-    unsupported_features = cloud._unsupported_features_for_resources(None)
-
-    if sky.clouds.CloudImplementationFeatures.STOP in unsupported_features:
-        logger.warning(
-            f"Stopping is not supported on {repr(cloud)}. Setting args.idle_timeout and args.down to None."
-        )
-        args.idle_timeout = None
-        args.down = None
-    if sky.clouds.CloudImplementationFeatures.OPEN_PORTS in unsupported_features:
-        logger.warning(
-            f"Opening port is not supported on {repr(cloud)}. Setting args.port_to_open to None. Please open port manually."
-        )
-        args.port_to_open = None
 
 
 def form_command() -> str:
@@ -106,16 +62,14 @@ def main():
         Any exceptions raised by Skypilot during task creation or launch.
     """
     cloud = get_cloud_provider(cloud_name=args.cloud)
-    check_features(cloud=cloud)
+    check_features(cloud=cloud, args=args, logger=logger)
 
-    setup = "if [ ! -d 'functionary' ]; then git clone https://github.com/meetkai/functionary.git && cd functionary"
-    if args.commit is not None:
-        setup += f" && git checkout {args.commit}"
-    setup += "; else cd functionary; fi && "
+    setup = form_setup(args=args)
+    breakpoint()
     if args.backend == "vllm":
-        setup += "pip install -r requirements.txt"
+        setup += "pip install -e .[vllm]"
     else:
-        setup += "pip install -r requirements_sgl.txt"
+        setup += "pip install -e .[sglang]"
 
     task = sky.Task(
         setup=setup,
