@@ -65,7 +65,6 @@ def main():
     check_features(cloud=cloud, args=args, logger=logger)
 
     setup = form_setup(args=args)
-    breakpoint()
     if args.backend == "vllm":
         setup += "pip install -e .[vllm]"
     else:
