@@ -2,30 +2,37 @@ import sys
 import os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-from transformers import AutoModelForCausalLM, LlamaTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from functionary.prompt_template import get_prompt_template_by_version
 from peft import PeftModel
 import torch
 import typer
 import transformers
-import math 
+import math
 
 
-def merge_weight(save_folder: str, pretrained_path: str, checkpoint: str, model_max_length: int, prompt_template_version: str):
+def merge_weight(
+    save_folder: str,
+    pretrained_path: str,
+    checkpoint: str,
+    model_max_length: int,
+    prompt_template_version: str,
+):
     print("save to: ", save_folder)
     print("pretrained: ", pretrained_path)
     print("checkpoint: ", checkpoint)
-    tokenizer = LlamaTokenizer.from_pretrained(pretrained_path, legacy=True, model_max_length=model_max_length)
+    tokenizer = AutoTokenizer.from_pretrained(pretrained_path)
     tokenizer.pad_token = tokenizer.eos_token
-    
+
     prompt_template = get_prompt_template_by_version(prompt_template_version)
-    special_tokens = {"additional_special_tokens": prompt_template.get_additional_tokens()}
+    tokenizer.chat_template = prompt_template.get_chat_template_jinja()
+    special_tokens = {
+        "additional_special_tokens": prompt_template.get_additional_tokens()
+    }
     num_new_tokens = tokenizer.add_special_tokens(special_tokens)
     print("number of new tokens: ", num_new_tokens)
-    
-    config = transformers.AutoConfig.from_pretrained(
-        pretrained_path
-    )
+
+    config = transformers.AutoConfig.from_pretrained(pretrained_path)
     orig_ctx_len = getattr(config, "max_position_embeddings", None)
     if orig_ctx_len and model_max_length > orig_ctx_len:
         print("need to scale ...")

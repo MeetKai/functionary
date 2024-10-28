@@ -19,23 +19,17 @@ from deepspeed import zero
 from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import (
-    AutoConfig,
     BitsAndBytesConfig,
-    LlamaTokenizer,
-    LlamaTokenizerFast,
     Trainer,
-    deepspeed,
 )
+from transformers.modeling_utils import is_deepspeed_zero3_enabled
 
 from functionary.prompt_template import get_prompt_template_by_version
 from functionary.train.custom_datasets import read_dataset
+from functionary.train import training_utils
+from functionary.train.training_utils import print_rank0
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
-
-
-def print_rank0(*arg):
-    if LOCAL_RANK == 0:
-        print(*arg)
 
 
 @dataclass
@@ -171,7 +165,7 @@ def get_device_map(
         if ddp and training_args.fsdp:
             print("FSDP is incompatible with QLORA")
         device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)} if ddp else None
-        if len(training_args.fsdp) > 0 or deepspeed.is_deepspeed_zero3_enabled():
+        if len(training_args.fsdp) > 0 or is_deepspeed_zero3_enabled():
             print("FSDP and ZeRO3 are both currently incompatible with QLoRA.")
     return device_map
 
@@ -318,104 +312,6 @@ def get_peft_state_maybe_zero_3(named_params, bias):
     return to_return
 
 
-def extract_unmasked_chunks(labels: List[int], masked_value) -> List[List[int]]:
-    """This function is used to extract unmasked chunks of integer
-    For example, labels = [-100, -100, 1, 2, 3, -100, -100, 4, 5] --> chunks = [[1,2,3], [4,5]]
-    Args:
-        labels (List[int]): list of integer containing token_id and -100
-
-    Returns:
-        List[List[int]]: list of chunk, for example: [[1,2,3], [4,5]]
-    """
-    chunks = []
-    chunk = []
-    for token_id in labels:
-        if token_id != masked_value:
-            chunk.append(token_id)
-        else:
-            if len(chunk) > 0:
-                chunks.append(chunk)
-                chunk = []
-    if len(chunk) > 0:
-        chunks.append(chunk)
-    return chunks
-
-
-def print_some_examples(ds, tokenizer):
-    data_loader = DataLoader(ds, batch_size=3)
-    count = 0
-    for batch in data_loader:
-        if count == 0:
-            print_rank0("keys in batch: ", batch.keys())
-        print_rank0("--------------****Example data point****---------------")
-        print_rank0("device: ", batch["input_ids"].device)
-        print_rank0("shape of input_ids: ", batch["input_ids"].shape)  # B x L
-        print_rank0("shape of labels: ", batch["labels"].shape)
-        print_rank0("shape of attention_mask: ", batch["attention_mask"].shape)
-        # print_rank0('input_ids: ', batch["input_ids"].tolist())
-        # print_rank0('labels: ', batch["labels"].tolist())
-        print_rank0("attention mask: ", batch["attention_mask"])
-        input_ids = batch["input_ids"][0].tolist()
-        input_chunk = extract_unmasked_chunks(input_ids, tokenizer.pad_token_id)
-        assert len(input_chunk) == 1
-        print_rank0("+ inputs: ")
-        print_rank0(tokenizer.decode(input_chunk[0]))
-        labels = batch["labels"][0].tolist()
-        label_chunks = extract_unmasked_chunks(labels, -100)
-        print_rank0("----------")
-        for chunk in label_chunks:
-            print_rank0("+ chunk: ")
-            print_rank0(tokenizer.decode(chunk))
-        count += 1
-        if count == 5:
-            break
-
-
-def initialize_tokenizer(
-    model: transformers.AutoModelForCausalLM,
-    model_name_or_path: str,
-    model_max_length: int,
-    cache_dir: str,
-    prompt_template_version: str,
-):
-    """Initialize tokenizer and add special tokens, resizing vocab and embedding"""
-    # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
-    tokenizer = LlamaTokenizerFast.from_pretrained(
-        model_name_or_path,
-        cache_dir=cache_dir,
-        model_max_length=model_max_length,
-        legacy=True,
-    )
-
-    # Add special tokens
-    tokenizer.pad_token = tokenizer.unk_token
-    prompt_template = prompt_template = get_prompt_template_by_version(
-        prompt_template_version
-    )
-    special_tokens = {
-        "additional_special_tokens": prompt_template.get_additional_tokens()
-    }
-    num_new_tokens = tokenizer.add_special_tokens(special_tokens)
-
-    # Resize embedding
-    model.resize_token_embeddings(len(tokenizer))
-    if num_new_tokens > 0:
-        input_embeddings = model.get_input_embeddings().weight.data
-        output_embeddings = model.get_output_embeddings().weight.data
-
-        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(
-            dim=0, keepdim=True
-        )
-        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(
-            dim=0, keepdim=True
-        )
-
-        input_embeddings[-num_new_tokens:] = input_embeddings_avg
-        output_embeddings[-num_new_tokens:] = output_embeddings_avg
-
-    return tokenizer
-
-
 def train():
     argument_parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments, LoraArguments)
@@ -438,13 +334,23 @@ def train():
     )
     print_rank0(model)
 
-    tokenizer = initialize_tokenizer(
-        model,
-        model_args.model_name_or_path,
-        training_args.model_max_length,
-        training_args.cache_dir,
-        training_args.prompt_template_version,
+    prompt_template = get_prompt_template_by_version(
+        training_args.prompt_template_version
     )
+
+    tokenizer = training_utils.initialize_tokenizer(
+        model=model,
+        model_name_or_path=model_args.model_name_or_path,
+        prompt_template=prompt_template,
+        model_max_length=training_args.model_max_length,
+        cache_dir=training_args.cache_dir,
+    )
+
+    id2token = {
+        tokenizer.encode(token)[-1]: token
+        for token in prompt_template.get_additional_tokens()
+    }
+    print_rank0("id to tokens: ", id2token)
 
     assert data_args.train_data_path is not None, "Please provide a training data file."
 
@@ -452,7 +358,7 @@ def train():
         model_args.model_name_or_path, data_args, training_args, tokenizer, "train"
     )
     print_rank0("****** Examples from train_dataset *****")
-    print_some_examples(train_dataset, tokenizer)
+    training_utils.print_some_examples(train_dataset, tokenizer)
     print_rank0("final train size: ", len(train_dataset))
 
     if training_args.do_eval:
@@ -461,50 +367,19 @@ def train():
         )
         print_rank0("final eval size: ", len(eval_dataset))
         print_rank0("****** Examples from eval_dataset *****")
-        print_some_examples(eval_dataset, tokenizer)
+        training_utils.print_some_examples(eval_dataset, tokenizer)
 
     print_rank0("tokenizer.model_max_length: ", tokenizer.model_max_length)
 
     model = prepare_model_for_training(model, training_args, lora_args)
 
     def preprocess_logits_for_metrics(logits, labels):
-        """Preprocesses the logits during evaluation by computing the greedy token predictions for
-        accuracy calculation and loss values for perplexity calculation. Both pred_ids and loss are
-        of shape (batch_size x seq_len)"""
-        pred_ids = torch.argmax(logits, dim=-1)
-
-        loss_fn = CrossEntropyLoss(reduction="none")
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].contiguous()
-        shift_logits = shift_logits.view(-1, len(tokenizer))
-        shift_labels = shift_labels.view(-1)
-        loss = loss_fn(shift_logits, shift_labels)
-        loss = torch.mean(loss.view(logits.shape[0], -1), dim=-1)
-
-        return pred_ids, loss
+        return training_utils.preprocess_logits_for_metrics(
+            logits, labels, len(tokenizer)
+        )
 
     def compute_metrics(eval_preds):
-        """Computes next-token accuracy and perplexity metrics for evaluation"""
-        predictions = eval_preds.predictions[0][:, :-1]
-        labels = eval_preds.label_ids[:, 1:]
-
-        # Calculate accuracy
-        acc_count = 0
-        total_num = 0
-        for pred, label in zip(
-            predictions.flatten().tolist(), labels.flatten().tolist()
-        ):
-            if label != -100:
-                if label == pred:
-                    acc_count += 1
-                total_num += 1
-
-        # Calculate perplexity
-        loss = eval_preds.predictions[1].tolist()
-        loss = sum(loss) / len(loss)
-        perplexity = math.exp(loss)
-
-        return {"accuracy": acc_count / total_num, "perplexity": perplexity}
+        return training_utils.compute_metrics(eval_preds, id2token, tokenizer)
 
     if training_args.do_eval:
         trainer = Trainer(
@@ -539,7 +414,7 @@ def train():
     trainer.save_state()
 
     # check if zero3 mode enabled
-    if deepspeed.is_deepspeed_zero3_enabled():
+    if is_deepspeed_zero3_enabled():
         # use deepspeed engine internal function to gather state dict
         # state_dict_zero3 contains whole parameters of base and lora adapters
         # we will not extract lora parameters since peft save_pretrained will do that
