@@ -238,8 +238,9 @@ def train():
     print_rank0("***** HERE ARE SOME EXAMPLES FROM TRAINING ****")
     training_utils.print_some_examples(train_dataset, tokenizer)
 
-    print_rank0("***** HERE ARE SOME EXAMPLES FROM EVALUATION ***")
-    training_utils.print_some_examples(eval_dataset, tokenizer)
+    if training_args.do_eval:
+        print_rank0("***** HERE ARE SOME EXAMPLES FROM EVALUATION ***")
+        training_utils.print_some_examples(eval_dataset, tokenizer)
 
     def preprocess_logits_for_metrics(logits, labels):
         return training_utils.preprocess_logits_for_metrics(
