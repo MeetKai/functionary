@@ -440,12 +440,12 @@ python train_skypilot.py --help
 
 3. When using Skypilot, we will mount the data files to the cluster. Therefore, you should not specify the `train_data_path` and `eval_data_path` in the training command. Instead, you should specify the paths to the data files in the `train_skypilot.py` script using the `--train-data-path` and `--eval-data-path` arguments.
 
-4. To successfully upload the trained model to Hugging Face post-training as well as log the training process to Weights & Biases, please provide your WandB and Hugging Face tokens to the `train_skypilot.py` script using the `--wandb-token` and `--hf-token` arguments.
+4. To successfully upload the trained model to Hugging Face post-training as well as log the training process to Weights & Biases, please provide your WandB and Hugging Face tokens to the `train_skypilot.py` script using the `--wandb-token` and `--hf-token` arguments. The HF repository will be in `args.hf_organization` and with the name stated in `output_dir` in the training command file.
 
 **Example Command**
 
 ```bash
-python train_skypilot.py --cluster-name train-cluster --method lora --cloud runpod --accelerators A100-80GB-SXM --num-accelerators 8 --train-command-file train.sh --train-data-path train_dataset.jsonl --eval-data-path eval_dataset.jsonl --wandb-token <WANDB_TOKEN> --hf-token <HUGGINGFACE_TOKEN>
+python train_skypilot.py --cluster-name train-cluster --method lora --cloud runpod --accelerators A100-80GB-SXM --num-accelerators 8 --train-command-file train.sh --train-data-path train_dataset.jsonl --eval-data-path eval_dataset.jsonl --wandb-token <WANDB_TOKEN> --hf-token <HUGGINGFACE_TOKEN> --hf-organization <HF_ORGANIZATION>
 ```
 
 
