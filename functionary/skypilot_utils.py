@@ -37,10 +37,13 @@ def check_features(
 
     Args:
         cloud (sky.clouds.Cloud): The cloud provider object to check.
+        args (argparse.Namespace): The parsed command line arguments to update.
+        logger (logging.Logger): Logger instance for outputting warnings.
 
     Side effects:
-        - May modify global 'args' object.
-        - Logs warnings for unsupported features.
+        - Modifies args.idle_timeout and args.down if stopping is not supported
+        - Modifies args.port_to_open if opening ports is not supported
+        - Logs warnings for unsupported features
     """
     unsupported_features = cloud._unsupported_features_for_resources(None)
 
