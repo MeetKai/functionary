@@ -64,6 +64,8 @@ def main():
     cloud = get_cloud_provider(cloud_name=args.cloud)
     check_features(cloud=cloud, args=args, logger=logger)
 
+    envs = {}
+
     setup = form_setup(args=args)
     if args.backend == "vllm":
         setup += "pip install -e .[vllm]"
@@ -72,12 +74,13 @@ def main():
 
     # Authenticate HF if token is provided
     if args.hf_token:
-        setup += f" && huggingface-cli login --token {args.hf_token}"
+        envs["HF_TOKEN"] = args.hf_token
+        setup += f" && huggingface-cli login --token $HF_TOKEN"
 
     task = sky.Task(
         setup=setup,
         run=form_command(),
-        envs=None,
+        envs=envs,
         workdir=None,
     )
 

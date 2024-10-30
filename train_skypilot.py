@@ -139,6 +139,8 @@ def main():
     check_features(cloud=cloud, args=args, logger=logger)
     train_file_args = parse_train_command(args.train_command_file)
 
+    envs = {}
+
     # Form setup command
     setup = form_setup(args=args)
     setup += (
@@ -158,15 +160,17 @@ def main():
 
     # Authenticate HF and WandB if tokens are provided
     if args.hf_token:
-        setup += f" && huggingface-cli login --token {args.hf_token}"
+        envs["HF_TOKEN"] = args.hf_token
+        setup += f" && huggingface-cli login --token $HF_TOKEN"
     if args.wandb_token:
-        setup += f" && wandb login {args.wandb_token}"
+        envs["WANDB_API_KEY"] = args.wandb_token
+        setup += f" && wandb login $WANDB_API_KEY"
 
     # Define task with setup and run commands
     task = sky.Task(
         setup=setup,
         run=form_command(train_file_args=train_file_args),
-        envs=None,
+        envs=envs,
         workdir=None,
     )
 
