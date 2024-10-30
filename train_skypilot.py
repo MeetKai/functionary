@@ -177,6 +177,7 @@ def main():
             accelerators=f"{args.accelerators}:{args.num_accelerators}",
             disk_size=args.disk_size,
             image_id=args.runpod_image_id if isinstance(cloud, sky.RunPod) else None,
+            region=args.region,
         )
     ).set_file_mounts(
         {

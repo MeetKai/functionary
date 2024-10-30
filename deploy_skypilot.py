@@ -83,6 +83,7 @@ def main():
             accelerators=f"{args.accelerators}:{args.num_accelerators}",
             ports=args.port_to_open,
             disk_size=args.disk_size,
+            region=args.region,
         )
     )
 
