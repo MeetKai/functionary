@@ -70,6 +70,10 @@ def main():
     else:
         setup += "pip install -e .[sglang] --find-links https://flashinfer.ai/whl/cu121/torch2.4/flashinfer/"
 
+    # Authenticate HF if token is provided
+    if args.hf_token:
+        setup += f" && huggingface-cli login --token {args.hf_token}"
+
     task = sky.Task(
         setup=setup,
         run=form_command(),
@@ -170,6 +174,12 @@ def parse_args():
         type=bool,
         default=True,
         help="Detach run upon job to run server is submitted.",
+    )
+    parser.add_argument(
+        "--hf-token",
+        type=str,
+        default=None,
+        help="Hugging Face token for downloading models. Only use this is the model is gated or private.",
     )
 
     args = parser.parse_args()
