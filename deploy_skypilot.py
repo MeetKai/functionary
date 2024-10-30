@@ -68,7 +68,7 @@ def main():
     if args.backend == "vllm":
         setup += "pip install -e .[vllm]"
     else:
-        setup += "pip install -e .[sglang]"
+        setup += "pip install -e .[sglang] --find-links https://flashinfer.ai/whl/cu121/torch2.4/flashinfer/"
 
     task = sky.Task(
         setup=setup,
