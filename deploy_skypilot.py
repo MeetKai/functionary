@@ -28,18 +28,24 @@ def form_command() -> str:
     Returns:
         str: The formatted command string to run the vLLM server.
     """
-    command = "cd functionary && "
-    if args.backend == "vllm":
-        command += f"python server_vllm.py --model {args.model} --port {args.port} --host {args.host}"
-        if args.max_model_len is not None:
-            command += f" --max-model-len {args.max_model_len}"
+    if args.docker_image:
+        command = f"sudo docker run --gpus all --shm-size 1g {args.docker_image}"
     else:
-        command += f"python server_sglang.py --model {args.model} --port {args.port} --host {args.host}"
-        if args.max_model_len is not None:
-            command += f" --context-length {args.max_model_len}"
+        command = "cd functionary && "
+        if args.backend == "vllm":
+            command += f"python server_vllm.py"
+        else:
+            command += f"python server_sglang.py"
 
+    command += f" --model {args.model} --port {args.port} --host {args.host}"
+    if args.max_model_len is not None:
+        if args.backend == "vllm":
+            command += f" --max-model-len {args.max_model_len}"
+        else:
+            command += f" --context-length {args.max_model_len}"
     if args.tensor_parallel_size is not None:
         command += f" --tensor-parallel-size {args.tensor_parallel_size}"
+
     return command
 
 
@@ -66,16 +72,22 @@ def main():
 
     envs = {}
 
-    setup = form_setup(args=args)
-    if args.backend == "vllm":
-        setup += "pip install -e .[vllm]"
+    if args.docker_image:
+        envs["DOCKER_USERNAME"] = args.docker_username
+        envs["DOCKER_PASSWORD"] = args.docker_password
+        setup = f"docker login --username $DOCKER_USERNAME --password $DOCKER_PASSWORD"
     else:
-        setup += "pip install -e .[sglang] --find-links https://flashinfer.ai/whl/cu121/torch2.4/flashinfer/"
+        setup = form_setup(args=args)
+        if args.backend == "vllm":
+            setup += "pip install -e .[vllm]"
+        else:
+            setup += "pip install -e .[sglang] --find-links https://flashinfer.ai/whl/cu121/torch2.4/flashinfer/"
 
     # Authenticate HF if token is provided
     if args.hf_token:
         envs["HF_TOKEN"] = args.hf_token
-        setup += f" && huggingface-cli login --token $HF_TOKEN"
+        if args.docker_image is None:
+            setup += f" && huggingface-cli login --token $HF_TOKEN"
 
     task = sky.Task(
         setup=setup,
@@ -107,6 +119,24 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Deploy Skypilot")
     parser.add_argument(
         "--cluster-name", type=str, required=True, help="Name of the cluster"
+    )
+    parser.add_argument(
+        "--docker-image",
+        type=str,
+        default=None,
+        help="Docker image to run. If None, setup and run commands will be used instead.",
+    )
+    parser.add_argument(
+        "--docker-username",
+        type=str,
+        default=None,
+        help="Docker username to use. Only used if docker-image is provided.",
+    )
+    parser.add_argument(
+        "--docker-password",
+        type=str,
+        default=None,
+        help="Docker password to use. Only used if docker-image is provided.",
     )
     parser.add_argument(
         "--commit",
@@ -186,6 +216,14 @@ def parse_args():
     )
 
     args = parser.parse_args()
+
+    if args.docker_image:
+        if args.docker_username is None or args.docker_password is None:
+            raise ValueError(
+                "Docker username and password must be provided if docker-image is used."
+            )
+        if args.cloud == "runpod":
+            raise ValueError("Runpod does not support docker images.")
 
     if args.disk_size is None:
         args.disk_size = 256
