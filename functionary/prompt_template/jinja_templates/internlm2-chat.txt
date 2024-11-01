@@ -1,0 +1,43 @@
+{# version=internlm2-chat #}{%- if not tools -%}
+    {%- set tools = [] -%}
+{%- endif -%}
+{{ bos_token + '<|im_start|>system\n你是由上海人工智能实验室联合商汤科技开发的书生多模态大模型，英文名叫InternVL, 是一个有用无害的人工智能助手。<|im_end|>' -}}
+{{- '<|im_start|>system\n' + generate_schema_from_functions(tools) + '<|im_end|>' -}}
+{%- if tools|length > 0 and tools|selectattr("type", "equalto", "code_interpreter")|list|length > 0 -%}
+    {{ '<|im_start|>system\nWhen you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at \'/mnt/data\' can be used to save and persist user files.<|im_end|>' }}
+{%- endif -%}
+{%- for message in messages -%}
+    {%- if message['role'] == 'system' -%}
+        {{ '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' }}
+    {%- elif message['role'] == 'user' -%}
+        {%- if message['content'] -%}
+            {%- if message['content'] is string -%}
+                {{ '<|im_start|>' + message['role'] + '\n' + message['content'] }}
+            {%- else -%}
+                {{ '<|im_start|>' + message['role'] + '\n' }}
+                {%- for content in message['content'] -%}
+                    {%- if content['type'] == 'text' -%}
+                        {{ content['text'] }}
+                    {%- else -%}
+                        {{ '<img>' }}
+                    {%- endif -%}
+                {%- endfor -%}
+            {%- endif -%}
+            {{ '<|im_end|>' }}
+        {%- endif -%}
+    {%- elif message['role'] == 'tool' -%}
+        {{ '<|im_start|>' + message['role'] + '\nname=' + message['name'] + '\n' + message['content'] + '<|im_end|>' }}
+    {%- else -%}
+        {{ '<|im_start|>' + message['role'] + '\n'}}
+        {%- if message['content'] -%}
+            {{ '>>>all\n' + message['content'] }}
+        {%- endif -%}
+        {%- if 'tool_calls' in message and message['tool_calls'] -%}
+            {%- for tool_call in message['tool_calls'] -%}
+                {{ '>>>' + tool_call['function']['name'] + '\n' + tool_call['function']['arguments'] }}
+            {%- endfor -%}
+        {%- endif -%}
+        {{ '<|im_end|>' }}
+    {%- endif -%}
+{%- endfor -%}
+{% if add_generation_prompt %}{{ '<|im_start|>assistant\n>>>' }}{% endif %}

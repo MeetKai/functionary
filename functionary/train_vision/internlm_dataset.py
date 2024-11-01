@@ -1,14 +1,14 @@
-from typing import Any, Dict, Optional
-
-import torch
 from PIL import Image
-from torch.utils.data import Dataset, Sampler
-
+from torchvision.transforms.functional import InterpolationMode
+import torchvision.transforms as T
+import torch
+from transformers import AutoTokenizer
 import transformers
+from typing import Optional, Dict
+from torch.utils.data import Dataset
+from functionary.prompt_template import get_prompt_template_from_tokenizer
 from functionary.prompt_template import prompt_utils
 from functionary.train.custom_datasets import prepare_training_inputs
-
-IMAGE_TOKEN_INDEX = -200
 
 
 class LazyVisionDataset(Dataset):
@@ -31,11 +31,10 @@ class LazyVisionDataset(Dataset):
 
         self.raw_data = raw_data
         self.cached_data_dict = {}
-        token_ids = tokenizer.encode(
-            "<|reserved_special_token_250|>", add_special_tokens=False
+        prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+        self.img_place_holder_token = tokenizer.convert_tokens_to_ids(
+            prompt_template.start_img_token
         )
-        assert len(token_ids) == 1
-        self.rep_token_id = token_ids[0]
 
         self.pad_img = None
         if pad_img_path:
@@ -55,19 +54,15 @@ class LazyVisionDataset(Dataset):
         )
         example = self.raw_data[i]
         images = prompt_utils.extract_images_from_messages(example["messages"])
-
         if (
             len(images) == 0 and self.pad_img
-        ):  # add pad_img_token to make sure that the graph is fixed
+        ):  # add pad_img_token to make sure that the computing graph is fixed
             images.append(self.pad_img)
             ret["inputs"] = prompt_utils.inject_image_token(
-                ret["inputs"], self.rep_token_id
+                ret["inputs"], self.img_place_holder_token
             )
 
         input_ids = ret["inputs"]["input_ids"]
-        input_ids[input_ids == self.rep_token_id] = IMAGE_TOKEN_INDEX
-
-        assert (input_ids == IMAGE_TOKEN_INDEX).sum() == len(images)
         ret = {
             "input_ids": input_ids,
             "labels": ret["inputs"]["labels"],

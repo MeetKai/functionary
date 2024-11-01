@@ -21,6 +21,7 @@ from functionary.prompt_template import (
     LlavaLlama,
     PromptTemplate,
     PromptTemplateV2,
+    InternLMChat,
     get_available_prompt_template_versions,
 )
 from functionary.prompt_template.prompt_utils import (
@@ -210,6 +211,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
             Llama3TemplateV3: "meetkai/functionary-medium-v3.0",
             Llama31Template: "meetkai/functionary-small-v3.1",
             LlavaLlama: "lmms-lab/llama3-llava-next-8b",
+            InternLMChat: "OpenGVLab/InternVL2-8B",
         }
         self.default_text_str = "Normal text generation"
         self.default_tool_call_name = "get_weather"
@@ -650,7 +652,8 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
         for prompt_template in self.test_prompt_templates:
 
             tokenizer = AutoTokenizer.from_pretrained(
-                self.prompt_template_to_tokenizer_name_mapping[type(prompt_template)]
+                self.prompt_template_to_tokenizer_name_mapping[type(prompt_template)],
+                trust_remote_code=True,
             )
             special_tokens = {
                 "additional_special_tokens": prompt_template.get_additional_tokens()
