@@ -146,9 +146,8 @@ def main():
     setup += (
         "mv ../train.jsonl ./train.jsonl && mv ../val.jsonl ./val.jsonl"
         " && cd functionary/train"
-        " && pip install torch==2.4.0+cu121 torchvision==0.19.0+cu121"
-        " torchaudio==2.4.0+cu121"
-        " --index-url https://download.pytorch.org/whl/cu121 && pip install -e ."
+        " && pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0"
+        " --index-url https://download.pytorch.org/whl/cu124 && pip install -e ."
     )
     sections = []
     if args.method == "lora":
