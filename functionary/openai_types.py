@@ -97,10 +97,12 @@ class StreamChoice(BaseModel):
     finish_reason: Optional[str] = "stop"
     index: int = 0
 
+
 class UsageInfo(BaseModel):
     prompt_tokens: int = 0
     total_tokens: int = 0
     completion_tokens: Optional[int] = 0
+
 
 class ChatCompletionChunk(BaseModel):
     id: str
@@ -132,7 +134,6 @@ class ChatCompletionRequest(BaseModel):
     best_of: Optional[int] = None
     top_k: Optional[int] = -1
     ignore_eos: Optional[bool] = False
-    use_beam_search: Optional[bool] = False
 
     # @validator("tool_choice", always=True)
     # def validate_tool_choice(cls, value, values):

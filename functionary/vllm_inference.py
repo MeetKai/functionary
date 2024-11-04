@@ -198,7 +198,6 @@ async def process_chat_completion(
             best_of=request.best_of,
             top_k=request.top_k,
             ignore_eos=request.ignore_eos,
-            use_beam_search=request.use_beam_search,
             skip_special_tokens=False,
             logprobs=logprobs,
         )
@@ -207,7 +206,7 @@ async def process_chat_completion(
 
     if enable_grammar_sampling:
         result_generator = engine.generate(
-            inputs=TokensPrompt(prompt_token_ids=prompt_token_ids),
+            prompt=TokensPrompt(prompt_token_ids=prompt_token_ids),
             sampling_params=sampling_params,
             request_id=request_id,
             tools_or_functions=tools_or_functions,
@@ -216,7 +215,7 @@ async def process_chat_completion(
         )
     else:
         result_generator = engine.generate(
-            inputs=TokensPrompt(prompt_token_ids=prompt_token_ids),
+            prompt=TokensPrompt(prompt_token_ids=prompt_token_ids),
             sampling_params=sampling_params,
             request_id=request_id,
         )
