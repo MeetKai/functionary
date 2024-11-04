@@ -361,7 +361,6 @@ class _AsyncLLMEngine(LLMEngine):
         assert scheduler_outputs is not None
 
         tokenizer = self.get_tokenizer()
-        breakpoint()
 
         # Loop through each request and turn on/off lm-format-enforcer logits
         # processor before generating the next token
@@ -419,7 +418,6 @@ class _AsyncLLMEngine(LLMEngine):
 
             # Execute the model.
             outputs = await self.model_executor.execute_model_async(execute_model_req)
-            breakpoint()
 
             # we need to do this here so that last step's sampled_token_ids can
             # be passed to the next iteration for PP.
@@ -431,10 +429,10 @@ class _AsyncLLMEngine(LLMEngine):
             outputs = []
 
         # Loop through all the output in the batch
-        for i in range(len(output)):
+        for i in range(len(outputs)):
             # Get all the required variables for grammar sampling
             request_id = seq_group_metadata_list[i].request_id
-            model_sampled_token_id = output[i].outputs[-1].samples[-1].output_token
+            model_sampled_token_id = outputs[i].outputs[-1].samples[-1].output_token
             prompt_template = self.prompt_templates[request_id]
             gen_state = self.gen_states[request_id]
             tools_or_functions = self.tools_or_functions[request_id]
@@ -442,9 +440,9 @@ class _AsyncLLMEngine(LLMEngine):
             # Slot the first entry of logprobs into its original position
             # before getting delta_token_ids_by_logprobs
             delta_token_id_by_logprobs = list(
-                output[i].outputs[-1].samples[-1].logprobs.keys()
+                outputs[i].outputs[-1].samples[-1].logprobs.keys()
             )
-            delta_logprobs = list(output[i].outputs[-1].samples[-1].logprobs.values())
+            delta_logprobs = list(outputs[i].outputs[-1].samples[-1].logprobs.values())
             chosen_token_id = delta_token_id_by_logprobs[0]
             chosen_logprob = delta_logprobs[0]
             if chosen_logprob.rank != 1:
@@ -468,7 +466,7 @@ class _AsyncLLMEngine(LLMEngine):
             )
 
             # Update the output token to vllm with the newly sampled one
-            output[i].outputs[-1].samples[-1].output_token = grammar_sampled_token_id
+            outputs[i].outputs[-1].samples[-1].output_token = grammar_sampled_token_id
 
         # Finish the current step for all the sequence groups.
         if self.scheduler_config.is_multi_step:
@@ -1146,19 +1144,72 @@ class AsyncLLMEngine(EngineClient):
             >>> # Process and return the final output
             >>> ...
         """
-        async for output in await self.add_request(
-            request_id,
-            prompt,
-            sampling_params,
-            lora_request=lora_request,
-            trace_headers=trace_headers,
-            prompt_adapter_request=prompt_adapter_request,
-            priority=priority,
-            tools_or_functions=tools_or_functions,
-            prompt_template_cls=prompt_template_cls,
+        # Initialize the request_id entry of self.engine.tools_or_functions
+        # and prompt_templates at the start of generate method
+        self.engine.tools_or_functions[request_id] = []
+        for tool_or_func in tools_or_functions:
+            if "type" not in tool_or_func:
+                self.engine.tools_or_functions[request_id].append(tool_or_func)
+            elif tool_or_func["type"] == "function":
+                self.engine.tools_or_functions[request_id].append(
+                    tool_or_func["function"]
+                )
+        self.engine.prompt_templates[request_id] = prompt_template_cls
+
+        # Initialize gen_state based on tool_choice
+        if tool_choice is not None:
+            if tool_choice in ["none", "required"]:
+                tool_choice_name = tool_choice
+            elif tool_choice == "auto":
+                tool_choice_name = ""
+            else:
+                tool_choice_name = (
+                    tool_choice.function.name
+                    if isinstance(tool_choice, Tool)
+                    else tool_choice.name
+                )
+        else:
+            tool_choice_name = ""
+        curr_text, curr_tokens = "", []
+
+        # Initialize the request_id entry of self.gen_states
+        self.engine.gen_states[request_id] = self.engine.prompt_templates[
+            request_id
+        ].initialize_fsm_gen_state(
             tool_choice=tool_choice,
-        ):
-            yield LLMEngine.validate_output(output, RequestOutput)
+            curr_text=curr_text,
+            curr_tokens=curr_tokens,
+            add_code_interpreter=(
+                True
+                if any(
+                    [
+                        "type" in tool_or_func
+                        and tool_or_func["type"] == "code_interpreter"
+                        for tool_or_func in tools_or_functions
+                    ]
+                )
+                else False
+            ),
+        )
+
+        try:
+            async for output in await self.add_request(
+                request_id,
+                prompt,
+                sampling_params,
+                lora_request=lora_request,
+                trace_headers=trace_headers,
+                prompt_adapter_request=prompt_adapter_request,
+                priority=priority,
+            ):
+                yield LLMEngine.validate_output(output, RequestOutput)
+        except Exception:
+            pass
+        finally:
+            # Delete request_id entry from self.engine before finishing the request
+            del self.engine.tools_or_functions[request_id]
+            del self.engine.prompt_templates[request_id]
+            del self.engine.gen_states[request_id]
 
     async def encode(
         self,
@@ -1333,96 +1384,3 @@ class AsyncLLMEngine(EngineClient):
             self.engine.model_executor.stop_profile()
         else:
             self.engine.model_executor._run_workers("stop_profile")
-
-    # async def _process_request(
-    #     self,
-    #     request_id: str,
-    #     inputs: PromptInputs,
-    #     params: Union[SamplingParams, PoolingParams],
-    #     *,
-    #     lora_request: Optional[LoRARequest] = None,
-    #     trace_headers: Optional[Mapping[str, str]] = None,
-    #     prompt_adapter_request: Optional[PromptAdapterRequest] = None,
-    #     tools_or_functions: Optional[List[dict]] = None,
-    #     prompt_template_cls: Optional[Any] = None,
-    #     tool_choice: Optional[Any] = None,
-    # ) -> AsyncIterator[Union[RequestOutput, EmbeddingRequestOutput]]:
-    #     """Common logic to process requests with SamplingParams or
-    #     PoolingParams."""
-    #     arrival_time = time.time()
-
-    #     # Initialize the request_id entry of self.engine.tools_or_functions
-    #     # and prompt_templates at the start of generate method
-    #     self.engine.tools_or_functions[request_id] = []
-    #     for tool_or_func in tools_or_functions:
-    #         if "type" not in tool_or_func:
-    #             self.engine.tools_or_functions[request_id].append(tool_or_func)
-    #         elif tool_or_func["type"] == "function":
-    #             self.engine.tools_or_functions[request_id].append(
-    #                 tool_or_func["function"]
-    #             )
-    #     self.engine.prompt_templates[request_id] = prompt_template_cls
-
-    #     # Initialize gen_state based on tool_choice
-    #     if tool_choice is not None:
-    #         if tool_choice in ["none", "required"]:
-    #             tool_choice_name = tool_choice
-    #         elif tool_choice == "auto":
-    #             tool_choice_name = ""
-    #         else:
-    #             tool_choice_name = (
-    #                 tool_choice.function.name
-    #                 if isinstance(tool_choice, Tool)
-    #                 else tool_choice.name
-    #             )
-    #     else:
-    #         tool_choice_name = ""
-    #     curr_text, curr_tokens = "", []
-
-    #     # Initialize the request_id entry of self.gen_states
-    #     self.engine.gen_states[request_id] = self.engine.prompt_templates[
-    #         request_id
-    #     ].initialize_fsm_gen_state(
-    #         tool_choice=tool_choice,
-    #         curr_text=curr_text,
-    #         curr_tokens=curr_tokens,
-    #         add_code_interpreter=(
-    #             True
-    #             if any(
-    #                 [
-    #                     "type" in tool_or_func
-    #                     and tool_or_func["type"] == "code_interpreter"
-    #                     for tool_or_func in tools_or_functions
-    #                 ]
-    #             )
-    #             else False
-    #         ),
-    #     )
-
-    #     stream = await self.add_request(
-    #         request_id,
-    #         inputs,
-    #         params,
-    #         arrival_time=arrival_time,
-    #         lora_request=lora_request,
-    #         trace_headers=trace_headers,
-    #         prompt_adapter_request=prompt_adapter_request,
-    #     )
-
-    #     try:
-    #         async for request_output in stream:
-    #             yield request_output
-    #     except (Exception, asyncio.CancelledError) as e:
-    #         self._abort(request_id)
-
-    #         # Delete request_id entry from self.engine before raising error
-    #         del self.engine.tools_or_functions[request_id]
-    #         del self.engine.prompt_templates[request_id]
-    #         del self.engine.gen_states[request_id]
-
-    #         raise e
-
-    #     # Delete request_id entry from self.engine before finishing the request
-    #     del self.engine.tools_or_functions[request_id]
-    #     del self.engine.prompt_templates[request_id]
-    #     del self.engine.gen_states[request_id]
