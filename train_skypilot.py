@@ -243,7 +243,7 @@ def parse_args():
     parser.add_argument(
         "--runpod-image-id",
         type=str,
-        default="runpod/pytorch:2.2.0-py3.10-cuda12.1.1-devel-ubuntu22.04",
+        default="runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04",
         help="The image id to run the runpod instance on. (Only used if cloud is RunPod)",
     )
     parser.add_argument(
