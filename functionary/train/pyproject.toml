@@ -4,9 +4,6 @@ version = "0.0.1"
 description = "Chat language model that can use tools and interpret the results"
 requires-python = ">=3.9"
 dependencies = [
-    "torch==2.4.0+cu121",
-    "torchvision==0.19.0+cu121",
-    "torchaudio==2.4.0+cu121",
     "accelerate==0.34.0",
     "bitsandbytes==0.44.1",
     "scipy==1.11.3",
@@ -21,7 +18,7 @@ dependencies = [
     "tensorboard==2.15.1",
     "aenum==3.1.15",
     "transformers @ git+https://github.com/huggingface/transformers.git",
-    "flash-attn==v2.6.3",
+    "flash-attn==2.6.3",
     "json_source_map==1.0.5",
 ]
 

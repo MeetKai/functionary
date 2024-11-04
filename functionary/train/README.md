@@ -3,11 +3,14 @@
 # Create new virtual environment
 python3 -m venv venv && source venv/bin/activate
 
+# Install PyTorch 2.4
+pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu124
+
 # Install Dependencies
-pip install -e . --index-url https://download.pytorch.org/whl/cu121 --extra-index-url https://pypi.org/simple
+pip install -e .
 
 # Install Liger if using liger:
-pip install -e .[liger] --index-url https://download.pytorch.org/whl/cu121 --extra-index-url https://pypi.org/simple
+pip install -e .[liger]
 ```
 ### Llama-2 models
 
@@ -158,10 +161,10 @@ For Lora fintuning, you need to install additional requirements:
 
 ```shell
 # To install dependencies for LoRA
-pip install -e .[lora] --index-url https://download.pytorch.org/whl/cu121 --extra-index-url https://pypi.org/simple
+pip install -e .[lora]
 
 # To run LoRA finetuning with Liger
-pip install -e .[lora,liger] --index-url https://download.pytorch.org/whl/cu121 --extra-index-url https://pypi.org/simple
+pip install -e .[lora,liger]
 ```
 Run script:
 
