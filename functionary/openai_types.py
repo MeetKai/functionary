@@ -139,7 +139,6 @@ class ChatCompletionRequest(BaseModel):
     best_of: Optional[int] = None
     top_k: Optional[int] = -1
     ignore_eos: Optional[bool] = False
-    use_beam_search: Optional[bool] = False
 
     # Extra parameters for SRT backend only and will be ignored by OpenAI models.
     regex: Optional[str] = None

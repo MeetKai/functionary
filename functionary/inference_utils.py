@@ -1,6 +1,8 @@
+from copy import deepcopy
 from http import HTTPStatus
 from typing import Optional
 
+import jsonref
 import torch
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -109,3 +111,20 @@ async def check_all_errors(request, served_model) -> Optional[JSONResponse]:
             param="tool_choice",
         )
     return
+
+
+def resolve_json_refs(tools_or_functions):
+    tools = deepcopy(tools_or_functions)
+    if tools:
+        for i in range(len(tools)):
+            if "type" in tools[i]:
+                if tools[i]["type"] == "function":
+                    tools[i]["function"]["parameters"] = deepcopy(
+                        jsonref.JsonRef.replace_refs(tools[i]["function"]["parameters"])
+                    )
+            else:
+                tools[i]["parameters"] = deepcopy(
+                    jsonref.JsonRef.replace_refs(tools[i]["parameters"])
+                )
+
+    return tools
