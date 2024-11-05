@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import re
 from abc import abstractmethod
+from copy import deepcopy
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import jinja2
 
+from functionary.inference_utils import resolve_json_refs
 from functionary.openai_types import Function, Tool
 from functionary.prompt_template import prompt_utils
 
@@ -125,9 +127,11 @@ class PromptTemplate:
             str: the prompt for inference/training
         """
 
+        tools = resolve_json_refs(tools_or_functions=tools_or_functions)
+
         prompt = self._jinja_template.render(
             messages=messages,
-            tools=tools_or_functions,
+            tools=tools,
             bos_token=bos_token,
             add_generation_prompt=add_generation_prompt,
         )
