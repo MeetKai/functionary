@@ -42,14 +42,16 @@ def analyze_tools_and_tool_choice(request):
 
 def resolve_json_refs(tools_or_functions):
     tools = deepcopy(tools_or_functions)
-    for i in range(len(tools)):
-        if "type" in tools[i] and tools[i]["type"] == "function":
-            tools[i]["function"]["parameters"] = deepcopy(
-                jsonref.JsonRef.replace_refs(tools[i]["function"]["parameters"])
-            )
-        else:
-            tools[i]["parameters"] = deepcopy(
-                jsonref.JsonRef.replace_refs(tools[i]["parameters"])
-            )
+    if tools:
+        for i in range(len(tools)):
+            if "type" in tools[i]:
+                if tools[i]["type"] == "function":
+                    tools[i]["function"]["parameters"] = deepcopy(
+                        jsonref.JsonRef.replace_refs(tools[i]["function"]["parameters"])
+                    )
+            else:
+                tools[i]["parameters"] = deepcopy(
+                    jsonref.JsonRef.replace_refs(tools[i]["parameters"])
+                )
 
     return tools
