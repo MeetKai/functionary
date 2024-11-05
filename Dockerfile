@@ -1,8 +1,11 @@
 # Use vLLM's vllm-openai server image as the base
-FROM vllm/vllm-openai:latest
+FROM vllm/vllm-openai:v0.6.3.post1
 
-# Set working directory
-WORKDIR /workspace
+# Define a build argument for the working directory, defaulting to /workspace
+ARG WORKDIR_ARG=/workspace
+
+# Set the working directory
+WORKDIR ${WORKDIR_ARG}
 
 # Install necessary build dependencies for sentencepiece
 RUN apt-get update && apt-get install -y \
@@ -19,3 +22,4 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Override the VLLM entrypoint with the functionary server
 ENTRYPOINT ["python3", "server_vllm.py", "--model", "meetkai/functionary-small-v3.2", "--host", "0.0.0.0", "--max-model-len", "8192"]
+CMD []
