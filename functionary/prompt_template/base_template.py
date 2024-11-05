@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import re
 from abc import abstractmethod
+from copy import deepcopy
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import jinja2
+import jsonref
 
 from functionary.openai_types import Function, Tool
 from functionary.prompt_template import prompt_utils
@@ -124,6 +126,18 @@ class PromptTemplate:
         Returns:
             str: the prompt for inference/training
         """
+
+        for i in range(len(tools_or_functions)):
+            if "type" in tools_or_functions[i]:
+                tools_or_functions[i]["function"]["parameters"] = deepcopy(
+                    jsonref.JsonRef.replace_refs(
+                        tools_or_functions[i]["function"]["parameters"]
+                    )
+                )
+            else:
+                tools_or_functions[i]["parameters"] = deepcopy(
+                    jsonref.JsonRef.replace_refs(tools_or_functions[i]["parameters"])
+                )
 
         prompt = self._jinja_template.render(
             messages=messages,

@@ -419,6 +419,57 @@ class _AsyncLLMEngine(LLMEngine):
             # Execute the model.
             outputs = await self.model_executor.execute_model_async(execute_model_req)
 
+            # Loop through all the output in the batch
+            for i in range(len(outputs)):
+                # Check whether grammar sampling is needed
+                model_sampled_token_id = outputs[i].outputs[-1].samples[-1].output_token
+                if (
+                    tokenizer.decode(model_sampled_token_id) == tokenizer.eos_token
+                    or request_id not in self.prompt_templates
+                ):
+                    continue
+
+                # Get all the required variables for grammar sampling
+                request_id = seq_group_metadata_list[i].request_id
+                prompt_template = self.prompt_templates[request_id]
+                gen_state = self.gen_states[request_id]
+                tools_or_functions = self.tools_or_functions[request_id]
+
+                # Slot the first entry of logprobs into its original position
+                # before getting delta_token_ids_by_logprobs
+                delta_token_id_by_logprobs = list(
+                    outputs[i].outputs[-1].samples[-1].logprobs.keys()
+                )
+                delta_logprobs = list(
+                    outputs[i].outputs[-1].samples[-1].logprobs.values()
+                )
+                chosen_token_id = delta_token_id_by_logprobs[0]
+                chosen_logprob = delta_logprobs[0]
+                if chosen_logprob.rank != 1:
+                    delta_token_id_by_logprobs.pop(0)
+                    delta_logprobs.pop(0)
+                    delta_token_id_by_logprobs.insert(
+                        chosen_logprob.rank - 1, chosen_token_id
+                    )
+
+                # Perform grammar sampling if needed and update the gen_state before returning
+                (
+                    grammar_sampled_token_id,
+                    grammar_sampled_token,
+                    self.gen_states[request_id],
+                ) = prompt_template.grammar_sample(
+                    gen_state=gen_state,
+                    tools_or_functions=tools_or_functions,
+                    delta_token_ids=delta_token_id_by_logprobs,
+                    model_sampled_token_id=model_sampled_token_id,
+                    tokenizer=tokenizer,
+                )
+
+                # Update the output token to vllm with the newly sampled one
+                outputs[i].outputs[-1].samples[
+                    -1
+                ].output_token = grammar_sampled_token_id
+
             # we need to do this here so that last step's sampled_token_ids can
             # be passed to the next iteration for PP.
             if self.scheduler_config.is_multi_step:
@@ -427,46 +478,6 @@ class _AsyncLLMEngine(LLMEngine):
             if len(ctx.output_queue) > 0:
                 self._process_model_outputs(ctx=ctx)
             outputs = []
-
-        # Loop through all the output in the batch
-        for i in range(len(outputs)):
-            # Get all the required variables for grammar sampling
-            request_id = seq_group_metadata_list[i].request_id
-            model_sampled_token_id = outputs[i].outputs[-1].samples[-1].output_token
-            prompt_template = self.prompt_templates[request_id]
-            gen_state = self.gen_states[request_id]
-            tools_or_functions = self.tools_or_functions[request_id]
-
-            # Slot the first entry of logprobs into its original position
-            # before getting delta_token_ids_by_logprobs
-            delta_token_id_by_logprobs = list(
-                outputs[i].outputs[-1].samples[-1].logprobs.keys()
-            )
-            delta_logprobs = list(outputs[i].outputs[-1].samples[-1].logprobs.values())
-            chosen_token_id = delta_token_id_by_logprobs[0]
-            chosen_logprob = delta_logprobs[0]
-            if chosen_logprob.rank != 1:
-                delta_token_id_by_logprobs.pop(0)
-                delta_logprobs.pop(0)
-                delta_token_id_by_logprobs.insert(
-                    chosen_logprob.rank - 1, chosen_token_id
-                )
-
-            # Perform grammar sampling if needed and update the gen_state before returning
-            (
-                grammar_sampled_token_id,
-                grammar_sampled_token,
-                self.gen_states[request_id],
-            ) = prompt_template.grammar_sample(
-                gen_state=gen_state,
-                tools_or_functions=tools_or_functions,
-                delta_token_ids=delta_token_id_by_logprobs,
-                model_sampled_token_id=model_sampled_token_id,
-                tokenizer=tokenizer,
-            )
-
-            # Update the output token to vllm with the newly sampled one
-            outputs[i].outputs[-1].samples[-1].output_token = grammar_sampled_token_id
 
         # Finish the current step for all the sequence groups.
         if self.scheduler_config.is_multi_step:
