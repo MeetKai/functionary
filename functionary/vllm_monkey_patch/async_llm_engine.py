@@ -43,7 +43,6 @@ from vllm.executor.ray_utils import initialize_ray_cluster
 from vllm.inputs import PromptType
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
-from vllm.model_executor.guided_decoding import get_guided_decoding_logits_processor
 from vllm.model_executor.layers.sampler import SamplerOutput
 from vllm.outputs import EmbeddingRequestOutput, RequestOutput
 from vllm.pooling_params import PoolingParams
@@ -57,6 +56,7 @@ from vllm.utils import deprecate_kwargs, weak_bind
 from functionary.inference import (
     get_lm_format_enforcer_vllm_logits_processor_from_tool_name,
 )
+from functionary.inference_utils import resolve_json_refs
 from functionary.openai_types import Tool
 
 logger = init_logger(__name__)
@@ -368,16 +368,18 @@ class _AsyncLLMEngine(LLMEngine):
             request_id = seq_group_metadata_list[i].request_id
             gen_state = self.gen_states[request_id]
             tools_or_functions = self.tools_or_functions[request_id]
+            tools = resolve_json_refs(tools_or_functions=tools_or_functions)
 
             # Check if the model just transitioned to "parameter" or "pre-function"
             if (
                 gen_state["stage"] == "parameter"
                 and seq_group_metadata_list[i].sampling_params.logits_processors is None
             ):
+
                 seq_group_metadata_list[i].sampling_params.logits_processors = [
                     await get_lm_format_enforcer_vllm_logits_processor_from_tool_name(
                         tool_name=gen_state["func_name"],
-                        tools_or_functions=tools_or_functions,
+                        tools_or_functions=tools,
                         tokenizer=tokenizer,
                     )
                 ]

@@ -1,3 +1,6 @@
+from copy import deepcopy
+
+import jsonref
 import torch
 from transformers import StoppingCriteria, StoppingCriteriaList
 
@@ -35,3 +38,18 @@ def analyze_tools_and_tool_choice(request):
         tool_func_choice = "none"
 
     return tools_or_functions, tool_func_choice
+
+
+def resolve_json_refs(tools_or_functions):
+    tools = deepcopy(tools_or_functions)
+    for i in range(len(tools)):
+        if "type" in tools[i] and tools[i]["type"] == "function":
+            tools[i]["function"]["parameters"] = deepcopy(
+                jsonref.JsonRef.replace_refs(tools[i]["function"]["parameters"])
+            )
+        else:
+            tools[i]["parameters"] = deepcopy(
+                jsonref.JsonRef.replace_refs(tools[i]["parameters"])
+            )
+
+    return tools
