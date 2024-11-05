@@ -1,6 +1,6 @@
 from copy import deepcopy
 from http import HTTPStatus
-from typing import Optional
+from typing import Dict, List, Optional
 
 import jsonref
 import torch
@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from transformers import StoppingCriteria, StoppingCriteriaList
 
+from functionary.openai_types import Function
 from functionary.prompt_template.prompt_utils import enforce_tool_choice
 
 
@@ -128,3 +129,35 @@ def resolve_json_refs(tools_or_functions):
                 )
 
     return tools
+
+
+def convert_tool_calls_to_function_call(
+    functions: Optional[List[Function]], chat_message: Dict
+) -> Dict:
+    if "delta" not in chat_message:  # Non-streaming
+        if (
+            functions
+            and len(functions) > 0
+            and "tool_calls" in chat_message
+            and chat_message["tool_calls"] is not None
+            and len(chat_message["tool_calls"]) > 0
+        ):
+            chat_message["function_call"] = {
+                "name": chat_message["tool_calls"][0]["function"]["name"],
+                "arguments": chat_message["tool_calls"][0]["function"]["arguments"],
+            }
+            chat_message["tool_calls"] = None
+    else:  # Streaming
+        if (
+            functions
+            and len(functions) > 0
+            and "tool_calls" in chat_message["delta"]
+            and chat_message["delta"]["tool_calls"]
+            and len(chat_message["delta"]["tool_calls"]) > 0
+        ):
+            chat_message["delta"]["function_call"] = chat_message["delta"][
+                "tool_calls"
+            ][0]["function"]
+            chat_message["delta"]["tool_calls"] = None
+
+    return chat_message

@@ -14,6 +14,7 @@ from functionary.inference_stream import generate_openai_format_from_stream_asyn
 from functionary.inference_utils import (
     analyze_tools_and_tool_choice,
     check_all_errors,
+    convert_tool_calls_to_function_call,
     create_error_response,
 )
 from functionary.openai_types import (
@@ -193,19 +194,12 @@ async def process_chat_completion(
         ):
 
             # Convert tool_calls to function_call if request.functions is provided
-            if (
-                functions
-                and len(functions) > 0
-                and "tool_calls" in response["delta"]
-                and response["delta"]["tool_calls"]
-                and len(response["delta"]["tool_calls"]) > 0
-            ):
-                tool_name = response["delta"]["tool_calls"][0]["function"]["name"]
-                tool_args = response["delta"]["tool_calls"][0]["function"]["arguments"]
-                response["delta"]["function_call"] = response["delta"]["tool_calls"][0][
-                    "function"
-                ]
-                response["delta"]["tool_calls"] = None
+            response = convert_tool_calls_to_function_call(
+                functions=request.functions, chat_message=response
+            )
+            if response["delta"]["function_call"]:
+                tool_name = response["delta"]["function_call"]["name"]
+                tool_args = response["delta"]["function_call"]["arguments"]
                 if tool_name and len(tool_name) > 0 and tool_args == "":
                     tool_call_count += 1
             # Return finish_reason after the first tool_call is streamed if functions is provided
@@ -277,17 +271,9 @@ async def process_chat_completion(
         )  # parse_generated_content(text_response)
 
         # Convert tool_calls to function_call if request.functions is provided
-        if (
-            request.functions
-            and "tool_calls" in chat_mess
-            and chat_mess["tool_calls"] is not None
-            and len(chat_mess["tool_calls"]) > 0
-        ):
-            chat_mess["function_call"] = {
-                "name": chat_mess["tool_calls"][0]["function"]["name"],
-                "arguments": chat_mess["tool_calls"][0]["function"]["arguments"],
-            }
-            chat_mess["tool_calls"] = None
+        chat_mess = convert_tool_calls_to_function_call(
+            functions=request.functions, chat_message=chat_mess
+        )
 
         # Postprocess finish reason
         if tool_func_choice is None or tool_func_choice in ["auto", "required"]:
