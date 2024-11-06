@@ -27,8 +27,9 @@ import uvicorn
 import vllm.entrypoints.openai.api_server as vllm_api_server
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from vllm.engine.arg_utils import AsyncEngineArgs
-from vllm.entrypoints.openai.api_server import health, mount_metrics
+from vllm.entrypoints.openai.api_server import mount_metrics
 from vllm.entrypoints.openai.protocol import ModelCard, ModelList, ModelPermission
 from vllm.logger import init_logger
 from vllm.transformers_utils.tokenizer import get_tokenizer
@@ -51,7 +52,9 @@ app = fastapi.FastAPI()
 @app.get("/health")
 async def _health():
     """Health check."""
-    return await health()
+    # vLLM's OpenAI server's health check is too heavy and also requires
+    # creating engine_client here, so we just return 200 here.
+    return Response(status_code=200)
 
 
 @app.get("/v1/models")
