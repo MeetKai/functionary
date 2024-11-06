@@ -56,7 +56,7 @@ python3 server_vllm.py --model "meetkai/functionary-small-v3.2" --host 0.0.0.0 -
 ```
 **SGLang**
 ```shell
-python3 server_sglang.py --model "meetkai/functionary-small-v3.2" --host 0.0.0.0 --port 8000 --context-length 8192
+python3 server_sglang.py --model-path "meetkai/functionary-small-v3.2" --host 0.0.0.0 --port 8000 --context-length 8192
 ```
 
 #### Medium Model
@@ -72,7 +72,7 @@ python server_vllm.py --model "meetkai/functionary-medium-v3.1" --host 0.0.0.0 -
 ```
 **SGLang**
 ```shell
-python server_sglang.py --model "meetkai/functionary-medium-v3.1" --host 0.0.0.0 --port 8000 --context-length 8192 --tp 2
+python server_sglang.py --model-path "meetkai/functionary-medium-v3.1" --host 0.0.0.0 --port 8000 --context-length 8192 --tp 2
 ```
 
 
