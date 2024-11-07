@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import jinja2
 
-from functionary.inference_utils import resolve_json_refs
+from functionary.prompt_template.prompt_utils import resolve_json_refs
 from functionary.openai_types import Function, Tool
 from functionary.prompt_template import prompt_utils
 

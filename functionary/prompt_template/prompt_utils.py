@@ -2,9 +2,11 @@ import base64
 import os
 import random
 import string
+from copy import deepcopy
 from io import BytesIO
 from typing import Dict, List, Optional, Union
 
+import jsonref
 import requests
 import torch
 from PIL import Image
@@ -265,3 +267,20 @@ def download_image_from_image_url(image_url: str):
         raise (
             f"image not found, image_url must startswith one of: '{base64_prefix}'; '{file_prefix}', '{url_prefix}'"
         )
+
+
+def resolve_json_refs(tools_or_functions):
+    tools = deepcopy(tools_or_functions)
+    if tools:
+        for i in range(len(tools)):
+            if "type" in tools[i]:
+                if tools[i]["type"] == "function":
+                    tools[i]["function"]["parameters"] = deepcopy(
+                        jsonref.JsonRef.replace_refs(tools[i]["function"]["parameters"])
+                    )
+            else:
+                tools[i]["parameters"] = deepcopy(
+                    jsonref.JsonRef.replace_refs(tools[i]["parameters"])
+                )
+
+    return tools

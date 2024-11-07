@@ -79,7 +79,9 @@ def get_matching_prefix(
     return None
 
 
-def get_cached_folder(data_path, model_path):
+def get_cached_folder(
+    data_path: str, model_path: str, model_max_length: int, is_packing=False
+):
     current_folder = os.path.dirname(os.path.abspath(__file__))
     cached_folder = os.path.join(current_folder, "_data_cached")
 
@@ -91,6 +93,11 @@ def get_cached_folder(data_path, model_path):
             if ch in string.digits + string.ascii_letters
         ]
     )
+    if is_packing:
+        cached_data_folder_name += "_packing"
+    else:
+        cached_data_folder_name += "_tokenized"
+    cached_data_folder_name += f"_{model_max_length}"
     cached_data_folder = os.path.join(cached_folder, cached_data_folder_name)
 
     return cached_data_folder
@@ -122,11 +129,12 @@ def read_dataset(model_path, data_args, training_args, tokenizer, ds_type):
     else:
         keep_assistant_prefix = False
 
-    if not data_args.packing:
+    if not data_args.packing and data_args.use_lazy_loading:
         with open(data_path, "r") as file:
             raw_data = [json.loads(line) for line in file]
             if data_ratio < 1:
                 raw_data = raw_data[: int(data_ratio * len(raw_data))]
+
         ds = LazyPreprocessDataset(
             raw_data, tokenizer, keep_assistant_prefix=keep_assistant_prefix
         )
@@ -138,7 +146,29 @@ def read_dataset(model_path, data_args, training_args, tokenizer, ds_type):
 
     pack_length = data_args.pack_length if data_args.pack_length > 0 else None
 
-    cached_folder = get_cached_folder(data_path, model_path)
+    data_class_args = {
+        "ignore_cached": False,
+        "keep_assistant_prefix": False,
+    }
+    if data_args.packing:
+        cached_folder = get_cached_folder(
+            data_path, model_path, training_args.model_max_length, is_packing=True
+        )
+        data_class = PackedDataset
+        data_class_args.update(
+            {
+                "cached_folder": cached_folder,
+                "use_flash_attention": True,
+                "pack_length": pack_length,
+                "max_packed_size": data_args.max_packed_size,
+            }
+        )
+    else:  # TokenizedDaset
+        cached_folder = get_cached_folder(
+            data_path, model_path, training_args.model_max_length, is_packing=False
+        )
+        data_class_args["cached_folder"] = cached_folder
+        data_class = TokenizedDataset
 
     if (
         training_args.local_rank > 0
@@ -160,33 +190,17 @@ def read_dataset(model_path, data_args, training_args, tokenizer, ds_type):
 
         print(f"{ds_type} size: : {len(raw_train_data)}")
         # ignore_cached=True to ignore the cached if exist, rank 0 will always process the data
-        ds = PackedDataset(
-            raw_train_data,
-            tokenizer,
-            cached_folder=cached_folder,
-            ignore_cached=False,
-            keep_assistant_prefix=False,
-            use_flash_attention=True,
-            pack_length=pack_length,
-            max_packed_size=data_args.max_packed_size,
-        )
+        ds = data_class(raw_train_data, tokenizer, **data_class_args)
         print(f"process: {local_rank} finish processing data")
         world_size = int(os.environ.get("WORLD_SIZE", 1))
         if world_size > 1:
             torch.distributed.barrier()  # allow other ranks to execute
 
     # All ranks will read the processed data from cached_path created by rank 0
-    ds = PackedDataset(
-        None,
-        tokenizer,
-        cached_folder=cached_folder,
-        ignore_cached=False,
-        use_flash_attention=True,
-        pack_length=pack_length,
-        max_packed_size=data_args.max_packed_size,
-    )
+    ds = data_class(None, tokenizer, **data_class_args)
     if local_rank == 0:
-        ds.stat()  #  print some statistics about the dataset
+        if data_args.packing:
+            ds.stat()  #  print some statistics about the dataset
     return ds
 
 
@@ -792,8 +806,8 @@ class CachedDataset(Dataset):
         print(json.dumps(self.create_meta_info()))
 
 
-class CustomDataset(CachedDataset):
-    """Dataset for supervised fine-tuning."""
+class TokenizedDataset(CachedDataset):
+    """Dataset that all data points are tokenized ahead."""
 
     def __init__(
         self,
@@ -827,7 +841,7 @@ class CustomDataset(CachedDataset):
 
 
 class LazyPreprocessDataset(Dataset):
-    """Dataset for supervised fine-tuning."""
+    """Dataset that each data point is tokenized when it is called in __getitem__"""
 
     def __init__(
         self,

@@ -66,6 +66,10 @@ class DataArguments:
             "help": "maximum number of data points can be merged. For example, max_packed_size=3, we can only merge 2 or 3 data points into a new one"
         },
     )
+    use_lazy_loading: bool = field(
+        default=False,
+        metadata={"help": "Whether to use lazy loading for the dataset or not"},
+    )
 
 
 @dataclass
