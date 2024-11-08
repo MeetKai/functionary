@@ -67,14 +67,22 @@ def get_indices_of_tokens_in_string(
     token_indices = []
 
     for token_index, token in enumerate(tokens):
-        start = text.find(token, pos)
-        if start == -1:
-            if verbose:
-                print("cannot find start")
-            raise Exception(f"cannot find token: '{token}' in {text[pos: ]}")
-        end = start + len(token)
-        token_indices.append((start, end))
-        pos = end
+        if text[pos:].startswith(token):
+            start = pos
+            end = start + len(token)
+            pos = end
+            token_indices.append((start, end))
+        else:
+            if len(token) > 1 and token[0] == " " and text[pos:].startswith(token[1:]):
+                start = pos
+                end = start + len(token) - 1
+                token_indices.append((start, end))
+                pos = end
+            else:
+                raise Exception(
+                    f"cannot match token_index: {token_index}, token='{token}'"
+                )
+
     return token_indices, text
 
 
@@ -113,7 +121,7 @@ def extract_indices_of_json_objects(text: str) -> List[Tuple[int, int]]:
                 if not stack and start_idx is not None:
                     json_str = text[start_idx : i + 1]
                     try:
-                        print("load json: ", json_str)
+                        # print("load json: ", json_str)
                         parsed_json = json.loads(json_str)
                         json_indices.append((start_idx, i + 1))
                     except json.JSONDecodeError:
@@ -242,7 +250,7 @@ def extract_unmasked_chunks(labels: List[int], preds: List[int]):
     return result
 
 
-def test():
+def test1():
     text = """<function=get_weather>{"location": "Hanoi", "use_celcius": true}</function><|eom_id|>"""
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
     token_ids = tokenizer.encode(text, add_special_tokens=False)
@@ -252,5 +260,15 @@ def test():
     )
 
 
+def test2():
+    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
+    token_ids = [505, 364, 3007, 1025]
+    extract_indices_of_first_tokens_of_param_values_in_assistant_response(
+        tokenizer, token_ids, verbose=True
+    )
+
+    # extract_indices_of_first_tokens_of_param_values_in_assistant_response(tokenizer, token_ids, verbose=True)
+
+
 if __name__ == "__main__":
-    test()
+    test2()
