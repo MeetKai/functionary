@@ -500,7 +500,7 @@ def map_raw_data_to_input_dic(
                 invalid_count += 1
 
         t2 = datetime.datetime.now()
-        avg_time = (t2 - t1).total_seconds() / len(data_points)
+        avg_time = (t2 - t1).total_seconds() / (len(data_points) + invalid_count)
         remaining_time = avg_time * (data_size - len(data_points))
         print(
             f"{len(data_points)}/{data_size}, avg_time per 1000 data points: {avg_time * 1000}, remaining time: {remaining_time}"

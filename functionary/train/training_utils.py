@@ -7,6 +7,7 @@ import math
 from torch.utils.data import DataLoader
 import os
 from typing import List
+from functionary.train import metrics as train_metrics
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
@@ -132,6 +133,23 @@ def compute_metrics(eval_preds, id2token, tokenizer):
             if label == pred:
                 dic[label]["acc"] += 1
 
+    # Calculate the accuracy of first token of the values of parameters
+    unmasked_labels_preds = train_metrics.extract_unmasked_chunks(
+        label_list, prediction_list
+    )
+    first_token_param_value_total, first_token_param_value_acc = 0, 0
+    for unmasked_labels, pred_result in unmasked_labels_preds:
+        try:
+            indices = train_metrics.extract_indices_of_first_tokens_of_param_values_in_assistant_response(
+                tokenizer, unmasked_labels
+            )
+            for index in indices:
+                first_token_param_value_total += 1
+                if unmasked_labels[index] == pred_result[index]:
+                    first_token_param_value_acc += 1
+        except Exception as e:
+            print_rank0(f"encounter exeption: {str(e)}\nFor unmaksed_labels: {unmasked_labels}")
+
     # Calculate perplexity
     loss = eval_preds.predictions[1].tolist()
     loss = sum(loss) / len(loss)
@@ -142,6 +160,9 @@ def compute_metrics(eval_preds, id2token, tokenizer):
         "perplexity": perplexity,
         "accuracy_first_token": first_token_correct_count / first_token_total_count,
         "total_number_first_token": first_token_total_count,
+        "first_token_param_values": first_token_param_value_acc
+        / first_token_param_value_total,
+        "first_token_param_values_total": first_token_param_value_total,
     }
 
     for token_id, stat in sorted(
