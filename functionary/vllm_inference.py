@@ -5,10 +5,15 @@ from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Un
 
 from fastapi import BackgroundTasks, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from vllm.entrypoints.openai.protocol import (
+    LoadLoraAdapterRequest,
+    UnloadLoraAdapterRequest,
+)
 from vllm.inputs import TokensPrompt
+from vllm.lora.request import LoRARequest
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
-from vllm.utils import random_uuid
+from vllm.utils import AtomicCounter, random_uuid
 
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.inference_utils import (
@@ -81,6 +86,67 @@ async def check_length(request, input_ids, model_config):
         )
     else:
         return None
+
+
+LORA_REQUESTS: List[LoRARequest] = []
+LORA_ID_COUNTER = AtomicCounter(0)
+
+
+async def process_load_lora_adapter(request: LoadLoraAdapterRequest):
+
+    # Check if both 'lora_name' and 'lora_path' are provided
+    if not request.lora_name or not request.lora_path:
+        return create_error_response(
+            status_code=HTTPStatus.BAD_REQUEST,
+            message="Both 'lora_name' and 'lora_path' must be provided.",
+            param=None,
+        )
+    # Check if the lora adapter with the given name already exists
+    if any(
+        lora_request.lora_name == request.lora_name for lora_request in LORA_REQUESTS
+    ):
+        return create_error_response(
+            status_code=HTTPStatus.BAD_REQUEST,
+            message=f"The lora adapter '{request.lora_name}' has already been loaded.",
+            param=None,
+        )
+
+    lora_name, lora_path = request.lora_name, request.lora_path
+    unique_id = LORA_ID_COUNTER.inc(1)
+    LORA_REQUESTS.append(
+        LoRARequest(lora_name=lora_name, lora_int_id=unique_id, lora_path=lora_path)
+    )
+    return f"Success: LoRA adapter '{lora_name}' added successfully."
+
+
+async def process_unload_lora_adapter(request: UnloadLoraAdapterRequest):
+    global LORA_REQUESTS
+
+    # Check if either 'lora_name' or 'lora_int_id' is provided
+    if not request.lora_name and not request.lora_int_id:
+        return create_error_response(
+            status_code=HTTPStatus.BAD_REQUEST,
+            message="either 'lora_name' and 'lora_int_id' needs to be provided.",
+            param=None,
+        )
+
+    # Check if the lora adapter with the given name exists
+    if not any(
+        lora_request.lora_name == request.lora_name for lora_request in LORA_REQUESTS
+    ):
+        return create_error_response(
+            status_code=HTTPStatus.BAD_REQUEST,
+            message=f"The lora adapter '{request.lora_name}' cannot be found.",
+            param=None,
+        )
+
+    lora_name = request.lora_name
+    LORA_REQUESTS = [
+        lora_request
+        for lora_request in LORA_REQUESTS
+        if lora_request.lora_name != lora_name
+    ]
+    return f"Success: LoRA adapter '{lora_name}' removed successfully."
 
 
 async def process_chat_completion(

@@ -30,12 +30,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.entrypoints.openai.api_server import mount_metrics
-from vllm.entrypoints.openai.protocol import ModelCard, ModelList, ModelPermission
+from vllm.entrypoints.openai.protocol import (
+    LoadLoraAdapterRequest,
+    ModelCard,
+    ModelList,
+    ModelPermission,
+    UnloadLoraAdapterRequest,
+)
 from vllm.logger import init_logger
 from vllm.transformers_utils.tokenizer import get_tokenizer
 
 from functionary.openai_types import ChatCompletionRequest
-from functionary.vllm_inference import process_chat_completion
+from functionary.vllm_inference import (
+    process_chat_completion,
+    process_load_lora_adapter,
+    process_unload_lora_adapter,
+)
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -97,6 +107,22 @@ async def create_chat_completion(raw_request: Request):
         enable_grammar_sampling=args.grammar_sampling,
         engine=engine,
     )
+
+
+@app.post("/v1/load_lora_adapter")
+async def load_lora_adapter(request: LoadLoraAdapterRequest):
+    response = await process_load_lora_adapter(request)
+    if isinstance(response, str):
+        return Response(status_code=200, content=response)
+    return response
+
+
+@app.post("/v1/unload_lora_adapter")
+async def unload_lora_adapter(request: UnloadLoraAdapterRequest):
+    response = await process_unload_lora_adapter(request)
+    if isinstance(response, str):
+        return Response(status_code=200, content=response)
+    return response
 
 
 if __name__ == "__main__":
