@@ -65,13 +65,23 @@ def create_error_response(
     )
 
 
-async def check_all_errors(request, served_model) -> Optional[JSONResponse]:
-    if request.model not in served_model:
+async def check_all_errors(
+    request, served_model, served_loras=None
+) -> Optional[JSONResponse]:
+    model_name_error = False
+    if served_loras is not None:
+        if request.model not in [lora.lora_name for lora in served_loras]:
+            model_name_error = True
+    elif request.model not in served_model:
+        model_name_error = True
+
+    if model_name_error:
         return create_error_response(
             status_code=HTTPStatus.NOT_FOUND,
             message=f"The model `{request.model}` does not exist.",
             param=None,
         )
+
     if request.tools and request.functions:
         return create_error_response(
             status_code=HTTPStatus.BAD_REQUEST,

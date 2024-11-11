@@ -158,7 +158,7 @@ async def process_chat_completion(
     enable_grammar_sampling: bool,
     engine: Any,
 ):
-    error_check_ret = await check_all_errors(request, served_model)
+    error_check_ret = await check_all_errors(request, served_model, LORA_REQUESTS)
     if error_check_ret is not None:
         return error_check_ret
 
