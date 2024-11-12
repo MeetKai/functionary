@@ -18,7 +18,7 @@ COPY . .
 
 # Install additional Python dependencies
 RUN --mount=type=cache,target=/root/.cache/pip \
-    python3 -m pip install -r requirements.txt
+    python3 -m pip install .[vllm]
 
 # Override the VLLM entrypoint with the functionary server
 ENTRYPOINT ["python3", "server_vllm.py", "--model", "meetkai/functionary-small-v3.2", "--host", "0.0.0.0", "--max-model-len", "8192"]
