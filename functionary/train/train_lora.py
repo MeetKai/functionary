@@ -435,6 +435,7 @@ def train():
 
     if training_args.local_rank == 0:
         model.save_pretrained(training_args.output_dir, state_dict=state_dict)
+        tokenizer.save_pretrained(training_args.output_dir)
 
 
 if __name__ == "__main__":
