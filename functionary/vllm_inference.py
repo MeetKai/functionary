@@ -13,6 +13,7 @@ from vllm.inputs import TokensPrompt
 from vllm.lora.request import LoRARequest
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
+from vllm.transformers_utils.tokenizer import get_lora_tokenizer
 from vllm.utils import AtomicCounter, random_uuid
 
 from functionary.inference_stream import generate_openai_format_from_stream_async
@@ -149,6 +150,13 @@ async def process_unload_lora_adapter(request: UnloadLoraAdapterRequest):
     return f"Success: LoRA adapter '{lora_name}' removed successfully."
 
 
+def get_lora_adapter(request: ChatCompletionRequest) -> Optional[LoRARequest]:
+    for lora in LORA_REQUESTS:
+        if request.model == lora.lora_name:
+            return lora
+    return None
+
+
 async def process_chat_completion(
     request: ChatCompletionRequest,
     raw_request: Optional[Request],
@@ -161,6 +169,11 @@ async def process_chat_completion(
     error_check_ret = await check_all_errors(request, served_model, LORA_REQUESTS)
     if error_check_ret is not None:
         return error_check_ret
+
+    # Get the lora adapter if it exists and replace tokenizer
+    lora_request = get_lora_adapter(request)
+    if lora_request is not None:
+        tokenizer = get_lora_tokenizer(lora_request)
 
     tools_or_functions, tool_func_choice = analyze_tools_and_tool_choice(request)
 
@@ -216,6 +229,7 @@ async def process_chat_completion(
     if enable_grammar_sampling:
         result_generator = engine.generate(
             prompt=TokensPrompt(prompt_token_ids=prompt_token_ids),
+            lora_request=lora_request,
             sampling_params=sampling_params,
             request_id=request_id,
             tools_or_functions=tools_or_functions,
@@ -225,6 +239,7 @@ async def process_chat_completion(
     else:
         result_generator = engine.generate(
             prompt=TokensPrompt(prompt_token_ids=prompt_token_ids),
+            lora_request=lora_request,
             sampling_params=sampling_params,
             request_id=request_id,
         )

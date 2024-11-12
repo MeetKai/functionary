@@ -56,8 +56,8 @@ from vllm.utils import deprecate_kwargs, weak_bind
 from functionary.inference import (
     get_lm_format_enforcer_vllm_logits_processor_from_tool_name,
 )
-from functionary.prompt_template.prompt_utils import resolve_json_refs
 from functionary.openai_types import Tool
+from functionary.prompt_template.prompt_utils import resolve_json_refs
 
 logger = init_logger(__name__)
 ENGINE_ITERATION_TIMEOUT_S = envs.VLLM_ENGINE_ITERATION_TIMEOUT_S
