@@ -467,7 +467,9 @@ async def v1_chat_generate_completion(
                     params.adapted_request, params.raw_request
                 ).__anext__()
             except ValueError as e:
-                return None, create_error_response(HTTPStatus.BAD_REQUEST, str(e))
+                return None, create_error_response(
+                    status_code=HTTPStatus.BAD_REQUEST, message=str(e), param=None
+                )
             return ret["text"], None
 
 
