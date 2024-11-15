@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from transformers import StoppingCriteria, StoppingCriteriaList
 
-from functionary.openai_types import Function
+from functionary.openai_types import ChatCompletionRequest, Function
 from functionary.prompt_template.prompt_utils import enforce_tool_choice
 
 
@@ -65,13 +65,19 @@ def create_error_response(
     )
 
 
-async def check_all_errors(request, served_model) -> Optional[JSONResponse]:
-    if request.model not in served_model:
+async def check_all_errors(
+    request: ChatCompletionRequest, served_model: List, served_loras: List = []
+) -> Optional[JSONResponse]:
+
+    if request.model not in served_model and request.model not in [
+        lora.lora_name for lora in served_loras
+    ]:
         return create_error_response(
             status_code=HTTPStatus.NOT_FOUND,
             message=f"The model `{request.model}` does not exist.",
             param=None,
         )
+
     if request.tools and request.functions:
         return create_error_response(
             status_code=HTTPStatus.BAD_REQUEST,

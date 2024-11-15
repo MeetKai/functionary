@@ -30,12 +30,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.entrypoints.openai.api_server import mount_metrics
-from vllm.entrypoints.openai.protocol import ModelCard, ModelList, ModelPermission
+from vllm.entrypoints.openai.protocol import (
+    LoadLoraAdapterRequest,
+    ModelCard,
+    ModelList,
+    ModelPermission,
+    UnloadLoraAdapterRequest,
+)
 from vllm.logger import init_logger
+from vllm.lora.request import LoRARequest
 from vllm.transformers_utils.tokenizer import get_tokenizer
+from vllm.utils import AtomicCounter
 
 from functionary.openai_types import ChatCompletionRequest
-from functionary.vllm_inference import process_chat_completion
+from functionary.vllm_inference import (
+    process_chat_completion,
+    process_load_lora_adapter,
+    process_unload_lora_adapter,
+)
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -46,6 +58,8 @@ logger.addHandler(logging.StreamHandler())
 
 
 served_model = []
+served_loras = []
+lora_id_counter = AtomicCounter(0)
 app = fastapi.FastAPI()
 
 
@@ -72,6 +86,22 @@ async def show_available_models():
                 id=served_model, root=served_model, permission=[ModelPermission()]
             )
         )
+
+    for lora in served_loras:
+        parent = (
+            lora.base_model_name
+            if lora.base_model_name
+            else (served_model[0] if isinstance(served_model, list) else served_model)
+        )
+        model_cards.append(
+            ModelCard(
+                id=lora.lora_name,
+                root=lora.lora_path,
+                parent=parent,
+                permission=[ModelPermission()],
+            )
+        )
+
     return ModelList(data=model_cards)
 
 
@@ -93,10 +123,37 @@ async def create_chat_completion(raw_request: Request):
         raw_request=raw_request,
         tokenizer=tokenizer,
         served_model=served_model,
+        served_loras=served_loras,
         engine_model_config=engine_model_config,
         enable_grammar_sampling=args.grammar_sampling,
         engine=engine,
     )
+
+
+@app.post("/v1/load_lora_adapter")
+async def load_lora_adapter(request: LoadLoraAdapterRequest):
+    global served_loras
+
+    error, served_loras = await process_load_lora_adapter(
+        request, served_loras, lora_id_counter
+    )
+    if not isinstance(error, str):
+        return error
+
+    # `error` is the success message if it is a string
+    return Response(status_code=200, content=error)
+
+
+@app.post("/v1/unload_lora_adapter")
+async def unload_lora_adapter(request: UnloadLoraAdapterRequest):
+    global served_loras
+
+    error, served_loras = await process_unload_lora_adapter(request, served_loras)
+    if not isinstance(error, str):
+        return error
+
+    # `error` is the success message if it is a string
+    return Response(status_code=200, content=error)
 
 
 if __name__ == "__main__":
@@ -116,6 +173,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--allowed-headers", type=json.loads, default=["*"], help="allowed headers"
+    )
+    parser.add_argument(
+        "--lora-modules",
+        nargs="*",
+        type=str,
+        help="LoRA modules in the format 'name=path name=path ...'",
+        default=[],
     )
     parser.add_argument(
         "--enable-grammar-sampling",
@@ -155,6 +219,16 @@ if __name__ == "__main__":
 
     if args.served_model_name is not None:
         served_model += args.served_model_name
+
+    for lora_module in args.lora_modules:
+        lora_name, lora_path = lora_module.split("=")
+        served_loras.append(
+            LoRARequest(
+                lora_name=lora_name,
+                lora_int_id=lora_id_counter.inc(1),
+                lora_path=lora_path,
+            )
+        )
 
     engine_args = AsyncEngineArgs.from_cli_args(args)
     # A separate tokenizer to map token IDs to strings.

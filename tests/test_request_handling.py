@@ -6,6 +6,7 @@ from typing import Any, List, Optional, Union
 from fastapi.responses import JSONResponse
 from transformers import AutoTokenizer
 
+from functionary.inference_utils import check_all_errors, create_error_response
 from functionary.openai_types import (
     ChatCompletionRequest,
     ChatMessage,
@@ -27,66 +28,6 @@ from functionary.prompt_template.prompt_utils import (
     enforce_tool_choice,
     prepare_messages_for_inference,
 )
-
-
-def create_error_response(status_code, message, param) -> JSONResponse:
-    return JSONResponse(
-        {
-            "object": "error",
-            "message": message,
-            "type": "invalid_request_error",
-            "param": param,
-            "code": status_code.value,
-        },
-        status_code=status_code.value,
-    )
-
-
-async def check_all_errors(request, served_model):
-    if request.model != served_model:
-        return create_error_response(
-            status_code=HTTPStatus.NOT_FOUND,
-            message=f"The model `{request.model}` does not exist.",
-            param=None,
-        )
-    if request.tools and request.functions:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message="'functions' and 'tools' cannot both be provided. 'functions' are deprecated; use the 'tools' parameter instead.",
-            param=None,
-        )
-    if isinstance(request.function_call, str) and request.function_call not in [
-        "none",
-        "auto",
-    ]:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message=f"Invalid value: '{request.function_call}'. Supported values are: 'none' and 'auto'.",
-            param="function_call",
-        )
-    if isinstance(request.tool_choice, str) and request.tool_choice not in [
-        "none",
-        "auto",
-        "required",
-    ]:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message=f"Invalid value: '{request.tool_choice}'. Supported values are: 'none', 'auto', and 'required'.",
-            param="tool_choice",
-        )
-    if request.functions is None and request.function_call is not None:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message=f"Invalid value for 'function_call': 'function_call' is only allowed when 'functions' are specified.",
-            param="function_call",
-        )
-    if request.tools is None and request.tool_choice is not None:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message=f"Invalid value for 'tool_choice': 'tool_choice' is only allowed when 'tools' are specified.",
-            param="tool_choice",
-        )
-    return
 
 
 def convert_jsonresponse_to_json(obj):

@@ -5,10 +5,16 @@ from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Un
 
 from fastapi import BackgroundTasks, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from vllm.entrypoints.openai.protocol import (
+    LoadLoraAdapterRequest,
+    UnloadLoraAdapterRequest,
+)
 from vllm.inputs import TokensPrompt
+from vllm.lora.request import LoRARequest
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
-from vllm.utils import random_uuid
+from vllm.transformers_utils.tokenizer import get_lora_tokenizer
+from vllm.utils import AtomicCounter, random_uuid
 
 from functionary.inference_stream import generate_openai_format_from_stream_async
 from functionary.inference_utils import (
@@ -83,18 +89,108 @@ async def check_length(request, input_ids, model_config):
         return None
 
 
+async def process_load_lora_adapter(
+    request: LoadLoraAdapterRequest,
+    served_loras: List[LoRARequest],
+    lora_id_counter: AtomicCounter,
+) -> Tuple[Union[str, JSONResponse], List[LoRARequest]]:
+
+    # Check if both 'lora_name' and 'lora_path' are provided
+    if not request.lora_name or not request.lora_path:
+        return (
+            create_error_response(
+                status_code=HTTPStatus.BAD_REQUEST,
+                message="Both 'lora_name' and 'lora_path' must be provided.",
+                param=None,
+            ),
+            served_loras,
+        )
+    # Check if the lora adapter with the given name already exists
+    if any(
+        lora_request.lora_name == request.lora_name for lora_request in served_loras
+    ):
+        return (
+            create_error_response(
+                status_code=HTTPStatus.BAD_REQUEST,
+                message=f"The lora adapter '{request.lora_name}' has already been loaded.",
+                param=None,
+            ),
+            served_loras,
+        )
+
+    lora_name, lora_path = request.lora_name, request.lora_path
+    unique_id = lora_id_counter.inc(1)
+    served_loras.append(
+        LoRARequest(lora_name=lora_name, lora_int_id=unique_id, lora_path=lora_path)
+    )
+
+    return f"Success: LoRA adapter '{lora_name}' added successfully.", served_loras
+
+
+async def process_unload_lora_adapter(
+    request: UnloadLoraAdapterRequest, served_loras: List[LoRARequest]
+) -> Tuple[Union[str, JSONResponse], List[LoRARequest]]:
+    # Check if either 'lora_name' or 'lora_int_id' is provided
+    if not request.lora_name and not request.lora_int_id:
+        return (
+            create_error_response(
+                status_code=HTTPStatus.BAD_REQUEST,
+                message="either 'lora_name' and 'lora_int_id' needs to be provided.",
+                param=None,
+            ),
+            served_loras,
+        )
+
+    # Check if the lora adapter with the given name exists
+    if not any(
+        lora_request.lora_name == request.lora_name for lora_request in served_loras
+    ):
+        return (
+            create_error_response(
+                status_code=HTTPStatus.BAD_REQUEST,
+                message=f"The lora adapter '{request.lora_name}' cannot be found.",
+                param=None,
+            ),
+            served_loras,
+        )
+
+    lora_name = request.lora_name
+    served_loras = [
+        lora_request
+        for lora_request in served_loras
+        if lora_request.lora_name != lora_name
+    ]
+
+    return f"Success: LoRA adapter '{lora_name}' removed successfully.", served_loras
+
+
+def get_lora_adapter(
+    request: ChatCompletionRequest, served_loras: List[LoRARequest]
+) -> Optional[LoRARequest]:
+    for lora in served_loras:
+        if request.model == lora.lora_name:
+            return lora
+    return None
+
+
 async def process_chat_completion(
     request: ChatCompletionRequest,
     raw_request: Optional[Request],
     tokenizer: Any,
     served_model: List[str],
+    served_loras: List[LoRARequest],
     engine_model_config: Any,
     enable_grammar_sampling: bool,
     engine: Any,
 ):
-    error_check_ret = await check_all_errors(request, served_model)
+    error_check_ret = await check_all_errors(request, served_model, served_loras)
     if error_check_ret is not None:
         return error_check_ret
+
+    # Get the lora adapter if it exists and replace tokenizer
+    lora_request = get_lora_adapter(request, served_loras)
+    if lora_request is not None:
+        tokenizer = get_lora_tokenizer(lora_request)
 
     tools_or_functions, tool_func_choice = analyze_tools_and_tool_choice(request)
 
@@ -150,6 +246,7 @@ async def process_chat_completion(
     if enable_grammar_sampling:
         result_generator = engine.generate(
             prompt=TokensPrompt(prompt_token_ids=prompt_token_ids),
+            lora_request=lora_request,
             sampling_params=sampling_params,
             request_id=request_id,
             tools_or_functions=tools_or_functions,
@@ -159,6 +256,7 @@ async def process_chat_completion(
     else:
         result_generator = engine.generate(
             prompt=TokensPrompt(prompt_token_ids=prompt_token_ids),
+            lora_request=lora_request,
             sampling_params=sampling_params,
             request_id=request_id,
         )
