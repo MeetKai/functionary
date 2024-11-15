@@ -86,6 +86,22 @@ async def show_available_models():
                 id=served_model, root=served_model, permission=[ModelPermission()]
             )
         )
+
+    for lora in served_loras:
+        parent = (
+            lora.base_model_name
+            if lora.base_model_name
+            else (served_model[0] if isinstance(served_model, list) else served_model)
+        )
+        model_cards.append(
+            ModelCard(
+                id=lora.lora_name,
+                root=lora.lora_path,
+                parent=parent,
+                permission=[ModelPermission()],
+            )
+        )
+
     return ModelList(data=model_cards)
 
 
