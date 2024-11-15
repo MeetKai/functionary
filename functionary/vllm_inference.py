@@ -164,8 +164,10 @@ async def process_unload_lora_adapter(
     return f"Success: LoRA adapter '{lora_name}' removed successfully.", served_loras
 
 
-def get_lora_adapter(request: ChatCompletionRequest) -> Optional[LoRARequest]:
-    for lora in LORA_REQUESTS:
+def get_lora_adapter(
+    request: ChatCompletionRequest, served_loras: List[LoRARequest]
+) -> Optional[LoRARequest]:
+    for lora in served_loras:
         if request.model == lora.lora_name:
             return lora
     return None
@@ -176,16 +178,17 @@ async def process_chat_completion(
     raw_request: Optional[Request],
     tokenizer: Any,
     served_model: List[str],
+    served_loras: List[LoRARequest],
     engine_model_config: Any,
     enable_grammar_sampling: bool,
     engine: Any,
 ):
-    error_check_ret = await check_all_errors(request, served_model, LORA_REQUESTS)
+    error_check_ret = await check_all_errors(request, served_model, served_loras)
     if error_check_ret is not None:
         return error_check_ret
 
     # Get the lora adapter if it exists and replace tokenizer
-    lora_request = get_lora_adapter(request)
+    lora_request = get_lora_adapter(request, served_loras)
     if lora_request is not None:
         tokenizer = get_lora_tokenizer(lora_request)
 

@@ -107,6 +107,7 @@ async def create_chat_completion(raw_request: Request):
         raw_request=raw_request,
         tokenizer=tokenizer,
         served_model=served_model,
+        served_loras=served_loras,
         engine_model_config=engine_model_config,
         enable_grammar_sampling=args.grammar_sampling,
         engine=engine,
