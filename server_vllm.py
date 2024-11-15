@@ -175,6 +175,13 @@ if __name__ == "__main__":
         "--allowed-headers", type=json.loads, default=["*"], help="allowed headers"
     )
     parser.add_argument(
+        "--lora-modules",
+        nargs="*",
+        type=str,
+        help="LoRA modules in the format 'name=path name=path ...'",
+        default=[],
+    )
+    parser.add_argument(
         "--enable-grammar-sampling",
         dest="grammar_sampling",
         action="store_true",
@@ -212,6 +219,16 @@ if __name__ == "__main__":
 
     if args.served_model_name is not None:
         served_model += args.served_model_name
+
+    for lora_module in args.lora_modules:
+        lora_name, lora_path = lora_module.split("=")
+        served_loras.append(
+            LoRARequest(
+                lora_name=lora_name,
+                lora_int_id=lora_id_counter.inc(1),
+                lora_path=lora_path,
+            )
+        )
 
     engine_args = AsyncEngineArgs.from_cli_args(args)
     # A separate tokenizer to map token IDs to strings.
