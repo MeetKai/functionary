@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 import uuid
 from http import HTTPStatus
@@ -6,7 +7,7 @@ from typing import Annotated, Dict, List, Literal, Optional, Union
 
 import modal
 from fastapi import FastAPI, Header, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from functionary.openai_types import ChatCompletionRequest
@@ -96,6 +97,31 @@ image = (
 )
 
 
+class AtomicCounter:
+    """An atomic, thread-safe counter"""
+
+    def __init__(self, initial=0):
+        """Initialize a new atomic counter to given initial value"""
+        self._value = initial
+        self._lock = threading.Lock()
+
+    def inc(self, num=1):
+        """Atomically increment the counter by num and return the new value"""
+        with self._lock:
+            self._value += num
+            return self._value
+
+    def dec(self, num=1):
+        """Atomically decrement the counter by num and return the new value"""
+        with self._lock:
+            self._value -= num
+            return self._value
+
+    @property
+    def value(self):
+        return self._value
+
+
 @app.cls(
     image=image,
     gpu=f"{settings.gpu_type}:{settings.gpu_count}",
@@ -104,6 +130,10 @@ image = (
     allow_concurrent_inputs=settings.batch_size_per_container,
 )
 class Model:
+    served_model = []
+    served_loras = []
+    lora_id_counter = AtomicCounter(0)
+
     @modal.build()
     def download_model(self):
         from huggingface_hub import snapshot_download
@@ -115,8 +145,7 @@ class Model:
         )
         move_cache()
 
-    @modal.enter()
-    def start_engine(self):
+    def _start_engine(self):
         model, tokenizer, engine_model_config = get_model()
         self.model = model
         self.tokenizer = tokenizer
@@ -125,6 +154,9 @@ class Model:
     @modal.method()
     async def generate(self, request: ChatCompletionRequest):
         from functionary.vllm_inference import process_chat_completion
+
+        # Only start the engine when generate is called
+        self._start_engine()
 
         return await process_chat_completion(
             request=request,
@@ -136,6 +168,36 @@ class Model:
             enable_grammar_sampling=settings.enable_grammar_sampling,
             engine=self.model,
         )
+
+    @modal.method()
+    async def modal_load_lora_adapter(self, request_json: dict):
+        from vllm.entrypoints.openai.protocol import LoadLoraAdapterRequest
+
+        from functionary.vllm_inference import process_load_lora_adapter
+
+        request = LoadLoraAdapterRequest(**request_json)
+        error, self.served_loras = await process_load_lora_adapter(
+            request, self.served_loras, self.lora_id_counter
+        )
+        if not isinstance(error, str):
+            return error
+
+        return Response(status_code=200, content=error)
+
+    @modal.method()
+    async def modal_unload_lora_adapter(self, request_json: dict):
+        from vllm.entrypoints.openai.protocol import UnloadLoraAdapterRequest
+
+        from functionary.vllm_inference import process_unload_lora_adapter
+
+        request = UnloadLoraAdapterRequest(**request_json)
+        error, self.served_loras = await process_unload_lora_adapter(
+            request, self.served_loras
+        )
+        if not isinstance(error, str):
+            return error
+
+        return Response(status_code=200, content=error)
 
     @modal.exit()
     def stop_engine(self):
@@ -160,6 +222,28 @@ async def chat_endpoint(raw_request: Request):
     model = Model()
 
     return model.generate.remote(request)
+
+
+@fast_api_app.post("/v1/load_lora_adapter")
+async def load_lora_adapter(raw_request: Request):
+    """Dynamically load a LoRA adapter into the server."""
+
+    request_json = await raw_request.json()
+
+    model = Model()
+
+    return model.modal_load_lora_adapter.remote(request_json)
+
+
+@fast_api_app.post("/v1/unload_lora_adapter")
+async def unload_lora_adapter(raw_request: Request):
+    """Dynamically unload a LoRA adapter from the server."""
+
+    request_json = await raw_request.json()
+
+    model = Model()
+
+    return model.modal_unload_lora_adapter.remote(request_json)
 
 
 @app.function(image=image)
