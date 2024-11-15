@@ -38,7 +38,9 @@ from vllm.entrypoints.openai.protocol import (
     UnloadLoraAdapterRequest,
 )
 from vllm.logger import init_logger
+from vllm.lora.request import LoRARequest
 from vllm.transformers_utils.tokenizer import get_tokenizer
+from vllm.utils import AtomicCounter
 
 from functionary.openai_types import ChatCompletionRequest
 from functionary.vllm_inference import (
@@ -56,6 +58,8 @@ logger.addHandler(logging.StreamHandler())
 
 
 served_model = []
+served_loras = []
+lora_id_counter = AtomicCounter(0)
 app = fastapi.FastAPI()
 
 
@@ -111,18 +115,28 @@ async def create_chat_completion(raw_request: Request):
 
 @app.post("/v1/load_lora_adapter")
 async def load_lora_adapter(request: LoadLoraAdapterRequest):
-    response = await process_load_lora_adapter(request)
-    if isinstance(response, str):
-        return Response(status_code=200, content=response)
-    return response
+    global served_loras
+
+    error, served_loras = await process_load_lora_adapter(
+        request, served_loras, lora_id_counter
+    )
+    if not isinstance(error, str):
+        return error
+
+    # `error` is the success message if it is a string
+    return Response(status_code=200, content=error)
 
 
 @app.post("/v1/unload_lora_adapter")
 async def unload_lora_adapter(request: UnloadLoraAdapterRequest):
-    response = await process_unload_lora_adapter(request)
-    if isinstance(response, str):
-        return Response(status_code=200, content=response)
-    return response
+    global served_loras
+
+    error, served_loras = await process_unload_lora_adapter(request, served_loras)
+    if not isinstance(error, str):
+        return error
+
+    # `error` is the success message if it is a string
+    return Response(status_code=200, content=error)
 
 
 if __name__ == "__main__":

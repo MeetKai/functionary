@@ -89,65 +89,79 @@ async def check_length(request, input_ids, model_config):
         return None
 
 
-LORA_REQUESTS: List[LoRARequest] = []
-LORA_ID_COUNTER = AtomicCounter(0)
-
-
-async def process_load_lora_adapter(request: LoadLoraAdapterRequest):
+async def process_load_lora_adapter(
+    request: LoadLoraAdapterRequest,
+    served_loras: List[LoRARequest],
+    lora_id_counter: AtomicCounter,
+) -> Tuple[Union[str, JSONResponse], List[LoRARequest]]:
 
     # Check if both 'lora_name' and 'lora_path' are provided
     if not request.lora_name or not request.lora_path:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message="Both 'lora_name' and 'lora_path' must be provided.",
-            param=None,
+        return (
+            create_error_response(
+                status_code=HTTPStatus.BAD_REQUEST,
+                message="Both 'lora_name' and 'lora_path' must be provided.",
+                param=None,
+            ),
+            served_loras,
         )
     # Check if the lora adapter with the given name already exists
     if any(
-        lora_request.lora_name == request.lora_name for lora_request in LORA_REQUESTS
+        lora_request.lora_name == request.lora_name for lora_request in served_loras
     ):
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message=f"The lora adapter '{request.lora_name}' has already been loaded.",
-            param=None,
+        return (
+            create_error_response(
+                status_code=HTTPStatus.BAD_REQUEST,
+                message=f"The lora adapter '{request.lora_name}' has already been loaded.",
+                param=None,
+            ),
+            served_loras,
         )
 
     lora_name, lora_path = request.lora_name, request.lora_path
-    unique_id = LORA_ID_COUNTER.inc(1)
-    LORA_REQUESTS.append(
+    unique_id = lora_id_counter.inc(1)
+    served_loras.append(
         LoRARequest(lora_name=lora_name, lora_int_id=unique_id, lora_path=lora_path)
     )
-    return f"Success: LoRA adapter '{lora_name}' added successfully."
+
+    return f"Success: LoRA adapter '{lora_name}' added successfully.", served_loras
 
 
-async def process_unload_lora_adapter(request: UnloadLoraAdapterRequest):
-    global LORA_REQUESTS
-
+async def process_unload_lora_adapter(
+    request: UnloadLoraAdapterRequest, served_loras: List[LoRARequest]
+) -> Tuple[Union[str, JSONResponse], List[LoRARequest]]:
     # Check if either 'lora_name' or 'lora_int_id' is provided
     if not request.lora_name and not request.lora_int_id:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message="either 'lora_name' and 'lora_int_id' needs to be provided.",
-            param=None,
+        return (
+            create_error_response(
+                status_code=HTTPStatus.BAD_REQUEST,
+                message="either 'lora_name' and 'lora_int_id' needs to be provided.",
+                param=None,
+            ),
+            served_loras,
         )
 
     # Check if the lora adapter with the given name exists
     if not any(
-        lora_request.lora_name == request.lora_name for lora_request in LORA_REQUESTS
+        lora_request.lora_name == request.lora_name for lora_request in served_loras
     ):
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message=f"The lora adapter '{request.lora_name}' cannot be found.",
-            param=None,
+        return (
+            create_error_response(
+                status_code=HTTPStatus.BAD_REQUEST,
+                message=f"The lora adapter '{request.lora_name}' cannot be found.",
+                param=None,
+            ),
+            served_loras,
         )
 
     lora_name = request.lora_name
-    LORA_REQUESTS = [
+    served_loras = [
         lora_request
-        for lora_request in LORA_REQUESTS
+        for lora_request in served_loras
         if lora_request.lora_name != lora_name
     ]
-    return f"Success: LoRA adapter '{lora_name}' removed successfully."
+
+    return f"Success: LoRA adapter '{lora_name}' removed successfully.", served_loras
 
 
 def get_lora_adapter(request: ChatCompletionRequest) -> Optional[LoRARequest]:
