@@ -75,6 +75,43 @@ python server_vllm.py --model "meetkai/functionary-medium-v3.1" --host 0.0.0.0 -
 python server_sglang.py --model-path "meetkai/functionary-medium-v3.1" --host 0.0.0.0 --port 8000 --context-length 8192 --tp 2
 ```
 
+#### LoRA Support (Currently Only in vLLM)
+
+Similar to [LoRA in vLLM](https://docs.vllm.ai/en/latest/models/lora.html), our server supports serving LoRA adapters both at startup and dynamically.
+
+To serve a LoRA adapter at startup, run the server with the `--lora-modules` argument:
+
+```shell
+python server_vllm.py --model {BASE_MODEL} --enable-lora --lora-modules {name}={path} {name}={path} --host 0.0.0.0 --port 8000
+```
+
+To serve a LoRA adapter dynamically, use the `/v1/load_lora_adapter` endpoint:
+```shell
+python server_vllm.py --model {BASE_MODEL} --enable-lora --host 0.0.0.0 --port 8000
+# Load a LoRA adapter dynamically
+curl -X POST http://localhost:8000/v1/load_lora_adapter \
+  -H "Content-Type: application/json" \
+  -d '{
+    "lora_name": "my_lora",
+    "lora_path": "/path/to/my_lora_adapter"
+  }'
+# Example chat request to lora adapter
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "my_lora",
+    "messages": [...],
+    "tools": [...],
+    "tool_choice": "auto"
+  }'
+# Unload a LoRA adapter dynamically
+curl -X POST http://localhost:8000/v1/unload_lora_adapter \
+  -H "Content-Type: application/json" \
+  -d '{
+    "lora_name": "my_lora"
+  }'
+```
+
 
 ### Grammar Sampling (Only in vLLM)
 
