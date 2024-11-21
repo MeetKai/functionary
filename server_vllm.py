@@ -47,6 +47,7 @@ from functionary.vllm_inference import (
     process_chat_completion,
     process_load_lora_adapter,
     process_unload_lora_adapter,
+    gen_from_prompt
 )
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
@@ -104,6 +105,13 @@ async def show_available_models():
 
     return ModelList(data=model_cards)
 
+
+@app.post("/v1/prompt")
+async def gen_prompt(raw_request: Request):
+    request_json = await raw_request.json()
+    results = await gen_from_prompt(request_json, engine, tokenizer)
+    return {"results": results}
+    
 
 @app.post("/v1/chat/completions")
 async def create_chat_completion(raw_request: Request):

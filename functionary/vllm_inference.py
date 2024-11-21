@@ -173,6 +173,41 @@ def get_lora_adapter(
     return None
 
 
+async def gen_from_prompt(request_json, engine: Any, tokenizer: Any):
+    prompt = request_json["prompt"]
+    temperature = request_json.get("temperature", 0.00001)
+    stop = request_json.get("stop", [])
+    gen_num = request_json.get("gen_num", 1)
+
+    prompt_token_ids = tokenizer.encode(prompt)
+    # print("promt_token_ids: ", prompt_token_ids)
+    # print("stop: ", stop)
+    sampling_params = SamplingParams(
+        n=gen_num,
+        temperature=temperature,
+        stop=stop,
+        max_tokens=request_json.get("max_tokens", 8192),
+        skip_special_tokens=False,
+    )
+    request_id = f"chatcmpl-{random_uuid()}"
+    result_generator = engine.generate(
+        prompt=TokensPrompt(prompt_token_ids=prompt_token_ids),
+        sampling_params=sampling_params,
+        request_id=request_id,
+    )
+
+    async for res in result_generator:
+        final_res = res
+
+    result = []
+    for output in final_res.outputs:
+        text_response = output.text
+        print("token_ids: ", output.token_ids)
+        print("text_response: ", text_response)
+        result.append(text_response)
+    return result
+
+
 async def process_chat_completion(
     request: ChatCompletionRequest,
     raw_request: Optional[Request],
@@ -200,7 +235,7 @@ async def process_chat_completion(
         tools_or_functions=tools_or_functions,
         tool_choice=tool_func_choice,
     ).tolist()[0]
-
+    print("promt_token_ids: ", prompt_token_ids)
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     if error_check_ret is not None:
         return error_check_ret
@@ -363,6 +398,8 @@ async def process_chat_completion(
     choices = []
     for output in final_res.outputs:
         text_response = output.text.strip()
+        print("token_ids: ", output.token_ids)
+        print("text_response: \n", text_response)
         chat_mess = prompt_template.parse_assistant_response(
             llm_output=text_response,
             tool_choice=tool_func_choice,
