@@ -140,6 +140,8 @@ def trainer_save_model_safe(trainer: transformers.Trainer):
 
 
 def train():
+    """Training loop"""
+
     argument_parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments)
     )
