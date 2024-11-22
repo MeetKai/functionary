@@ -719,7 +719,7 @@ Main safety checks needs to be done in the functions/actions themselves. Such as
 - [ ] OpenAPI specification based plugin support.
 - [X] Fast inference server 
   - [X] [vLLM](https://github.com/vllm-project/vllm) 
-  - [ ] [text-generation-inference](https://github.com/huggingface/text-generation-inference) ? See: [License Issue](https://github.com/huggingface/text-generation-inference/issues/726)
+  - [X] [text-generation-inference](https://github.com/huggingface/text-generation-inference)
   - [X] Streaming Support
   - [X] function_call parameter to server
   - [X] Grammar Sampling to ensure 100% accuracy for function and parameter names
