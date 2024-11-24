@@ -1,20 +1,10 @@
-import json
-import math
-import os
-import pathlib
-import random
-import sys
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+import math, os, pathlib, sys, torch, torch.distributed, transformers
 
-import torch
-import torch.distributed
-from torch.nn import CrossEntropyLoss
-from torch.utils.data import DataLoader
+from dataclasses import dataclass, field
+from typing import Dict, Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 import bitsandbytes as bnb
-import transformers
 from deepspeed import zero
 from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
@@ -316,6 +306,18 @@ def get_peft_state_maybe_zero_3(named_params, bias):
     return to_return
 
 
+"""
+Below is the updated train() function from LEVENT OZBEK.
+Most of it are just adaptions from changes in training_utils.py
+I commented out the original train() function
+
+- training_utils.tokenize_and_cache() to preprocess and cache tokenized datasets.
+- directly using of DataLoader with training_utils.create_data_loader() / training_utils.create_distributed_data_loader() depending on the distributed training setup.
+- integrated the updated preprocess_logits_for_metrics() and compute_metrics functions
+- automatically switches between standard and distributed data loaders based on training_args.local_rank.
+"""
+
+
 def train():
     argument_parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments, LoraArguments)
@@ -327,21 +329,19 @@ def train():
         lora_args,
     ) = argument_parser.parse_args_into_dataclasses()
 
-    # Set RoPE scaling factor
-
     print_rank0("lora args: ", lora_args)
-
     print_rank0("training args: ", training_args)
 
+    # loading the model with RoPE scaling if required
     model = load_model_with_rope_scaling(
         model_args, training_args, lora_args, data_args
     )
     print_rank0(model)
 
+    # loading and initializing the tokenizer
     prompt_template = get_prompt_template_by_version(
         training_args.prompt_template_version
     )
-
     tokenizer = training_utils.initialize_tokenizer(
         model=model,
         model_name_or_path=model_args.model_name_or_path,
@@ -358,25 +358,35 @@ def train():
 
     assert data_args.train_data_path is not None, "Please provide a training data file."
 
-    train_dataset = read_dataset(
+    # caching tokenized training data
+    raw_train_dataset = read_dataset(
         model_args.model_name_or_path, data_args, training_args, tokenizer, "train"
+    )
+    train_dataset = training_utils.tokenize_and_cache(
+        raw_train_dataset, tokenizer, training_args.cache_dir
     )
     print_rank0("****** Examples from train_dataset *****")
     training_utils.print_some_examples(train_dataset, tokenizer)
     print_rank0("final train size: ", len(train_dataset))
 
     if training_args.do_eval:
-        eval_dataset = read_dataset(
+        # Caching already tokenized eval data
+        raw_eval_dataset = read_dataset(
             model_args.model_name_or_path, data_args, training_args, tokenizer, "eval"
         )
-        print_rank0("final eval size: ", len(eval_dataset))
+        eval_dataset = training_utils.tokenize_and_cache(
+            raw_eval_dataset, tokenizer, training_args.cache_dir
+        )
         print_rank0("****** Examples from eval_dataset *****")
         training_utils.print_some_examples(eval_dataset, tokenizer)
+        print_rank0("final eval size: ", len(eval_dataset))
 
     print_rank0("tokenizer.model_max_length: ", tokenizer.model_max_length)
 
+    # prepairing model for training
     model = prepare_model_for_training(model, training_args, lora_args)
 
+    # preprocessing logits and computing metrics using updated functions
     def preprocess_logits_for_metrics(logits, labels):
         return training_utils.preprocess_logits_for_metrics(
             logits, labels, len(tokenizer)
@@ -385,57 +395,175 @@ def train():
     def compute_metrics(eval_preds):
         return training_utils.compute_metrics(eval_preds, id2token, tokenizer)
 
-    if training_args.do_eval:
-        trainer = Trainer(
-            model=model,
-            tokenizer=tokenizer,
-            args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
-            compute_metrics=(
-                compute_metrics
-                if "mixtral" not in model_args.model_name_or_path.lower()
-                else None
-            ),
-            preprocess_logits_for_metrics=(
-                preprocess_logits_for_metrics
-                if "mixtral" not in model_args.model_name_or_path.lower()
-                else None
-            ),
+    # using the optimized data loaders in case of single or multi gpu setups
+    train_loader = (
+        training_utils.create_distributed_data_loader(
+            train_dataset, batch_size=training_args.per_device_train_batch_size
         )
-    else:
-        trainer = Trainer(
-            model=model,
-            tokenizer=tokenizer,
-            args=training_args,
-            train_dataset=train_dataset,
+        if training_args.local_rank != -1
+        else training_utils.create_data_loader(
+            train_dataset, batch_size=training_args.per_device_train_batch_size
+        )
+    )
+
+    if training_args.do_eval:
+        eval_loader = (
+            training_utils.create_distributed_data_loader(
+                eval_dataset, batch_size=training_args.per_device_eval_batch_size
+            )
+            if training_args.local_rank != -1
+            else training_utils.create_data_loader(
+                eval_dataset, batch_size=training_args.per_device_eval_batch_size
+            )
         )
 
+    # initializing the trainer with the updated data loaders and metrics
+    trainer = Trainer(
+        model=model,
+        tokenizer=tokenizer,
+        args=training_args,
+        train_dataset=train_loader.dataset if not training_args.do_eval else None,
+        eval_dataset=eval_loader.dataset if training_args.do_eval else None,
+        compute_metrics=compute_metrics if training_args.do_eval else None,
+        preprocess_logits_for_metrics=(
+            preprocess_logits_for_metrics if training_args.do_eval else None
+        ),
+    )
+
+    # resuming training if a checkpoint exists
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         trainer.train(resume_from_checkpoint=True)
     else:
         trainer.train()
+
     trainer.save_state()
 
-    # check if zero3 mode enabled
-    if is_deepspeed_zero3_enabled():
-        # use deepspeed engine internal function to gather state dict
-        # state_dict_zero3 contains whole parameters of base and lora adapters
-        # we will not extract lora parameters since peft save_pretrained will do that
-        # https://github.com/huggingface/peft/blob/3714aa2fff158fdfa637b2b65952580801d890b2/src/peft/peft_model.py#L125
-        # https://github.com/huggingface/peft/blob/3714aa2fff158fdfa637b2b65952580801d890b2/src/peft/utils/save_and_load.py#L19
-        state_dict_zero3 = trainer.model_wrapped._zero3_consolidated_16bit_state_dict()
-        if training_args.local_rank == 0:
-            state_dict = state_dict_zero3
-    else:
-        # in other mode we use original code from fastchat team, to make sure our change is minimum
-        state_dict = get_peft_state_maybe_zero_3(
-            model.named_parameters(), lora_args.lora_bias
-        )
-
-    if training_args.local_rank == 0:
-        model.save_pretrained(training_args.output_dir, state_dict=state_dict)
+    # handling saving model and tokenizer in a distributed setting
+    if training_args.local_rank == 0 or training_args.local_rank == -1:
+        model.save_pretrained(training_args.output_dir)
         tokenizer.save_pretrained(training_args.output_dir)
+
+
+# def train():
+#     argument_parser = transformers.HfArgumentParser(
+#         (ModelArguments, DataArguments, TrainingArguments, LoraArguments)
+#     )
+#     (
+#         model_args,
+#         data_args,
+#         training_args,
+#         lora_args,
+#     ) = argument_parser.parse_args_into_dataclasses()
+
+#     # Set RoPE scaling factor
+
+#     print_rank0("lora args: ", lora_args)
+
+#     print_rank0("training args: ", training_args)
+
+#     model = load_model_with_rope_scaling(
+#         model_args, training_args, lora_args, data_args
+#     )
+#     print_rank0(model)
+
+#     prompt_template = get_prompt_template_by_version(
+#         training_args.prompt_template_version
+#     )
+
+#     tokenizer = training_utils.initialize_tokenizer(
+#         model=model,
+#         model_name_or_path=model_args.model_name_or_path,
+#         prompt_template=prompt_template,
+#         model_max_length=training_args.model_max_length,
+#         cache_dir=training_args.cache_dir,
+#     )
+
+#     id2token = {
+#         tokenizer.encode(token)[-1]: token
+#         for token in prompt_template.get_additional_tokens()
+#     }
+#     print_rank0("id to tokens: ", id2token)
+
+#     assert data_args.train_data_path is not None, "Please provide a training data file."
+
+#     train_dataset = read_dataset(
+#         model_args.model_name_or_path, data_args, training_args, tokenizer, "train"
+#     )
+#     print_rank0("****** Examples from train_dataset *****")
+#     training_utils.print_some_examples(train_dataset, tokenizer)
+#     print_rank0("final train size: ", len(train_dataset))
+
+#     if training_args.do_eval:
+#         eval_dataset = read_dataset(
+#             model_args.model_name_or_path, data_args, training_args, tokenizer, "eval"
+#         )
+#         print_rank0("final eval size: ", len(eval_dataset))
+#         print_rank0("****** Examples from eval_dataset *****")
+#         training_utils.print_some_examples(eval_dataset, tokenizer)
+
+#     print_rank0("tokenizer.model_max_length: ", tokenizer.model_max_length)
+
+#     model = prepare_model_for_training(model, training_args, lora_args)
+
+#     def preprocess_logits_for_metrics(logits, labels):
+#         return training_utils.preprocess_logits_for_metrics(
+#             logits, labels, len(tokenizer)
+#         )
+
+#     def compute_metrics(eval_preds):
+#         return training_utils.compute_metrics(eval_preds, id2token, tokenizer)
+
+#     if training_args.do_eval:
+#         trainer = Trainer(
+#             model=model,
+#             tokenizer=tokenizer,
+#             args=training_args,
+#             train_dataset=train_dataset,
+#             eval_dataset=eval_dataset,
+#             compute_metrics=(
+#                 compute_metrics
+#                 if "mixtral" not in model_args.model_name_or_path.lower()
+#                 else None
+#             ),
+#             preprocess_logits_for_metrics=(
+#                 preprocess_logits_for_metrics
+#                 if "mixtral" not in model_args.model_name_or_path.lower()
+#                 else None
+#             ),
+#         )
+#     else:
+#         trainer = Trainer(
+#             model=model,
+#             tokenizer=tokenizer,
+#             args=training_args,
+#             train_dataset=train_dataset,
+#         )
+
+#     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
+#         trainer.train(resume_from_checkpoint=True)
+#     else:
+#         trainer.train()
+#     trainer.save_state()
+
+#     # check if zero3 mode enabled
+#     if is_deepspeed_zero3_enabled():
+#         # use deepspeed engine internal function to gather state dict
+#         # state_dict_zero3 contains whole parameters of base and lora adapters
+#         # we will not extract lora parameters since peft save_pretrained will do that
+#         # https://github.com/huggingface/peft/blob/3714aa2fff158fdfa637b2b65952580801d890b2/src/peft/peft_model.py#L125
+#         # https://github.com/huggingface/peft/blob/3714aa2fff158fdfa637b2b65952580801d890b2/src/peft/utils/save_and_load.py#L19
+#         state_dict_zero3 = trainer.model_wrapped._zero3_consolidated_16bit_state_dict()
+#         if training_args.local_rank == 0:
+#             state_dict = state_dict_zero3
+#     else:
+#         # in other mode we use original code from fastchat team, to make sure our change is minimum
+#         state_dict = get_peft_state_maybe_zero_3(
+#             model.named_parameters(), lora_args.lora_bias
+#         )
+
+#     if training_args.local_rank == 0:
+#         model.save_pretrained(training_args.output_dir, state_dict=state_dict)
+#         tokenizer.save_pretrained(training_args.output_dir)
 
 
 if __name__ == "__main__":
