@@ -1,15 +1,15 @@
-import os, transformers
-import numpy as np
+import os
+from typing import List
 
-from functionary.prompt_template import PromptTemplate
-from torch.utils.data.distributed import DistributedSampler
-from transformers import AutoTokenizer
+import numpy as np
+import transformers
+from datasets import Dataset
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
-from typing import List
-from datasets import Dataset
+from torch.utils.data.distributed import DistributedSampler
+from transformers import AutoTokenizer
 
-# from functionary.train import metrics as train_metrics
+from functionary.prompt_template import PromptTemplate
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
@@ -142,30 +142,6 @@ def preprocess_logits_for_metrics(logits, labels, tokenizer_size):
     return pred_ids, loss
 
 
-# def preprocess_logits_for_metrics(logits, labels, tokenizer_size):
-#     """Preprocesses the logits during evaluation by computing the greedy token predictions for
-#     accuracy calculation and loss values for perplexity calculation. Both pred_ids and loss are
-#     of shape (batch_size x seq_len)"""
-
-#     correct_logits = logits
-#     if (
-#         type(logits) is tuple
-#     ):  # in mixtral logits is a tuple, correct logits is at the second index
-#         correct_logits = logits[1]
-
-#     pred_ids = torch.argmax(correct_logits, dim=-1)
-
-#     loss_fn = CrossEntropyLoss(reduction="none")
-#     shift_logits = correct_logits[..., :-1, :].contiguous()
-#     shift_labels = labels[..., 1:].contiguous()
-#     shift_logits = shift_logits.view(-1, tokenizer_size)
-#     shift_labels = shift_labels.view(-1)
-#     loss = loss_fn(shift_logits, shift_labels)
-#     loss = torch.mean(loss.view(correct_logits.shape[0], -1), dim=-1)
-
-#     return pred_ids, loss
-
-
 # LEVENT OZBEK:
 # Optimized compute metrics for large data sets!
 """
@@ -219,95 +195,6 @@ def compute_metrics(eval_preds, id2token, tokenizer):
         metrics[f"accuracy_total_num_{token}"] = stat["total"]
 
     return metrics
-
-
-# def compute_metrics(eval_preds, id2token, tokenizer):
-#     """Computes next-token accuracy and perplexity metrics for evaluation"""
-#     predictions = eval_preds.predictions[0][:, :-1]
-#     labels = eval_preds.label_ids[:, 1:]
-
-#     acc_count = 0
-#     total_num = 0
-#     dic = {token_id: {"acc": 0, "total": 0} for token_id in id2token}
-
-#     first_token_total_count, first_token_correct_count = 0, 0
-#     prediction_list, label_list = (
-#         predictions.flatten().tolist(),
-#         labels.flatten().tolist(),
-#     )
-#     first_token_label_dic = {}
-
-#     for i in range(len(prediction_list)):
-#         pred, label = prediction_list[i], label_list[i]
-#         if i > 0 and label_list[i - 1] == -100 and label != -100:  # first token
-#             first_token_total_count += 1
-#             if label not in first_token_label_dic:
-#                 first_token_label_dic[label] = {"correct": 0, "total": 0}
-
-#             first_token_label_dic[label]["total"] += 1
-
-#             if label == pred:
-#                 first_token_correct_count += 1
-#                 first_token_label_dic[label]["correct"] += 1
-
-#         if label != -100:
-#             if label == pred:
-#                 acc_count += 1
-#             total_num += 1
-#         if label in dic:
-#             dic[label]["total"] += 1
-#             if label == pred:
-#                 dic[label]["acc"] += 1
-
-#     # Calculate the accuracy of first token of the values of parameters
-#     unmasked_labels_preds = train_metrics.extract_unmasked_chunks(
-#         label_list, prediction_list
-#     )
-#     first_token_param_value_total, first_token_param_value_acc = 0, 0
-#     for unmasked_labels, pred_result in unmasked_labels_preds:
-#         try:
-#             indices = train_metrics.extract_indices_of_first_tokens_of_param_values_in_assistant_response(
-#                 tokenizer, unmasked_labels
-#             )
-#             for index in indices:
-#                 first_token_param_value_total += 1
-#                 if unmasked_labels[index] == pred_result[index]:
-#                     first_token_param_value_acc += 1
-#         except Exception as e:
-#             print_rank0(f"encounter exeption: {str(e)}\nFor unmaksed_labels: {unmasked_labels}")
-
-#     # Calculate perplexity
-#     loss = eval_preds.predictions[1].tolist()
-#     loss = sum(loss) / len(loss)
-#     perplexity = math.exp(loss)
-
-#     metrics = {
-#         "accuracy": acc_count / total_num,
-#         "perplexity": perplexity,
-#         "accuracy_first_token": first_token_correct_count / first_token_total_count,
-#         "total_number_first_token": first_token_total_count,
-#         "first_token_param_values": first_token_param_value_acc
-#         / first_token_param_value_total,
-#         "first_token_param_values_total": first_token_param_value_total,
-#     }
-
-#     for token_id, stat in sorted(
-#         first_token_label_dic.items(), key=lambda x: -x[1]["total"]
-#     )[:5]:
-#         token = tokenizer.decode([token_id])
-#         metrics[f"accuracy_first_token_{token}"] = stat["correct"] / stat["total"]
-#         metrics[f"accuracy_first_token_{token}_total"] = stat["total"]
-
-#     for token_id in dic:
-#         token = id2token[token_id]
-#         total_num = dic[token_id]["total"]
-#         acc = -1
-#         if total_num > 0:
-#             acc = dic[token_id]["acc"] / total_num
-#         metrics[f"accuracy_{token}"] = acc
-#         metrics[f"accuracy_total_num_{token}"] = total_num
-
-#     return metrics
 
 
 def extract_unmasked_chunks(labels: List[int], masked_value) -> List[List[int]]:

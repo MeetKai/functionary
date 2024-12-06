@@ -1,15 +1,21 @@
-import math, os, pathlib, sys, torch, transformers, torch.distributed
-
+import math
+import os
+import pathlib
+import sys
 from dataclasses import dataclass, field
 from typing import Optional
+
+import torch
+import torch.distributed
+import transformers
 from aenum import extend_enum
 from torch.optim.lr_scheduler import LambdaLR
+from training_utils import print_rank0
 from transformers import Trainer
 
 from functionary.prompt_template import get_prompt_template_by_version
-from functionary.train.custom_datasets import read_dataset
 from functionary.train import training_utils
-from training_utils import print_rank0
+from functionary.train.custom_datasets import read_dataset
 
 extend_enum(
     transformers.trainer_utils.SchedulerType,
@@ -339,155 +345,6 @@ def train():
         trainer_save_model_safe(trainer=trainer)
     else:
         trainer.save_model()
-
-
-# def train():
-#     """Training loop"""
-
-#     argument_parser = transformers.HfArgumentParser(
-#         (ModelArguments, DataArguments, TrainingArguments)
-#     )
-#     model_args, data_args, training_args = argument_parser.parse_args_into_dataclasses()
-
-#     # Set RoPE scaling factor
-#     config = transformers.AutoConfig.from_pretrained(
-#         model_args.model_name_or_path,
-#         cache_dir=training_args.cache_dir,
-#     )
-#     orig_ctx_len = getattr(config, "max_position_embeddings", None)
-#     if orig_ctx_len and training_args.model_max_length > orig_ctx_len:
-#         scaling_factor = float(math.ceil(training_args.model_max_length / orig_ctx_len))
-#         config.rope_scaling = {"type": "linear", "factor": scaling_factor}
-#         print_rank0("Rope scaling enabled")
-#     config.use_cache = False
-#     config.sliding_window = training_args.model_max_length
-
-#     if data_args.packing:
-#         from functionary.train.packing.monkey_patch_packing import (
-#             monkey_patch_packing_for_model,
-#         )
-
-#         monkey_patch_packing_for_model(model_args.model_name_or_path)
-
-#     compute_dtype = (
-#         torch.float16
-#         if training_args.fp16
-#         else (torch.bfloat16 if training_args.bf16 else torch.float32)
-#     )
-
-#     if training_args.use_liger:
-#         from liger_kernel.transformers import AutoLigerKernelForCausalLM
-
-#         print_rank0("---------------using LIGER------------")
-#         model_class = AutoLigerKernelForCausalLM
-#     else:
-#         model_class = transformers.AutoModelForCausalLM
-
-#     model = model_class.from_pretrained(
-#         model_args.model_name_or_path,
-#         torch_dtype=compute_dtype,
-#         config=config,
-#         cache_dir=training_args.cache_dir,
-#         attn_implementation="flash_attention_2",  # use_flash_attention_2 is replaced by this from version: 4.36.0
-#     )
-#     model.config.use_cache = False
-#     # Activate computing load balancing loss iin MixtralForCausalLM
-#     if hasattr(model.config, "output_router_logits"):
-#         setattr(model.config, "output_router_logits", True)
-#         print_rank0("Activate computing load balancing loss")
-
-#     print_rank0("Prompt template to use: ", training_args.prompt_template_version)
-#     prompt_template = get_prompt_template_by_version(
-#         training_args.prompt_template_version
-#     )
-
-#     tokenizer = training_utils.initialize_tokenizer(
-#         model=model,
-#         model_name_or_path=model_args.model_name_or_path,
-#         prompt_template=prompt_template,
-#         model_max_length=training_args.model_max_length,
-#         cache_dir=training_args.cache_dir,
-#     )
-
-#     if LOCAL_RANK == 0:
-#         if not os.path.exists(training_args.output_dir):
-#             os.mkdir(training_args.output_dir)
-
-#         tokenizer.save_pretrained(training_args.output_dir)
-
-#     # get id of added tokens to compute the accuracy of predicing the token
-#     id2token = {
-#         tokenizer.encode(token)[-1]: token
-#         for token in prompt_template.get_additional_tokens()
-#     }
-#     print_rank0("id to tokens: ", id2token)
-
-#     assert data_args.train_data_path is not None, "Please provide a training data file."
-
-#     train_dataset = read_dataset(
-#         model_args.model_name_or_path, data_args, training_args, tokenizer, "train"
-#     )
-
-#     if torch.distributed.get_rank() == 0:
-#         print(f"Training Data Loaded: #{len(train_dataset)}")
-
-#     if training_args.do_eval:
-#         eval_dataset = read_dataset(
-#             model_args.model_name_or_path,
-#             data_args,
-#             training_args,
-#             tokenizer,
-#             "validation",
-#         )
-
-#         if torch.distributed.get_rank() == 0:
-#             print(f"Eval Data Loaded: #{len(eval_dataset)}")
-
-#     print_rank0("***** HERE ARE SOME EXAMPLES FROM TRAINING ****")
-#     training_utils.print_some_examples(train_dataset, tokenizer)
-
-#     if training_args.do_eval:
-#         print_rank0("***** HERE ARE SOME EXAMPLES FROM EVALUATION ***")
-#         training_utils.print_some_examples(eval_dataset, tokenizer)
-
-#     def preprocess_logits_for_metrics(logits, labels):
-#         return training_utils.preprocess_logits_for_metrics(
-#             logits, labels, len(tokenizer)
-#         )
-
-#     def compute_metrics(eval_preds):
-#         return training_utils.compute_metrics(eval_preds, id2token, tokenizer)
-
-#     if training_args.do_eval:
-#         trainer = Trainer(
-#             model=model,
-#             tokenizer=tokenizer,
-#             args=training_args,
-#             train_dataset=train_dataset,
-#             eval_dataset=eval_dataset,
-#             compute_metrics=compute_metrics,
-#             preprocess_logits_for_metrics=preprocess_logits_for_metrics,
-#         )
-#     else:
-#         trainer = Trainer(
-#             model=model,
-#             tokenizer=tokenizer,
-#             args=training_args,
-#             train_dataset=train_dataset,
-#         )
-
-#     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
-#         trainer.train(resume_from_checkpoint=True)
-#     else:
-#         trainer.train()
-
-#     trainer.save_state()
-
-#     # FSDP requires state_dict_type=FULL_STATE_DICT in order to save the model weights in .bin format
-#     if trainer.is_fsdp_enabled:
-#         trainer_save_model_safe(trainer=trainer)
-#     else:
-#         trainer.save_model()
 
 
 if __name__ == "__main__":
