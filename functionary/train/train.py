@@ -10,7 +10,17 @@ import torch.distributed
 import transformers
 from aenum import extend_enum
 from torch.optim.lr_scheduler import LambdaLR
-from training_utils import print_rank0
+from training_utils import (
+    compute_metrics,
+    create_data_loader,
+    create_distributed_data_loader,
+    dynamic_batch_size,
+    initialize_tokenizer,
+    preprocess_logits_for_metrics,
+    print_rank0,
+    print_some_examples,
+    tokenize_and_cache,
+)
 from transformers import Trainer
 
 from functionary.prompt_template import get_prompt_template_by_version
@@ -210,7 +220,7 @@ def train():
         training_args.prompt_template_version
     )
 
-    tokenizer = training_utils.initialize_tokenizer(
+    tokenizer = initialize_tokenizer(
         model=model,
         model_name_or_path=model_args.model_name_or_path,
         prompt_template=prompt_template,
@@ -236,7 +246,7 @@ def train():
     raw_train_dataset = read_dataset(
         model_args.model_name_or_path, data_args, training_args, tokenizer, "train"
     )
-    train_dataset = training_utils.tokenize_and_cache(
+    train_dataset = tokenize_and_cache(
         raw_train_dataset, tokenizer, training_args.cache_dir
     )
 
@@ -252,75 +262,49 @@ def train():
             tokenizer,
             "validation",
         )
-        eval_dataset = training_utils.tokenize_and_cache(
+        eval_dataset = tokenize_and_cache(
             raw_eval_dataset, tokenizer, training_args.cache_dir
         )
         if torch.distributed.get_rank() == 0:
             print(f"Eval Data Loaded: #{len(eval_dataset)}")
 
     print_rank0("***** HERE ARE SOME EXAMPLES FROM TRAINING ****")
-    training_utils.print_some_examples(train_dataset, tokenizer)
+    print_some_examples(train_dataset, tokenizer)
 
     if training_args.do_eval:
         print_rank0("***** HERE ARE SOME EXAMPLES FROM EVALUATION ***")
-        training_utils.print_some_examples(eval_dataset, tokenizer)
+        print_some_examples(eval_dataset, tokenizer)
 
     # Dynamic batch size based on max tokens per batch
     max_tokens_per_batch = 2048  # You can adjust this as needed
-    train_batch_sizes = training_utils.dynamic_batch_size(
+    train_batch_sizes = dynamic_batch_size(
         train_dataset, max_tokens_per_batch, tokenizer
     )
     print_rank0(f"Dynamic train batch sizes: {train_batch_sizes}")
 
     if training_args.do_eval:
-        eval_batch_sizes = training_utils.dynamic_batch_size(
+        eval_batch_sizes = dynamic_batch_size(
             eval_dataset, max_tokens_per_batch, tokenizer
         )
         print_rank0(f"Dynamic eval batch sizes: {eval_batch_sizes}")
 
     # DataLoaders with dynamic batch sizes
-    train_loader = (
-        DataLoader(
-            train_dataset,
-            batch_sampler=torch.utils.data.BatchSampler(
-                sampler=torch.utils.data.SequentialSampler(train_dataset),
-                batch_size=max(train_batch_sizes),  # Adjust batch size dynamically
-                drop_last=False,
-            ),
-            num_workers=4,
-            pin_memory=True,
+    if training_args.local_rank == -1:  # Single-GPU
+        train_loader = create_data_loader(
+            train_dataset, batch_size=max(train_batch_sizes), num_workers=4
         )
-        if training_args.local_rank == -1
-        else training_utils.create_distributed_data_loader(
+        if training_args.do_eval:
+            eval_loader = create_data_loader(
+                eval_dataset, batch_size=max(eval_batch_sizes), num_workers=4
+            )
+    else:  # Multi-GPU
+        train_loader = create_distributed_data_loader(
             train_dataset, batch_size=max(train_batch_sizes)
         )
-    )
-
-    if training_args.do_eval:
-        eval_loader = (
-            DataLoader(
-                eval_dataset,
-                batch_sampler=torch.utils.data.BatchSampler(
-                    sampler=torch.utils.data.SequentialSampler(eval_dataset),
-                    batch_size=max(eval_batch_sizes),  # Adjust batch size dynamically
-                    drop_last=False,
-                ),
-                num_workers=4,
-                pin_memory=True,
-            )
-            if training_args.local_rank == -1
-            else training_utils.create_distributed_data_loader(
+        if training_args.do_eval:
+            eval_loader = create_distributed_data_loader(
                 eval_dataset, batch_size=max(eval_batch_sizes)
             )
-        )
-
-    def preprocess_logits_for_metrics(logits, labels):
-        return training_utils.preprocess_logits_for_metrics(
-            logits, labels, len(tokenizer)
-        )
-
-    def compute_metrics(eval_preds):
-        return training_utils.compute_metrics(eval_preds, id2token, tokenizer)
 
     trainer = Trainer(
         model=model,
