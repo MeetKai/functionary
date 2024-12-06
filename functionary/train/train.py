@@ -100,6 +100,10 @@ class DataArguments:
         default=False,
         metadata={"help": "Whether to use lazy loading for the dataset or not"},
     )
+    ignore_cached: bool = field(
+        default=False,
+        metadata={"help": "Whether to ignore cached tokenized data or not"},
+    )
 
 
 @dataclass
