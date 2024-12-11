@@ -1,4 +1,5 @@
 import os
+import sys
 import threading
 import time
 import uuid
@@ -6,6 +7,7 @@ from http import HTTPStatus
 from typing import Annotated, Dict, List, Literal, Optional, Union
 
 import modal
+import requests
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -34,7 +36,7 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
-def get_model():
+async def get_model():
     # this is lazy should be using the modal model class
     import asyncio
 
@@ -54,6 +56,7 @@ def get_model():
         disable_log_stats=True,  # disable logging so we can stream tokens
         disable_log_requests=True,
         max_model_len=settings.max_model_length,
+        enable_lora=True,
     )
 
     # A separate tokenizer to map token IDs to strings.
@@ -65,7 +68,7 @@ def get_model():
     engine_args.max_logprobs = len(tokenizer.vocab.keys())
 
     engine = AsyncLLMEngine.from_engine_args(engine_args)
-    engine_model_config = asyncio.run(engine.get_model_config())
+    engine_model_config = await engine.get_model_config()
 
     return engine, tokenizer, engine_model_config
 
@@ -73,13 +76,19 @@ def get_model():
 image = (
     modal.Image.debian_slim()
     .pip_install(
-        "hf-transfer==0.1.8", "huggingface_hub==0.26.2", "pydantic-settings==2.6.1"
+        "hf-transfer==0.1.8",
+        "huggingface_hub==0.26.2",
+        "pydantic-settings==2.6.1",
+        "b2sdk==2.6.0",
     )
     .pip_install_from_pyproject("pyproject.toml", optional_dependencies=["vllm"])
     .env(
         {
             "HF_HUB_ENABLE_HF_TRANSFER": "1",
             "HF_TOKEN": os.environ["HF_TOKEN"],
+            "B2_APPLICATION_KEY_ID": os.environ["B2_APPLICATION_KEY_ID"],
+            "B2_APPLICATION_KEY": os.environ["B2_APPLICATION_KEY"],
+            "B2_BUCKET_NAME": os.environ["B2_BUCKET_NAME"],
             "MODAL_MODEL": settings.model,
             "MODAL_MAX_MODEL_LENGTH": str(settings.max_model_length),
             "MODAL_GPU_TYPE": settings.gpu_type,
@@ -145,8 +154,9 @@ class Model:
         )
         move_cache()
 
-    def _start_engine(self):
-        model, tokenizer, engine_model_config = get_model()
+    @modal.enter()
+    async def start_engine(self):
+        model, tokenizer, engine_model_config = await get_model()
         self.model = model
         self.tokenizer = tokenizer
         self.engine_model_config = engine_model_config
@@ -155,19 +165,64 @@ class Model:
     async def generate(self, request: ChatCompletionRequest):
         from functionary.vllm_inference import process_chat_completion
 
-        # Only start the engine when generate is called
-        self._start_engine()
-
         return await process_chat_completion(
             request=request,
             raw_request=None,
             tokenizer=self.tokenizer,
             served_model=settings.model,
-            served_loras=[],
+            served_loras=self.served_loras,
             engine_model_config=self.engine_model_config,
             enable_grammar_sampling=settings.enable_grammar_sampling,
             engine=self.model,
         )
+
+    def _download_lora_adapter_from_b2(self, job_id: str):
+        from b2sdk.v2 import (
+            B2Api,
+            CompareVersionMode,
+            InMemoryAccountInfo,
+            KeepOrDeleteMode,
+            NewerFileSyncMode,
+            ScanPoliciesManager,
+            Synchronizer,
+            SyncReport,
+            parse_folder,
+        )
+
+        # Initialize B2 client
+        info = InMemoryAccountInfo()
+        b2_api = B2Api(info)
+        b2_api.authorize_account(
+            "production",
+            os.environ["B2_APPLICATION_KEY_ID"],
+            os.environ["B2_APPLICATION_KEY"],
+        )
+
+        # Synchronizer
+        policies_manager = ScanPoliciesManager(exclude_all_symlinks=True)
+        synchronizer = Synchronizer(
+            max_workers=10,
+            policies_manager=policies_manager,
+            allow_empty_source=True,
+            newer_file_mode=NewerFileSyncMode.REPLACE,
+            keep_days_or_delete=KeepOrDeleteMode.DELETE,
+            keep_days=None,
+            compare_version_mode=CompareVersionMode.MODTIME,
+            compare_threshold=0,
+            absolute_minimum_part_size=10,
+        )
+
+        # Download LoRA adapter
+        os.makedirs(f"{settings.storage_model_dir}/{job_id}", exist_ok=True)
+        src = parse_folder(f"b2://{os.environ['B2_BUCKET_NAME']}/{job_id}", b2_api)
+        dest = parse_folder(f"{settings.storage_model_dir}/{job_id}", b2_api)
+        with SyncReport(stdout=sys.stdout, no_progress=False) as reporter:
+            synchronizer.sync_folders(
+                source_folder=src,
+                dest_folder=dest,
+                now_millis=int(round(time.time() * 1000)),
+                reporter=reporter,
+            )
 
     @modal.method()
     async def modal_load_lora_adapter(self, request_json: dict):
@@ -176,6 +231,10 @@ class Model:
         from functionary.vllm_inference import process_load_lora_adapter
 
         request = LoadLoraAdapterRequest(**request_json)
+        job_id = request_json["job_id"]
+
+        self._download_lora_adapter_from_b2(job_id)
+
         error, self.served_loras = await process_load_lora_adapter(
             request, self.served_loras, self.lora_id_counter
         )
@@ -207,6 +266,9 @@ class Model:
             ray.shutdown()
 
 
+model_cls = Model()
+
+
 @fast_api_app.post("/v1/chat/completions")
 async def chat_endpoint(raw_request: Request):
     """Completion API similar to OpenAI's API.
@@ -219,9 +281,7 @@ async def chat_endpoint(raw_request: Request):
     request_json = await raw_request.json()
     request = ChatCompletionRequest(**request_json)
 
-    model = Model()
-
-    return model.generate.remote(request)
+    return model_cls.generate.remote(request)
 
 
 @fast_api_app.post("/v1/load_lora_adapter")
@@ -230,9 +290,7 @@ async def load_lora_adapter(raw_request: Request):
 
     request_json = await raw_request.json()
 
-    model = Model()
-
-    return model.modal_load_lora_adapter.remote(request_json)
+    return model_cls.modal_load_lora_adapter.remote(request_json)
 
 
 @fast_api_app.post("/v1/unload_lora_adapter")
@@ -241,9 +299,7 @@ async def unload_lora_adapter(raw_request: Request):
 
     request_json = await raw_request.json()
 
-    model = Model()
-
-    return model.modal_unload_lora_adapter.remote(request_json)
+    return model_cls.modal_unload_lora_adapter.remote(request_json)
 
 
 @app.function(image=image)

@@ -1,0 +1,9 @@
+export HF_TOKEN=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
+export B2_APPLICATION_KEY_ID=0046787bce079410000000001
+export B2_APPLICATION_KEY=K004SmTKrrJHP7qElJb9l3yqzC+fz7k
+export B2_BUCKET_NAME=mk-functionary-cloud
+export MODAL_MODEL=meta-llama/Llama-3.2-1B-Instruct
+export MODAL_MAX_MODEL_LENGTH=2048
+export MODAL_GPU_TYPE=l4
+export MODAL_GPU_COUNT=1
+export MODAL_STORAGE_MODEL_DIR=models

@@ -200,6 +200,7 @@ async def process_chat_completion(
         tools_or_functions=tools_or_functions,
         tool_choice=tool_func_choice,
     ).tolist()[0]
+    print(tokenizer.decode(prompt_token_ids))
 
     error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     if error_check_ret is not None:
@@ -212,6 +213,7 @@ async def process_chat_completion(
     # compute stop_token_ids
     stop_token_ids = []
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+    print(prompt_template)
     for stop_tok in prompt_template.get_stop_tokens_for_generation():
         tok_ids = tokenizer.encode(stop_tok, add_special_tokens=False)
         stop_token_ids.append(tok_ids[-1])
