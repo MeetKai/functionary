@@ -1,0 +1,85 @@
+<|start_header_id|>system<|end_header_id|>
+
+Environment: ipython
+
+Cutting Knowledge Date: December 2023
+
+
+You have access to the following functions:
+
+Use the function 'get_car_price' to 'Get the price of a particular car model'
+{"name": "get_car_price", "description": "Get the price of a particular car model", "parameters": {"type": "object", "properties": {"car_name": {"type": "string", "description": "The name of the car model"}}, "required": ["car_name"]}}
+
+Use the function 'get_weather' to 'This function's purpose is to get the weather of a location'
+{"name": "get_weather", "description": "This function's purpose is to get the weather of a location", "parameters": {"type": "object", "properties": {"location": {"type": "string", "description": "where to get weather"}}, "required": ["location"]}}
+
+Use the function 'multi_tool_use' to 'This tool serves as a wrapper for utilizing multiple tools. Each tool that can be used must be specified in the tool sections.
+Ensure that the parameters provided to each tool are valid according to that tool's specification.
+Use this function to run multiple tools simultaneously, but only if they can operate in parallel.'
+{"name": "multi_tool_use", "description": "This tool serves as a wrapper for utilizing multiple tools. Each tool that can be used must be specified in the tool sections.\nEnsure that the parameters provided to each tool are valid according to that tool's specification.\nUse this function to run multiple tools simultaneously, but only if they can operate in parallel.", "parameters": {"type": "object", "properties": {"tool_uses": {"type": "array", "description": "The tools to be executed in parallel. NOTE: only functions tools are permitted", "items": {"type": "object", "properties": {"recipient_name": {"type": "string", "description": "The name of the tool to use. The format should either be just the name of the tool, or in the format namespace.function_name for plugin and function tools."}, "parameters": {"type": "object", "additionalProperties": true, "description": "The parameters to pass to the tool. Ensure these are valid according to the tool's own specifications."}}, "required": ["recipient_name", "parameters"]}}}, "required": ["tool_uses"]}}
+
+
+Think very carefully before calling functions.
+If a you choose to call a function ONLY reply in the following format:
+<{start_tag}={function_name}>{parameters}{end_tag}
+where
+
+start_tag => `<function`
+parameters => a JSON dict with the function argument name as key and function argument value as value.
+end_tag => `</function>`
+
+Here is an example,
+<function=example_function_name>{"example_name": "example_value"}</function>
+
+Reminder:
+- If looking for real time information use relevant functions before falling back to brave_search
+- Function calls MUST follow the specified format, start with <function= and end with </function>
+- Required parameters MUST be specified
+- Only call one function at a time
+- Put the entire function call reply on one line
+
+<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+who is the CEO of Meetkai<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+James Kaplan is the Co-Founder and CEO of MeetKai Inc.<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+is the car Song more expensive than car Tang?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+I will get the price of 2 cars and compare<function=multi_tool_use>{"tool_uses": [{"recipient_name": "get_car_price", "parameters": {"car_name": "Song"}}, {"recipient_name": "get_car_price", "parameters": {"car_name": "Tang"}}]}</function><|eom_id|><|start_header_id|>ipython<|end_header_id|>
+
+{"price": {"price": "$25000"}}<|eot_id|><|start_header_id|>ipython<|end_header_id|>
+
+{"price": {"price": "$20000"}}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+No, the car Tang is less expensive than the car Song. The car Song is priced at $25,000, while the car Tang is priced at $20,000.<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+what's the weather like in Hanoi?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+<function=get_weather>{"location": "Hanoi"}</function><|eom_id|><|start_header_id|>ipython<|end_header_id|>
+
+{"result": {"temperature": 10}}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+The temperature in Hanoi is: 10 degree Celcious<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+Given the list of strings: '0','1','2','3','4','5' remove the number in the list that is close to 3.6 the most<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+I'll use code interpreter to handle this<|python_tag|>l=[int('0'),int('1'),int('2'),int('3'),int('4'),int('5')]
+l.remove(3.6)<|eom_id|><|start_header_id|>ipython<|end_header_id|>
+
+ValueError: list.remove(x): x not in list<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+I will fix the code<|python_tag|>l.remove(round(3.6))
+l<|eom_id|><|start_header_id|>ipython<|end_header_id|>
+
+[0,1,2,3,5,]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+The final list is: 0,1,2,3,5<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+Thanks! What's the weather in San Francisco?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+<function=get_weather>{"location": "San Francisco, CA"}</function><|eom_id|><|start_header_id|>ipython<|end_header_id|>
+
+{"result": {"temperature": 20}}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+The temperature in San Francisco is: 20 degree Celcious<|eot_id|>
