@@ -42,6 +42,7 @@ class TestPromptTemplate(unittest.TestCase):
             "v2.llama3": "meetkai/functionary-small-v2.5",
             "v3.llama3": "meetkai/functionary-medium-v3.0",
             "v3-llama3.1": "meetkai/functionary-small-v3.1",
+            "v3-llama3.1-multi-tool-use": "meetkai/functionary-small-v3.1",
         }
         self.image_template_version_to_model_name = {
             "v3.llava_llama": "meetkai/functionary-vision-small-v0.1"
