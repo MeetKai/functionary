@@ -22,6 +22,7 @@ from functionary.prompt_template import (
     LlavaLlama,
     PromptTemplate,
     PromptTemplateV2,
+    Llama31ReasoningTemplate,   
     get_available_prompt_template_versions,
 )
 from functionary.prompt_template.prompt_utils import (
@@ -150,6 +151,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
             Llama3Template: "meetkai/functionary-small-v2.5",
             Llama3TemplateV3: "meetkai/functionary-medium-v3.0",
             Llama31Template: "meetkai/functionary-small-v3.1",
+            Llama31ReasoningTemplate: "meetkai/functionary-small-v3.1",
             LlavaLlama: "lmms-lab/llama3-llava-next-8b",
         }
         self.default_text_str = "Normal text generation"
