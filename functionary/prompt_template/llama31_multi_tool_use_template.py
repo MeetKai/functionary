@@ -127,7 +127,7 @@ class MultiToolUseLlama31Template(Llama31Template):
             for tool_call in tool_calls:
                 if tool_call["function"]["name"] == "multi_tool_use":
                     sub_tool_calls = []
-                    tool_use_list = json.loads(tool_call["function"]["arguments"])
+                    tool_use_list = json.loads(tool_call["function"]["arguments"])["tool_uses"]
                     for tool_use in tool_use_list:
                         sub_tool_calls.append(
                             {
