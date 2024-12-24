@@ -15,6 +15,7 @@ Documentation and more examples: [functionary.meetkai.com](https://functionary.m
 
   <summary>Changelog: (click to expand)</summary>
 
+  + [2024/12/24] We release [meetkai/functionary-v4r-small-preview](https://huggingface.co/meetkai/functionary-v4r-small-preview) - our first version of Functionary that can generate the reasoning steps first before using the tools
   + [2024/10/21] New server powered by [SGLang](https://github.com/sgl-project/sglang)!
   + [2024/08/21] We release [meetkai/functionary-small-v3.2](https://huggingface.co/meetkai/functionary-small-v3.2) and [meetkai/functionary-medium-v3.2](https://huggingface.co/meetkai/functionary-medium-v3.2)
   + [2024/08/11] Our newest model ([meetkai/functionary-medium-v3.1](https://huggingface.co/meetkai/functionary-medium-v3.1)) is ranked 2nd in [Berkeley Function-Calling Leaderboard](https://gorilla.cs.berkeley.edu/leaderboard.html)
@@ -52,11 +53,11 @@ pip install -e .[sglang] --find-links https://flashinfer.ai/whl/cu121/torch2.4/f
 
 **vLLM**
 ```shell
-python3 server_vllm.py --model "meetkai/functionary-small-v3.2" --host 0.0.0.0 --port 8000 --max-model-len 8192
+python3 server_vllm.py --model "meetkai/functionary-v4r-small-preview" --host 0.0.0.0 --port 8000 --max-model-len 8192
 ```
 **SGLang**
 ```shell
-python3 server_sglang.py --model-path "meetkai/functionary-small-v3.2" --host 0.0.0.0 --port 8000 --context-length 8192
+python3 server_sglang.py --model-path "meetkai/functionary-v4r-small-preview" --host 0.0.0.0 --port 8000 --context-length 8192
 ```
 
 #### Medium Model
@@ -174,7 +175,7 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 
 client.chat.completions.create(
-    model="meetkai/functionary-small-v3.2",
+    model="meetkai/functionary-v4r-small-preview",
     messages=[{"role": "user",
             "content": "What is the weather for Istanbul?"}
     ],
@@ -210,7 +211,7 @@ client.chat.completions.create(
 import requests
 
 data = {
-    'model': 'meetkai/functionary-small-v3.2', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
+    'model': 'meetkai/functionary-v4r-small-preview', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
     'messages': [
         {
             "role": "user",
@@ -253,6 +254,7 @@ print(response.text)
 ## Models Available
 | Model                                                                                | Description                                                                                                                         | VRAM FP16 |
 |:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:------|
+| [meetkai/functionary-v4r-small-preview](https://huggingface.co/meetkai/functionary-v4r-small-preview) | 128k context, code interpreter, using **our own prompt template** | 24GB |
 | [functionary-medium-v3.2](https://huggingface.co/meetkai/functionary-medium-v3.2) | 128k context, code interpreter, using **our own prompt template** | 160GB |
 | [functionary-small-v3.2](https://huggingface.co/meetkai/functionary-small-v3.2) / [GGUF](https://huggingface.co/meetkai/functionary-small-v3.2-GGUF) | 128k context, code interpreter, using **our own prompt template** | 24GB |
 | [functionary-medium-v3.1](https://huggingface.co/meetkai/functionary-medium-v3.1) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v3.1-GGUF) | 128k context, code interpreter, using **original Meta's prompt template** | 160GB |
