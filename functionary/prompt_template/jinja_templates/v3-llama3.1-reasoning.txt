@@ -1,4 +1,4 @@
-{# version=v3-llama3.1 #}{%- if not tools is defined -%}
+{# version=v3-llama3.1-reasoning #}{%- if not tools is defined -%}
     {%- set tools = none -%}
 {%- endif -%}
 
