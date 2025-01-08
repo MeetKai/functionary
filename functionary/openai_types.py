@@ -120,7 +120,7 @@ class ChatCompletionRequest(BaseModel):
     tools: Optional[List[Tool]] = None
     function_call: Optional[Union[str, Function]] = None
     tool_choice: Optional[Union[str, Tool]] = None
-    temperature: Optional[float] = 0.6
+    temperature: Union[Optional[float], str] = 0.6
     top_p: Optional[float] = 1.0
     n: Optional[int] = 1
     max_tokens: Optional[int] = 512
