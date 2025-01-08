@@ -2,7 +2,7 @@ import time
 import uuid
 from typing import Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, field_validator
 
 
 class FunctionCall(BaseModel):
@@ -145,6 +145,12 @@ class ChatCompletionRequest(BaseModel):
     min_tokens: Optional[int] = 0
     repetition_penalty: Optional[float] = 1.0
     stop_token_ids: Optional[List[int]] = Field(default_factory=list)
+    
+    @field_validator("temperature", mode="before")
+    def handle_str_temperature(cls, value):
+        if isinstance(value, float) or isinstance(value, int):
+            return float(value)
+        return 1e-5
 
     # @validator("tool_choice", always=True)
     # def validate_tool_choice(cls, value, values):

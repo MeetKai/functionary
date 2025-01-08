@@ -570,9 +570,7 @@ async def v1_chat_completions(
     """
     request_json = await raw_request.json()
     request = ChatCompletionRequest(**request_json)
-    if type(request.temperature) is not float:
-        request.temperature = 1e-5
-        
+    
     tokenizer = (
         tokenizer_manager.tokenizer
         if tokenizer_manager
