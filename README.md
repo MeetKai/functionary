@@ -164,7 +164,15 @@ If you're having trouble with dependencies, and you have [nvidia-container-toolk
 you can start your environment like this: 
 
 ```shell
-sudo docker run --gpus all -it --ipc=host --name functionary -v ${PWD}/functionary_workspace:/workspace -p 8000:8000 nvcr.io/nvidia/pytorch:23.10-py3
+cd <ROOT>
+
+# vLLM
+sudo docker build -t functionary-vllm -f dockerfiles/Dockerfile.vllm .
+sudo docker run --runtime nvidia --gpus all -p 8000:8000 functionary-vllm
+
+# SGLang
+sudo docker build -t functionary-sglang -f dockerfiles/Dockerfile.sgl .
+sudo docker run --runtime nvidia --gpus all -p 8000:8000 functionary-sglang
 ```
 
 ### OpenAI Compatible Usage
