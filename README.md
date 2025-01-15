@@ -15,7 +15,10 @@ Documentation and more examples: [functionary.meetkai.com](https://functionary.m
 
   <summary>Changelog: (click to expand)</summary>
 
-  + [2024-08-11] Our newest model ([meetkai/functionary-medium-v3.1](https://huggingface.co/meetkai/functionary-medium-v3.1)) is ranked 2nd in [Berkeley Function-Calling Leaderboard](https://gorilla.cs.berkeley.edu/leaderboard.html)
+  + [2024/12/24] We release [meetkai/functionary-v4r-small-preview](https://huggingface.co/meetkai/functionary-v4r-small-preview) - our first version of Functionary that can generate the reasoning steps first before using the tools
+  + [2024/10/21] New server powered by [SGLang](https://github.com/sgl-project/sglang)!
+  + [2024/08/21] We release [meetkai/functionary-small-v3.2](https://huggingface.co/meetkai/functionary-small-v3.2) and [meetkai/functionary-medium-v3.2](https://huggingface.co/meetkai/functionary-medium-v3.2)
+  + [2024/08/11] Our newest model ([meetkai/functionary-medium-v3.1](https://huggingface.co/meetkai/functionary-medium-v3.1)) is ranked 2nd in [Berkeley Function-Calling Leaderboard](https://gorilla.cs.berkeley.edu/leaderboard.html)
   + [2024/08/08] We release 128k-context length 70B-model: [meetkai/functionary-medium-v3.1](https://huggingface.co/meetkai/functionary-medium-v3.1) that are based on [meta-llama/Meta-Llama-3.1-70B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-70B-Instruct)  
   + [2024/08/07] We release 2 128k-context length models that are based on [meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct): 
      + [meetkai/functionary-small-v3.1](https://huggingface.co/meetkai/functionary-small-v3.1): **using Meta's original prompt template** as described in: [User-defined Custom tool calling](https://llama.meta.com/docs/model-cards-and-prompt-formats/llama3_1#user-defined-custom-tool-calling)
@@ -29,35 +32,89 @@ Documentation and more examples: [functionary.meetkai.com](https://functionary.m
 
 </details>
 
-### Setup
+## Getting Started
 
-To install the required dependencies, run:
+Functionary can be deployed using either our [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) or [SGLang](https://sglang.readthedocs.io/en/latest/install.html) servers. Choose either one depending on your preferences.
 
+### Installation
+
+**vLLM**
 ```shell
-pip install -r requirements.txt
+pip install -e .[vllm]
+```
+**SGLang**
+```shell
+pip install -e .[sglang] --find-links https://flashinfer.ai/whl/cu121/torch2.4/flashinfer/
 ```
 
-Now you can start a blazing fast [vLLM](https://vllm.readthedocs.io/en/latest/getting_started/installation.html) server.
-[requirements](https://docs.vllm.ai/en/latest/getting_started/installation.html#requirements)
+### Running the server
 
-**Small Model:**
+#### Small Model
+
+**vLLM**
 ```shell
-python3 server_vllm.py --model "meetkai/functionary-small-v3.2" --host 0.0.0.0 --max-model-len 8192
+python3 server_vllm.py --model "meetkai/functionary-v4r-small-preview" --host 0.0.0.0 --port 8000 --max-model-len 8192
+```
+**SGLang**
+```shell
+python3 server_sglang.py --model-path "meetkai/functionary-v4r-small-preview" --host 0.0.0.0 --port 8000 --context-length 8192
 ```
 
-**Medium Model:**
+#### Medium Model
 
-Our medium models require: 4xA6000 or 2xA100 80GB to run, need to use: `tensor-parallel-size`
+Our medium models require: 4xA6000 or 2xA100 80GB to run, need to use: `tensor-parallel-size` or `tp` (SGLang)
 
+**vLLM**
 ```shell
 # vllm requires to run this first: https://github.com/vllm-project/vllm/issues/6152
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
 
-python server_vllm.py --model "meetkai/functionary-medium-v3.1" --max-model-len 8192 --tensor-parallel-size 2
+python server_vllm.py --model "meetkai/functionary-medium-v3.1" --host 0.0.0.0 --port 8000 --max-model-len 8192 --tensor-parallel-size 2
+```
+**SGLang**
+```shell
+python server_sglang.py --model-path "meetkai/functionary-medium-v3.1" --host 0.0.0.0 --port 8000 --context-length 8192 --tp 2
+```
+
+#### LoRA Support (Currently Only in vLLM)
+
+Similar to [LoRA in vLLM](https://docs.vllm.ai/en/latest/models/lora.html), our server supports serving LoRA adapters both at startup and dynamically.
+
+To serve a LoRA adapter at startup, run the server with the `--lora-modules` argument:
+
+```shell
+python server_vllm.py --model {BASE_MODEL} --enable-lora --lora-modules {name}={path} {name}={path} --host 0.0.0.0 --port 8000
+```
+
+To serve a LoRA adapter dynamically, use the `/v1/load_lora_adapter` endpoint:
+```shell
+python server_vllm.py --model {BASE_MODEL} --enable-lora --host 0.0.0.0 --port 8000
+# Load a LoRA adapter dynamically
+curl -X POST http://localhost:8000/v1/load_lora_adapter \
+  -H "Content-Type: application/json" \
+  -d '{
+    "lora_name": "my_lora",
+    "lora_path": "/path/to/my_lora_adapter"
+  }'
+# Example chat request to lora adapter
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "my_lora",
+    "messages": [...],
+    "tools": [...],
+    "tool_choice": "auto"
+  }'
+# Unload a LoRA adapter dynamically
+curl -X POST http://localhost:8000/v1/unload_lora_adapter \
+  -H "Content-Type: application/json" \
+  -d '{
+    "lora_name": "my_lora"
+  }'
 ```
 
 
-**Grammar Sampling**
+### Grammar Sampling (Only in vLLM)
 
 We also offer our own function-calling grammar sampling feature which constrains the LLM's generation to always follow the prompt template, and ensures 100% accuracy for function name. The parameters are generated using the efficient [lm-format-enforcer](https://github.com/noamgat/lm-format-enforcer), which ensures that the parameters follow the schema of the tool called. To enable grammar sampling, run the vLLM server with the command-line argument <code>--enable-grammar-sampling</code>:
 
@@ -65,12 +122,10 @@ We also offer our own function-calling grammar sampling feature which constrains
 python3 server_vllm.py --model "meetkai/functionary-medium-v3.1" --max-model-len 8192 --tensor-parallel-size 2 --enable-grammar-sampling
 ```
 
-Note:
-- Grammar Sampling support is applicable only for the V2 and V3.0 models. There is no such support for V1 and V3.1 models.
-- Our vLLM server supports the `tool_choice="required"` feature in OpenAI Chat Completion API exclusively **only when grammar sampling is enabled**.
+**Note:** Grammar Sampling support is applicable only for the V2, V3.0, V3.2 models. There is no such support for V1 and V3.1 models.
 
 
-**Text-Generation-Inference**
+### Text-Generation-Inference (TGI)
 
 We also provide a service that performs inference on Functionary models using [Text-Generation-Inference](https://huggingface.co/docs/text-generation-inference/en/index) (TGI). Follow these steps to get started:
 
@@ -120,7 +175,7 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="functionary")
 
 client.chat.completions.create(
-    model="meetkai/functionary-small-v3.2",
+    model="meetkai/functionary-v4r-small-preview",
     messages=[{"role": "user",
             "content": "What is the weather for Istanbul?"}
     ],
@@ -156,7 +211,7 @@ client.chat.completions.create(
 import requests
 
 data = {
-    'model': 'meetkai/functionary-small-v3.2', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
+    'model': 'meetkai/functionary-v4r-small-preview', # model name here is the value of argument "--model" in deploying: server_vllm.py or server.py
     'messages': [
         {
             "role": "user",
@@ -199,6 +254,8 @@ print(response.text)
 ## Models Available
 | Model                                                                                | Description                                                                                                                         | VRAM FP16 |
 |:-------------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------|:------|
+| [meetkai/functionary-v4r-small-preview](https://huggingface.co/meetkai/functionary-v4r-small-preview) | 128k context, code interpreter, using **our own prompt template** | 24GB |
+| [functionary-medium-v3.2](https://huggingface.co/meetkai/functionary-medium-v3.2) | 128k context, code interpreter, using **our own prompt template** | 160GB |
 | [functionary-small-v3.2](https://huggingface.co/meetkai/functionary-small-v3.2) / [GGUF](https://huggingface.co/meetkai/functionary-small-v3.2-GGUF) | 128k context, code interpreter, using **our own prompt template** | 24GB |
 | [functionary-medium-v3.1](https://huggingface.co/meetkai/functionary-medium-v3.1) / [GGUF](https://huggingface.co/meetkai/functionary-medium-v3.1-GGUF) | 128k context, code interpreter, using **original Meta's prompt template** | 160GB |
 | [functionary-small-v3.1](https://huggingface.co/meetkai/functionary-small-v3.1) / [GGUF](https://huggingface.co/meetkai/functionary-small-v3.1-GGUF) | 128k context, code interpreter, using **original Meta's prompt template** | 24GB |
@@ -654,12 +711,17 @@ Evaluation function call prediction in SGD dataset. The accuracy metric measures
 
 See training [README](functionary/train/README.md)
 
+## Safety & Security
+
+While its not strictly enforced, to ensure more *secure* function execution, one can enable grammar sampling to enforce type checking.
+Main safety checks needs to be done in the functions/actions themselves. Such as validation of the given input, or the ouput that will be given to the model.
+
 ## Roadmap
 
 - [ ] OpenAPI specification based plugin support.
 - [X] Fast inference server 
   - [X] [vLLM](https://github.com/vllm-project/vllm) 
-  - [ ] [text-generation-inference](https://github.com/huggingface/text-generation-inference) ? See: [License Issue](https://github.com/huggingface/text-generation-inference/issues/726)
+  - [X] [text-generation-inference](https://github.com/huggingface/text-generation-inference)
   - [X] Streaming Support
   - [X] function_call parameter to server
   - [X] Grammar Sampling to ensure 100% accuracy for function and parameter names

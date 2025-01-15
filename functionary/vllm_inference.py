@@ -5,14 +5,24 @@ from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Un
 
 from fastapi import BackgroundTasks, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from vllm.entrypoints.openai.protocol import ErrorResponse
+from vllm.entrypoints.openai.protocol import (
+    LoadLoraAdapterRequest,
+    UnloadLoraAdapterRequest,
+)
 from vllm.inputs import TokensPrompt
+from vllm.lora.request import LoRARequest
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
-from vllm.utils import random_uuid
+from vllm.transformers_utils.tokenizer import get_lora_tokenizer
+from vllm.utils import AtomicCounter, random_uuid
 
 from functionary.inference_stream import generate_openai_format_from_stream_async
-from functionary.inference_utils import analyze_tools_and_tool_choice
+from functionary.inference_utils import (
+    analyze_tools_and_tool_choice,
+    check_all_errors,
+    convert_tool_calls_to_function_call,
+    create_error_response,
+)
 from functionary.openai_types import (
     ChatCompletionChunk,
     ChatCompletionRequest,
@@ -33,67 +43,6 @@ from functionary.prompt_template.prompt_utils import (
     extract_images_from_messages,
     get_prompt_str_from_inputs,
 )
-
-
-def create_error_response(
-    status_code: HTTPStatus, message: str, param: Optional[str]
-) -> JSONResponse:
-    return JSONResponse(
-        ErrorResponse(
-            message=message,
-            type="invalid_request_error",
-            param=param,
-            code=status_code.value,
-        ).dict(),
-        status_code=status_code.value,
-    )
-
-
-async def check_all_errors(request, served_model) -> Optional[JSONResponse]:
-    if request.model not in served_model:
-        return create_error_response(
-            status_code=HTTPStatus.NOT_FOUND,
-            message=f"The model `{request.model}` does not exist.",
-            param=None,
-        )
-    if request.tools and request.functions:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message="'functions' and 'tools' cannot both be provided. 'functions' are deprecated; use the 'tools' parameter instead.",
-            param=None,
-        )
-    if isinstance(request.function_call, str) and request.function_call not in [
-        "none",
-        "auto",
-    ]:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message=f"Invalid value: '{request.function_call}'. Supported values are: 'none' and 'auto'.",
-            param="function_call",
-        )
-    if isinstance(request.tool_choice, str) and request.tool_choice not in [
-        "none",
-        "auto",
-        "required",
-    ]:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message=f"Invalid value: '{request.tool_choice}'. Supported values are: 'none', 'auto', and 'required'.",
-            param="tool_choice",
-        )
-    if request.functions is None and request.function_call is not None:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message=f"Invalid value for 'function_call': 'function_call' is only allowed when 'functions' are specified.",
-            param="function_call",
-        )
-    if request.tools is None and request.tool_choice is not None:
-        return create_error_response(
-            status_code=HTTPStatus.BAD_REQUEST,
-            message=f"Invalid value for 'tool_choice': 'tool_choice' is only allowed when 'tools' are specified.",
-            param="tool_choice",
-        )
-    return
 
 
 async def check_length(request, input_ids, model_config):
@@ -142,20 +91,110 @@ async def check_length(request, input_ids, model_config):
         return None
 
 
+async def process_load_lora_adapter(
+    request: LoadLoraAdapterRequest,
+    served_loras: List[LoRARequest],
+    lora_id_counter: AtomicCounter,
+) -> Tuple[Union[str, JSONResponse], List[LoRARequest]]:
+
+    # Check if both 'lora_name' and 'lora_path' are provided
+    if not request.lora_name or not request.lora_path:
+        return (
+            create_error_response(
+                status_code=HTTPStatus.BAD_REQUEST,
+                message="Both 'lora_name' and 'lora_path' must be provided.",
+                param=None,
+            ),
+            served_loras,
+        )
+    # Check if the lora adapter with the given name already exists
+    if any(
+        lora_request.lora_name == request.lora_name for lora_request in served_loras
+    ):
+        return (
+            create_error_response(
+                status_code=HTTPStatus.BAD_REQUEST,
+                message=f"The lora adapter '{request.lora_name}' has already been loaded.",
+                param=None,
+            ),
+            served_loras,
+        )
+
+    lora_name, lora_path = request.lora_name, request.lora_path
+    unique_id = lora_id_counter.inc(1)
+    served_loras.append(
+        LoRARequest(lora_name=lora_name, lora_int_id=unique_id, lora_path=lora_path)
+    )
+
+    return f"Success: LoRA adapter '{lora_name}' added successfully.", served_loras
+
+
+async def process_unload_lora_adapter(
+    request: UnloadLoraAdapterRequest, served_loras: List[LoRARequest]
+) -> Tuple[Union[str, JSONResponse], List[LoRARequest]]:
+    # Check if either 'lora_name' or 'lora_int_id' is provided
+    if not request.lora_name and not request.lora_int_id:
+        return (
+            create_error_response(
+                status_code=HTTPStatus.BAD_REQUEST,
+                message="either 'lora_name' and 'lora_int_id' needs to be provided.",
+                param=None,
+            ),
+            served_loras,
+        )
+
+    # Check if the lora adapter with the given name exists
+    if not any(
+        lora_request.lora_name == request.lora_name for lora_request in served_loras
+    ):
+        return (
+            create_error_response(
+                status_code=HTTPStatus.BAD_REQUEST,
+                message=f"The lora adapter '{request.lora_name}' cannot be found.",
+                param=None,
+            ),
+            served_loras,
+        )
+
+    lora_name = request.lora_name
+    served_loras = [
+        lora_request
+        for lora_request in served_loras
+        if lora_request.lora_name != lora_name
+    ]
+
+    return f"Success: LoRA adapter '{lora_name}' removed successfully.", served_loras
+
+
+def get_lora_adapter(
+    request: ChatCompletionRequest, served_loras: List[LoRARequest]
+) -> Optional[LoRARequest]:
+    for lora in served_loras:
+        if request.model == lora.lora_name:
+            return lora
+    return None
+
+
 async def process_chat_completion(
     request: ChatCompletionRequest,
     raw_request: Optional[Request],
     tokenizer: Any,
     served_model: List[str],
+    served_loras: List[LoRARequest],
     engine_model_config: Any,
     enable_grammar_sampling: bool,
     engine: Any,
 ):
-    error_check_ret = await check_all_errors(request, served_model)
+    error_check_ret = await check_all_errors(request, served_model, served_loras)
     if error_check_ret is not None:
         return error_check_ret
 
     prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+    # Get the lora adapter if it exists and replace tokenizer
+    lora_request = get_lora_adapter(request, served_loras)
+    if lora_request is not None:
+        tokenizer = get_lora_tokenizer(lora_request)
+
     tools_or_functions, tool_func_choice = analyze_tools_and_tool_choice(request)
 
     prompt_token_ids = prepare_messages_for_inference(
@@ -184,7 +223,7 @@ async def process_chat_completion(
         inputs["multi_modal_data"] = {"image": images}
 
     model_name = request.model
-    request_id = f"cmpl-{random_uuid()}"
+    request_id = f"chatcmpl-{random_uuid()}"
     created_time = int(time.time())
 
     # compute stop_token_ids
@@ -223,11 +262,8 @@ async def process_chat_completion(
 
     if enable_grammar_sampling:
         result_generator = engine.generate(
-            inputs=(
-                TokensPrompt(prompt_token_ids=prompt_token_ids)
-                if len(images) == 0
-                else vision_inputs
-            ),
+            prompt=TokensPrompt(prompt_token_ids=prompt_token_ids),
+            lora_request=lora_request,
             sampling_params=sampling_params,
             request_id=request_id,
             tools_or_functions=tools_or_functions,
@@ -236,7 +272,8 @@ async def process_chat_completion(
         )
     else:
         result_generator = engine.generate(
-            inputs,
+            prompt=TokensPrompt(prompt_token_ids=prompt_token_ids),
+            lora_request=lora_request,
             sampling_params=sampling_params,
             request_id=request_id,
         )
@@ -272,19 +309,12 @@ async def process_chat_completion(
         ):
 
             # Convert tool_calls to function_call if request.functions is provided
-            if (
-                functions
-                and len(functions) > 0
-                and "tool_calls" in response["delta"]
-                and response["delta"]["tool_calls"]
-                and len(response["delta"]["tool_calls"]) > 0
-            ):
-                tool_name = response["delta"]["tool_calls"][0]["function"]["name"]
-                tool_args = response["delta"]["tool_calls"][0]["function"]["arguments"]
-                response["delta"]["function_call"] = response["delta"]["tool_calls"][0][
-                    "function"
-                ]
-                response["delta"]["tool_calls"] = None
+            response = convert_tool_calls_to_function_call(
+                functions=request.functions, chat_message=response
+            )
+            if response["delta"]["function_call"]:
+                tool_name = response["delta"]["function_call"]["name"]
+                tool_args = response["delta"]["function_call"]["arguments"]
                 if tool_name and len(tool_name) > 0 and tool_args == "":
                     tool_call_count += 1
             # Return finish_reason after the first tool_call is streamed if functions is provided
@@ -311,22 +341,11 @@ async def process_chat_completion(
                 if response["finish_reason"] == "function_call":
                     response["finish_reason"] = "tool_calls"
 
-            # Workaround Fixes
-            response["delta"]["role"] = "assistant"
-            if (
-                "tool_calls" in response["delta"]
-                and response["delta"]["tool_calls"]
-                and len(response["delta"]["tool_calls"]) > 0
-            ):
-                for tool_call in response["delta"]["tool_calls"]:
-                    if tool_call.get("type") is None:
-                        tool_call["type"] = "function"
-
             chunk = StreamChoice(**response)
             result = ChatCompletionChunk(
                 id=request_id, choices=[chunk], model=model_name
             )
-            chunk_dic = result.dict(exclude_unset=True)
+            chunk_dic = result.model_dump()
             chunk_data = json.dumps(chunk_dic, ensure_ascii=False)
             yield f"data: {chunk_data}\n\n"
             # Break from for loop after the first tool_call is streamed if functions is provided
@@ -367,24 +386,16 @@ async def process_chat_completion(
         )  # parse_generated_content(text_response)
 
         # Convert tool_calls to function_call if request.functions is provided
-        if (
-            request.functions
-            and "tool_calls" in chat_mess
-            and chat_mess["tool_calls"] is not None
-            and len(chat_mess["tool_calls"]) > 0
-        ):
-            chat_mess["function_call"] = {
-                "name": chat_mess["tool_calls"][0]["function"]["name"],
-                "arguments": chat_mess["tool_calls"][0]["function"]["arguments"],
-            }
-            chat_mess["tool_calls"] = None
+        chat_mess = convert_tool_calls_to_function_call(
+            functions=request.functions, chat_message=chat_mess
+        )
 
         # Postprocess finish reason
-        if "function_call" in chat_mess and chat_mess["function_call"]:
-            output.finish_reason = "function_call"
-
-        if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
-            output.finish_reason = "tool_calls"
+        if tool_func_choice is None or tool_func_choice in ["auto", "required"]:
+            if "function_call" in chat_mess and chat_mess["function_call"]:
+                output.finish_reason = "function_call"
+            if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
+                output.finish_reason = "tool_calls"
 
         # Convert v1 from function_call to tool_calls if tools are provided instead of functions
         if (

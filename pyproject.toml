@@ -1,0 +1,32 @@
+[project]
+name = "functionary"
+version = "0.0.1"
+description = "Chat language model that can use tools and interpret the results"
+requires-python = ">=3.9"
+dependencies = [
+    "jsonref~=1.1.0",
+    "json_source_map==1.0.5",
+    "PyYAML~=6.0.1",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["functionary"]
+
+[project.optional-dependencies]
+vllm = [
+    "vllm==0.6.3.post1; sys_platform != 'darwin'",
+]
+sglang = [
+    "python-multipart==0.0.12",
+    "orjson==3.10.10",
+    "sglang[all]==0.3.4.post1",
+    "flashinfer==0.1.6",
+]
+
+[project.urls]
+homepage = "https://github.com/meetkai/functionary"
+bugtracker = "https://github.com/meetkai/functionary/issues"

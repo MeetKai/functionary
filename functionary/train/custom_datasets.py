@@ -79,7 +79,9 @@ def get_matching_prefix(
     return None
 
 
-def get_cached_folder(data_path, model_path):
+def get_cached_folder(
+    data_path: str, model_path: str, model_max_length: int, is_packing=False
+):
     current_folder = os.path.dirname(os.path.abspath(__file__))
     cached_folder = os.path.join(current_folder, "_data_cached")
 
@@ -91,6 +93,11 @@ def get_cached_folder(data_path, model_path):
             if ch in string.digits + string.ascii_letters
         ]
     )
+    if is_packing:
+        cached_data_folder_name += "_packing"
+    else:
+        cached_data_folder_name += "_tokenized"
+    cached_data_folder_name += f"_{model_max_length}"
     cached_data_folder = os.path.join(cached_folder, cached_data_folder_name)
 
     return cached_data_folder
@@ -122,11 +129,12 @@ def read_dataset(model_path, data_args, training_args, tokenizer, ds_type):
     else:
         keep_assistant_prefix = False
 
-    if not data_args.packing:
+    if not data_args.packing and data_args.use_lazy_loading:
         with open(data_path, "r") as file:
             raw_data = [json.loads(line) for line in file]
             if data_ratio < 1:
                 raw_data = raw_data[: int(data_ratio * len(raw_data))]
+
         ds = LazyPreprocessDataset(
             raw_data, tokenizer, keep_assistant_prefix=keep_assistant_prefix
         )
@@ -138,7 +146,29 @@ def read_dataset(model_path, data_args, training_args, tokenizer, ds_type):
 
     pack_length = data_args.pack_length if data_args.pack_length > 0 else None
 
-    cached_folder = get_cached_folder(data_path, model_path)
+    data_class_args = {
+        "ignore_cached": data_args.ignore_cached,
+        "keep_assistant_prefix": False,
+    }
+    if data_args.packing:
+        cached_folder = get_cached_folder(
+            data_path, model_path, training_args.model_max_length, is_packing=True
+        )
+        data_class = PackedDataset
+        data_class_args.update(
+            {
+                "cached_folder": cached_folder,
+                "use_flash_attention": True,
+                "pack_length": pack_length,
+                "max_packed_size": data_args.max_packed_size,
+            }
+        )
+    else:  # TokenizedDaset
+        cached_folder = get_cached_folder(
+            data_path, model_path, training_args.model_max_length, is_packing=False
+        )
+        data_class_args["cached_folder"] = cached_folder
+        data_class = TokenizedDataset
 
     if (
         training_args.local_rank > 0
@@ -160,33 +190,20 @@ def read_dataset(model_path, data_args, training_args, tokenizer, ds_type):
 
         print(f"{ds_type} size: : {len(raw_train_data)}")
         # ignore_cached=True to ignore the cached if exist, rank 0 will always process the data
-        ds = PackedDataset(
-            raw_train_data,
-            tokenizer,
-            cached_folder=cached_folder,
-            ignore_cached=False,
-            keep_assistant_prefix=False,
-            use_flash_attention=True,
-            pack_length=pack_length,
-            max_packed_size=data_args.max_packed_size,
-        )
+        ds = data_class(raw_train_data, tokenizer, **data_class_args)
         print(f"process: {local_rank} finish processing data")
         world_size = int(os.environ.get("WORLD_SIZE", 1))
         if world_size > 1:
             torch.distributed.barrier()  # allow other ranks to execute
 
     # All ranks will read the processed data from cached_path created by rank 0
-    ds = PackedDataset(
-        None,
-        tokenizer,
-        cached_folder=cached_folder,
-        ignore_cached=False,
-        use_flash_attention=True,
-        pack_length=pack_length,
-        max_packed_size=data_args.max_packed_size,
+    data_class_args["ignore_cached"] = (
+        False  # other processes will read from cached results
     )
+    ds = data_class(None, tokenizer, **data_class_args)
     if local_rank == 0:
-        ds.stat()  #  print some statistics about the dataset
+        if data_args.packing:
+            ds.stat()  #  print some statistics about the dataset
     return ds
 
 
@@ -495,7 +512,7 @@ def map_raw_data_to_input_dic(
                 data_points.append(item)
 
         t2 = datetime.datetime.now()
-        avg_time = (t2 - t1).total_seconds() / len(data_points)
+        avg_time = (t2 - t1).total_seconds() / (len(data_points) + invalid_count)
         remaining_time = avg_time * (data_size - len(data_points))
         print(
             f"{len(data_points)}/{data_size}, avg_time per 1000 data points: {avg_time * 1000}, remaining time: {remaining_time}"
@@ -807,8 +824,8 @@ class CachedDataset(Dataset):
         print(json.dumps(self.create_meta_info()))
 
 
-class CustomDataset(CachedDataset):
-    """Dataset for supervised fine-tuning."""
+class TokenizedDataset(CachedDataset):
+    """Dataset that all data points are tokenized ahead."""
 
     def __init__(
         self,
@@ -825,7 +842,7 @@ class CustomDataset(CachedDataset):
             self.data_points = map_raw_data_to_input_dic(
                 raw_data=raw_data,
                 tokenizer=tokenizer,
-                padding="max_length",
+                padding="do_not_pad",
                 batch_size=batch_size,
                 keep_assistant_prefix=keep_assistant_prefix,
             )
@@ -835,14 +852,46 @@ class CustomDataset(CachedDataset):
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         dp = self.data_points[i]
-        result = {}
-        for key in dp:
-            result[key] = torch.tensor(dp[key])
+        input_ids, label_ids, attention_mask = (
+            dp["input_ids"],
+            dp["labels"],
+            dp["attention_mask"],
+        )
+        # asert all attention_mask == 1
+        assert sum(attention_mask) == len(attention_mask)
+        # padding to max_length
+        pad_length = self.tokenizer.model_max_length - len(dp["input_ids"])
+        if pad_length > 0:
+            if self.tokenizer.padding_side == "right":
+                input_ids = input_ids + [
+                    self.tokenizer.pad_token_id for _ in range(pad_length)
+                ]
+                label_ids = label_ids + [-100 for _ in range(pad_length)]
+                attention_mask = attention_mask + [0 for _ in range(pad_length)]
+            else:
+                input_ids = [
+                    self.tokenizer.pad_token_id for _ in range(pad_length)
+                ] + input_ids
+                label_ids = [-100 for _ in range(pad_length)] + label_ids
+                attention_mask = [0 for _ in range(pad_length)] + attention_mask
+
+        assert (
+            len(input_ids)
+            == len(label_ids)
+            == len(attention_mask)
+            == self.tokenizer.model_max_length
+        )
+
+        result = {
+            "input_ids": torch.tensor(input_ids),
+            "labels": torch.tensor(label_ids),
+            "attention_mask": torch.tensor(attention_mask),
+        }
         return result
 
 
 class LazyPreprocessDataset(Dataset):
-    """Dataset for supervised fine-tuning."""
+    """Dataset that each data point is tokenized when it is called in __getitem__"""
 
     def __init__(
         self,
