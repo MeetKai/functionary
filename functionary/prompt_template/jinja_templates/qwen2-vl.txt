@@ -1,10 +1,41 @@
 {# version=qwen2-vl #}{%- if not tools -%}
     {%- set tools = [] -%}
 {%- endif -%}
-{{- bos_token + '<|im_start|>system\nYou are capable of executing available function(s) if required.\nOnly execute function(s) when absolutely necessary.\nAsk for the required input to:recipient==all\nUse JSON for function arguments.\nRespond in this format:\n>>>${recipient}\n${content}\nAvailable functions:\n' + generate_schema_from_functions(tools) + '<|im_end|>\n' -}}
-{%- if tools|length > 0 and tools|selectattr("type", "equalto", "code_interpreter")|list|length > 0 -%}
-    {{- '<|im_start|>system\nWhen you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at \'/mnt/data\' can be used to save and persist user files.<|im_end|>\n' -}}
+{%- set has_reasoning = tools | selectattr("type", "equalto", "reasoning") | list | length > 0 -%}
+{%- if has_reasoning -%}
+    {%- set tools = tools | rejectattr("type", "equalto", "reasoning") | list -%}
 {%- endif -%}
+
+{%- set has_code_interpreter = tools | selectattr("type", "equalto", "code_interpreter") | list | length > 0 -%}
+{%- if has_code_interpreter -%}
+    {%- set tools = tools | rejectattr("type", "equalto", "code_interpreter") | list -%}
+{%- endif -%}
+
+{{- bos_token + '<|im_start|>system\nYou are capable of executing available function(s) if required.\nOnly execute function(s) when absolutely necessary.\nTo send text to user, use this format:\n>>>all\n{content}\n' -}}
+{%- if tools %}
+    {{- "\nYou have access to the following functions:\n\n" }}
+    {%- for t in tools %}
+        {%- if "type" in t -%}
+            {{ "Use the function '" + t["function"]["name"] + "' to '" + t["function"]["description"] + "'\n" + t["function"] | tojson() }}
+        {%- else -%}
+            {{ "Use the function '" + t["name"] + "' to '" + t["description"] + "'\n" + t | tojson }}
+        {%- endif -%}
+        {{- "\n\n" }}
+    {%- endfor %}
+    {{- '\nThink very carefully before calling functions.\nIf a you choose to call a function ONLY reply in the following format:\n>>>{function_name}\n{arguments}' -}}
+{%- endif %}
+
+{%- if has_code_interpreter -%}
+    {{- '\n\nWhen you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at \'/mnt/data\' can be used to save and persist user files.' -}}
+{%- endif -%}
+
+{%- if has_reasoning %}
+    {{- "\n\nReasoning Mode: On" }}
+{%- else -%}
+    {{ "\n\nReasoning Mode: Off" }}
+{%- endif %}
+{{- "<|im_end|>\n" -}}
+
 {%- for message in messages -%}
     {%- if message['role'] == 'user' -%}
         {%- if message['content'] -%}
