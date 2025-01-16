@@ -3,14 +3,16 @@ from __future__ import annotations
 import json
 import re
 from abc import abstractmethod
+from copy import deepcopy
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import jinja2
 
+from functionary.prompt_template.prompt_utils import resolve_json_refs
 from functionary.openai_types import Function, Tool
 from functionary.prompt_template import prompt_utils
 from PIL import Image
-
+import sys
 
 def raise_exception(message):
     raise jinja2.exceptions.TemplateError(message)
@@ -126,12 +128,23 @@ class PromptTemplate:
             str: the prompt for inference/training
         """
 
-        prompt = self._jinja_template.render(
-            messages=messages,
-            tools=tools_or_functions,
-            bos_token=bos_token,
-            add_generation_prompt=add_generation_prompt,
-        )
+        tools = resolve_json_refs(tools_or_functions=tools_or_functions)
+
+        try:
+            prompt = self._jinja_template.render(
+                messages=messages,
+                tools=tools,
+                bos_token=bos_token,
+                add_generation_prompt=add_generation_prompt,
+            )
+        except Exception as e:
+            print(f"Error in get_prompt_from_messages: {e}")
+            print(f"messages: {messages}")
+            print(f"tools: {tools}")
+            print(f"bos_token: {bos_token}")
+            print(f"add_generation_prompt: {add_generation_prompt}")
+            raise e
+            sys.exit(1)
 
         return prompt
 
@@ -242,7 +255,7 @@ class PromptTemplate:
         gen_state["func_name"] = func_name
         gen_state["func_index"] += 1
         gen_state["call_id"] = prompt_utils.get_random_tool_call_id()
-        gen_state["first_time_func"] = True
+        gen_state["first_function_chunk"] = True
 
         return gen_state
 

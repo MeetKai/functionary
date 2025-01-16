@@ -163,6 +163,13 @@ class TrainingArguments(transformers.TrainingArguments):
         default=False,
         metadata={"help": "set this true to log training metrics during training"},
     )
+    
+    use_liger: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether use liger or not. Refer to this link for more details: https://github.com/triton-lang/triton?tab=readme-ov-file#compatibility"
+        },
+    )
 
 
 def trainer_save_model_safe(trainer: transformers.Trainer):
@@ -289,12 +296,21 @@ def train():
         else (torch.bfloat16 if training_args.bf16 else torch.float32)
     )
 
+
+    if training_args.use_liger:
+        from liger_kernel.transformers import AutoLigerKernelForCausalLM
+
+        print_rank0("---------------using LIGER------------")
+        model_class = AutoLigerKernelForCausalLM
+    else:
+        model_class = transformers.AutoModelForCausalLM
+        
     model_class = get_model_class(model_args)
     model = model_class.from_pretrained(
         model_args.model_name_or_path,
         torch_dtype=compute_dtype,
         cache_dir=training_args.cache_dir,
-        use_flash_attention_2=True,
+        attn_implementation="flash_attention_2"
     )
 
     if model_args.frozen_pattern:

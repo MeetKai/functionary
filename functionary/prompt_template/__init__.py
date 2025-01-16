@@ -9,6 +9,7 @@ from functionary.prompt_template.llava_prompt_template import LlavaLlama
 from functionary.prompt_template.prompt_template_v1 import PromptTemplateV1
 from functionary.prompt_template.prompt_template_v2 import PromptTemplateV2
 from functionary.prompt_template.qwen_vl_template import Qwen2VLTemplate
+from functionary.prompt_template.llama31_reasoning_prompt_template import Llama31ReasoningTemplate
 
 
 def get_available_prompt_template_versions() -> List[PromptTemplate]:
@@ -30,6 +31,7 @@ def get_available_prompt_template_versions() -> List[PromptTemplate]:
     # we don't use get_prompt_template or this will return the parent class
     all_templates_obj.append(LlavaLlama.get_prompt_template())
     all_templates_obj.append(Qwen2VLTemplate.get_prompt_template())
+    all_templates_obj.append(Llama31ReasoningTemplate.get_prompt_template())
     return all_templates_obj
 
 
