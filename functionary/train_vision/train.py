@@ -240,9 +240,27 @@ def initialize_tokenizer(
     return tokenizer
 
 
+def get_cached_path(data_args, training_args, model_args, file_name):
+    current_folder = os.path.dirname(os.path.abspath(__file__))
+    cache_folder = os.path.join(current_folder, "cached_data")
+    if not os.path.exists(cache_folder):
+        os.makedirs(cache_folder)
+    
+    model_name = model_args.model_name_or_path.replace("/", "_")
+    data_name = file_name.replace("/", "_")
+    length = training_args.model_max_length
+    
+    cached_path = os.path.join(cache_folder, f"{model_name}_{data_name}_{length}.json")
+    return cached_path
+
+
 def get_model_class(model_args):
     if model_args.model_class.lower() == "Qwen2VLForConditionalGeneration".lower():
-        return transformers.Qwen2VLForConditionalGeneration
+        from transformers import Qwen2VLForConditionalGeneration
+        from liger_kernel.transformers import apply_liger_kernel_to_qwen2_vl
+        print("-------USE LIGER KERNEL-------")
+        apply_liger_kernel_to_qwen2_vl()
+        return Qwen2VLForConditionalGeneration
     return transformers.AutoModelForCausalLM
 
 
@@ -251,6 +269,12 @@ def train():
         (ModelArguments, DataArguments, TrainingArguments)
     )
     model_args, data_args, training_args = argument_parser.parse_args_into_dataclasses()
+    if data_args.packing:
+        if not data_args.train_data_cached:
+            data_args.train_data_cached = get_cached_path(data_args, training_args, model_args, data_args.train_data_path)
+            
+        if not data_args.validation_data_cached:
+            data_args.validation_data_cached = get_cached_path(data_args, training_args, model_args, data_args.eval_data_path)
     # this is a must
     training_args.remove_unused_columns = False
     # this is a must

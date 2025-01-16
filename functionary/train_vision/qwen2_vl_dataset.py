@@ -4,7 +4,8 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset, Sampler
 from typing import List, Tuple, Union
-
+import os
+from transformers import AutoTokenizer
 import transformers
 from functionary.prompt_template import prompt_utils, get_prompt_template_from_tokenizer
 from functionary.train.custom_datasets import prepare_training_inputs
@@ -12,9 +13,11 @@ from transformers import AutoProcessor, Qwen2VLImageProcessor, Qwen2VLProcessor
 from functionary.prompt_template.base_template import PromptTemplate
 from functionary.train import custom_datasets
 from functionary.train_vision.base_datasets import CustomCollator, VisionDataset
+from functionary.prompt_template import get_prompt_template_by_version
 import numpy as np
 import datetime
 import json
+import typer 
 
 
 class Qwen2VLCollator(CustomCollator):
@@ -393,13 +396,16 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
         )
         self.max_packed_size = kwargs.get("max_packed_size", -1)
         cached_path = kwargs.get("cached_path", "")
+        print("cached_path: ", cached_path)
         text_only_data = []
         img_data = []
 
         id_2_raw_data = {}
         self.id_2_length = {}
         pad_token_num = self.pad_token_inputs["input_ids"].shape[-1]
-        if cached_path:
+        prompt_template = get_prompt_template_from_tokenizer(self.tokenizer)
+        if cached_path and os.path.exists(cached_path):
+            print("-------LOAD CACHED DATA-------")
             with open(cached_path, "r") as f:
                 cached_data = json.loads(f.read())
                 id_2_length = cached_data["id_2_length"]
@@ -414,6 +420,7 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
                     self.pretrained_path == cached_data["pretrained_path"]
                 ), f'pretrained_path ({cached_data["pretrained_path"]}) in cached data != {self.pretrained_path}'
                 assert len(self.id_2_length) == len(raw_data)
+                assert prompt_template.version == cached_data["prompt_template_version"]
         else:
             for i, example in enumerate(self.raw_data):
                 id_2_raw_data[i] = example
@@ -486,6 +493,15 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
             if len(self.invalid_data_ids) > 0:
                 print(f"******** NUMBER OF INVALID DATA: {len(self.invalid_data_ids)}")
 
+            if cached_path: # save cached data
+                with open(cached_path, "w") as f:
+                    json.dump({
+                        "prompt_template_version": prompt_template.version,
+                        "max_length": self.max_length,
+                        "pretrained_path": self.pretrained_path,
+                        "invalid_data_ids": self.invalid_data_ids,
+                        "id_2_length": self.id_2_length,
+                    }, f)
         # remove all invalid datapoints
         self.final_raw_data = []
         self.final_lengths = []
@@ -615,3 +631,44 @@ class PackedQwen2VLDataset(LazyQwen2VLDataset):
 
         with open(save_path, "w") as f:
             f.write(json.dumps(data, ensure_ascii=False))
+
+
+def cache_data_for_packing(
+    data_path: str,
+    cached_path: str, 
+    pretrained_path: str = "Qwen/Qwen2-VL-7B-Instruct", 
+    max_length: int = 16384, 
+    prompt_template_version: str = "qwen2-vl", 
+    pad_img_path: str="functionary/train_vision/pad_img2.png"
+):
+    tokenizer = AutoTokenizer.from_pretrained(
+        pretrained_path,
+        model_max_length=max_length,
+        legacy=True,
+    )
+    prompt_template = get_prompt_template_by_version(prompt_template_version)
+    # Add special tokens
+    tokenizer.pad_token = tokenizer.eos_token
+    added_tokens = prompt_template.get_additional_tokens()
+    special_tokens = {"additional_special_tokens": added_tokens}
+    tokenizer.add_special_tokens(special_tokens)
+
+    # add chat_template for tokenizer
+    tokenizer.chat_template = prompt_template.get_chat_template_jinja()
+    
+    with open(data_path, "r") as f:
+        raw_data = [json.loads(line) for line in f]
+    
+    ds = PackedQwen2VLDataset(raw_data,
+        tokenizer,
+        pretrained_path,
+        pad_img_path,
+        max_length,
+        use_img_pad_token=True,
+        **{"cached_path": cached_path}
+    )
+    ds.stat()
+
+
+if __name__ == "__main__":
+    typer.run(cache_data_for_packing)
