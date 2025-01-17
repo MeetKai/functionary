@@ -40,8 +40,7 @@ from functionary.prompt_template.prompt_utils import (
     enforce_tool_choice,
     get_random_tool_call_id,
     prepare_messages_for_inference,
-    extract_images_from_messages,
-    get_prompt_str_from_inputs,
+    extract_images_from_messages
 )
 
 
@@ -207,21 +206,12 @@ async def process_chat_completion(
     # error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
     # if error_check_ret is not None:
     #     return error_check_ret
+    multi_modal_data = None
     images = extract_images_from_messages([mess.dict() for mess in request.messages])
     images = [prompt_template.preprocess_image_input(img) for img in images]
-
-    inputs = {}
-    final_prompt = get_prompt_str_from_inputs(
-        tokenizer=tokenizer,
-        messages=request.messages,
-        tools_or_functions=tools_or_functions,
-        tool_choice=tool_func_choice,
-    )
-    inputs["prompt"] = final_prompt
-    if len(images) > 0:  # inputs without image
-        print("images: ", images)
-        inputs["multi_modal_data"] = {"image": images}
-
+    if len(images) > 0:
+        multi_modal_data = {"image": images}
+        
     model_name = request.model
     request_id = f"chatcmpl-{random_uuid()}"
     created_time = int(time.time())
@@ -272,7 +262,7 @@ async def process_chat_completion(
         )
     else:
         result_generator = engine.generate(
-            prompt=TokensPrompt(prompt_token_ids=prompt_token_ids),
+            prompt=TokensPrompt(prompt_token_ids=prompt_token_ids, multi_modal_data=multi_modal_data),
             lora_request=lora_request,
             sampling_params=sampling_params,
             request_id=request_id,
