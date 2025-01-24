@@ -1,0 +1,28 @@
+
+accelerate launch --config_file "functionary/train/accelerate_configs/my_config.yaml" -m functionary.train.train_lora \
+    --model_name_or_path opensourcerelease/DeepSeek-R1-bf16 \
+    --train_data_path 2024-03-27/small_train.jsonl \
+    --eval_data_path 2024-03-27/2024-03-27_val.jsonl \
+    --bf16 True \
+    --q_lora True \
+    --output_dir functionary-deepseek-r1 \
+    --num_train_epochs 1 \
+    --per_device_train_batch_size 1 \
+    --per_device_eval_batch_size 1 \
+    --gradient_accumulation_steps 1 \
+    --eval_accumulation_steps 1 \
+    --evaluation_strategy "steps" \
+    --eval_steps 359 \
+    --save_strategy no \
+    --logging_steps 1 \
+    --learning_rate 1.5e-5 \
+    --weight_decay 0. \
+    --warmup_steps 35 \
+    --lr_scheduler_type cosine_with_min_lr \
+    --lr_scheduler_kwargs "{\"min_lr_rate\": 0.5}" \
+    --tf32 True \
+    --model_max_length 8192 \
+    --gradient_checkpointing True \
+    --optim paged_adamw_8bit \
+    --prompt_template_version v3-deepseek-r1 \
+    --report_to none

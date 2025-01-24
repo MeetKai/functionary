@@ -50,7 +50,7 @@ def initialize_tokenizer(
 
     # add chat_template for tokenizer
     tokenizer.chat_template = prompt_template.get_chat_template_jinja()
-    print("tokenizer: ", tokenizer)
+    # print("tokenizer: ", tokenizer)
 
     # Resize embedding
     model.resize_token_embeddings(len(tokenizer))

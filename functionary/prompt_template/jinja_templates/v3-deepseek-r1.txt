@@ -1,0 +1,30 @@
+{# version=v3.llama3 #}{%- if not tools -%}
+    {%- set tools = [] -%}
+{%- endif -%}
+{{- bos_token + '<|start_header_id|>system<|end_header_id|>\n\nYou are capable of executing available function(s) if required.\nOnly execute function(s) when absolutely necessary.\nAsk for the required input to:recipient==all\nUse JSON for function arguments.\nRespond in this format:\n>>>${recipient}\n${content}\nAvailable functions:\n' + generate_schema_from_functions(tools) + '<｜end▁of▁sentence｜>' -}}
+{%- if tools|length > 0 and tools|selectattr("type", "equalto", "code_interpreter")|list|length > 0 -%}
+    {{- '<|start_header_id|>system<|end_header_id|>\n\nWhen you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at \'/mnt/data\' can be used to save and persist user files.<｜end▁of▁sentence｜>' -}}
+{%- endif -%}
+{%- for message in messages -%}
+    {%- if message['role'] == 'user' or message['role'] == 'system' -%}
+        {{- '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + message['content'] + '<｜end▁of▁sentence｜>' -}}
+    {%- elif message['role'] == 'tool' -%}
+        {{- '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n' + message['content'] + '<｜end▁of▁sentence｜>' -}}
+    {%- else -%}
+        {%- if (message['content'] and message['content']|length > 0) or ('tool_calls' in message and message['tool_calls'] and message['tool_calls']|length > 0) -%}
+            {{- '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'-}}
+        {%- endif -%}
+        {%- if message['content'] and message['content']|length > 0 -%}
+            {{- '>>>all\n' + message['content'] -}}
+        {%- endif -%}
+        {%- if 'tool_calls' in message and message['tool_calls'] and message['tool_calls']|length > 0 -%}
+            {%- for tool_call in message['tool_calls'] -%}
+                {{- '>>>' + tool_call['function']['name'] + '\n' + tool_call['function']['arguments'] -}}
+            {%- endfor -%}
+        {%- endif -%}
+        {%- if (message['content'] and message['content']|length > 0) or ('tool_calls' in message and message['tool_calls'] and message['tool_calls']|length > 0) -%}
+            {{- '<｜end▁of▁sentence｜>' -}}
+        {%- endif -%}
+    {%- endif -%}
+{%- endfor -%}
+{% if add_generation_prompt %}{{- '<|start_header_id|>assistant<|end_header_id|>\n\n>>>' -}}{% endif %}
