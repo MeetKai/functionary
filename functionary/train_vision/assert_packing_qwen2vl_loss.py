@@ -12,7 +12,8 @@ from functionary.train_vision.qwen2_vl_dataset import (
     Qwen2VLCollator,
 )
 import random
-from transformers import Qwen2VLForConditionalGeneration
+# from transformers import Qwen2VLForConditionalGeneration
+from transformers import Qwen2_5_VLForConditionalGeneration
 import torch
 from functionary.train.packing.monkey_patch_packing import (
     monkey_patch_packing_for_model,
@@ -83,12 +84,13 @@ def main(
         max_length=max_length,
     )
 
-    model = Qwen2VLForConditionalGeneration.from_pretrained(
+    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
         pretrained_path,
         torch_dtype=torch.bfloat16,
         use_flash_attention_2=True,
         device_map="auto",
     )
+    model.config.use_cache = False
 
     normal_loss, normal_label_tokens = compute_loss_from_ds(
         model, tokenizer, normal_ds, batch_size

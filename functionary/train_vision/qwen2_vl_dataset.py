@@ -8,9 +8,7 @@ import os
 from transformers import AutoTokenizer
 import transformers
 from functionary.prompt_template import prompt_utils, get_prompt_template_from_tokenizer
-from functionary.train.custom_datasets import prepare_training_inputs
-from transformers import AutoProcessor, Qwen2VLImageProcessor, Qwen2VLProcessor
-from functionary.prompt_template.base_template import PromptTemplate
+from transformers import AutoProcessor
 from functionary.train import custom_datasets
 from functionary.train_vision.base_datasets import CustomCollator, VisionDataset
 from functionary.prompt_template import get_prompt_template_by_version

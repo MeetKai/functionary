@@ -268,6 +268,12 @@ def get_model_class(model_args):
         print("-------USE LIGER KERNEL-------")
         apply_liger_kernel_to_qwen2_vl()
         return Qwen2VLForConditionalGeneration
+    if model_args.model_class.lower() == "Qwen2_5_VLForConditionalGeneration".lower():
+        from transformers import Qwen2_5_VLForConditionalGeneration
+        from liger_kernel.transformers import apply_liger_kernel_to_qwen2_vl
+        print("-------USE LIGER KERNEL-------")
+        apply_liger_kernel_to_qwen2_vl()
+        return Qwen2_5_VLForConditionalGeneration
     return transformers.AutoModelForCausalLM
 
 
