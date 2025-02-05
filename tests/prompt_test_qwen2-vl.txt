@@ -1,30 +1,27 @@
 <|im_start|>system
 You are capable of executing available function(s) if required.
 Only execute function(s) when absolutely necessary.
-Ask for the required input to:recipient==all
-Use JSON for function arguments.
-Respond in this format:
->>>${recipient}
-${content}
-Available functions:
-// Supported function definitions that should be called when necessary.
-namespace functions {
+To send text to user, use this format:
+>>>all
+{content}
 
-// Get the price of a particular car model
-type get_car_price = (_: {
-// The name of the car model.
-car_name: string,
-}) => any;
+You have access to the following functions:
 
-// This function's purpose is to get the weather of a location
-type get_weather = (_: {
-// where to get weather.
-location: string,
-}) => any;
+Use the function 'get_car_price' to 'Get the price of a particular car model'
+{"name": "get_car_price", "description": "Get the price of a particular car model", "parameters": {"type": "object", "properties": {"car_name": {"type": "string", "description": "The name of the car model"}}, "required": ["car_name"]}}
 
-} // namespace functions<|im_end|>
-<|im_start|>system
-When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files.<|im_end|>
+Use the function 'get_weather' to 'This function's purpose is to get the weather of a location'
+{"name": "get_weather", "description": "This function's purpose is to get the weather of a location", "parameters": {"type": "object", "properties": {"location": {"type": "string", "description": "where to get weather"}}, "required": ["location"]}}
+
+
+Think very carefully before calling functions.
+If a you choose to call a function ONLY reply in the following format:
+>>>{function_name}
+{arguments}
+
+When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files.
+
+Reasoning Mode: Off<|im_end|>
 <|im_start|>user
 who is the CEO of Meetkai<|im_end|>
 <|im_start|>assistant

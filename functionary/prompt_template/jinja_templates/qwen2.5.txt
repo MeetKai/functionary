@@ -5,7 +5,17 @@
     {%- else %}
         {{- 'You are a helpful assistant.' }}
     {%- endif %}
-    {{- "\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>" }}
+    {%- set has_reasoning = tools | selectattr("type", "equalto", "reasoning") | list | length > 0 -%}
+    {%- if has_reasoning -%}
+        {%- set tools = tools | rejectattr("type", "equalto", "reasoning") | list -%}
+    {%- endif -%}
+    {{- "\n\n# Tools\n\nYou may call one or more functions to assist with the user query." }}
+    {%- if has_reasoning %}
+        {{- " Please generate reasoning before deciding which tools to use." }}
+    {%- else %}
+        {{- "" }}
+    {%- endif %}
+    {{- "\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>" }}
     {%- for tool in tools %}
         {{- "\n" }}
         {{- tool | tojson }}
@@ -49,7 +59,7 @@
             {{- '\n<tool_call>\n{"name": "' }}
             {{- tool_call.name }}
             {{- '", "arguments": ' }}
-            {{- tool_call.arguments | tojson }}
+            {{- tool_call.arguments }}
             {{- '}\n</tool_call>' }}
         {%- endfor %}
         {{- '<|im_end|>\n' }}

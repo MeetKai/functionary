@@ -3,6 +3,70 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from functionary.prompt_template import prompt_utils
 import json
 import copy
+import math
+
+
+# the following lines of code are copied from qwen_vl_utils
+IMAGE_FACTOR = 28
+MIN_PIXELS = 4 * 28 * 28
+MAX_PIXELS = 16384 * 28 * 28
+MAX_RATIO = 200
+
+VIDEO_MIN_PIXELS = 128 * 28 * 28
+VIDEO_MAX_PIXELS = 768 * 28 * 28
+VIDEO_TOTAL_PIXELS = 24576 * 28 * 28
+FRAME_FACTOR = 2
+FPS = 2.0
+FPS_MIN_FRAMES = 4
+FPS_MAX_FRAMES = 768
+
+
+def round_by_factor(number: int, factor: int) -> int:
+    """Returns the closest integer to 'number' that is divisible by 'factor'."""
+    return round(number / factor) * factor
+
+
+def ceil_by_factor(number: int, factor: int) -> int:
+    """Returns the smallest integer greater than or equal to 'number' that is divisible by 'factor'."""
+    return math.ceil(number / factor) * factor
+
+
+def floor_by_factor(number: int, factor: int) -> int:
+    """Returns the largest integer less than or equal to 'number' that is divisible by 'factor'."""
+    return math.floor(number / factor) * factor
+
+
+def smart_resize(
+    height: int,
+    width: int,
+    factor: int = IMAGE_FACTOR,
+    min_pixels: int = MIN_PIXELS,
+    max_pixels: int = MAX_PIXELS,
+) -> tuple[int, int]:
+    """
+    Rescales the image so that the following conditions are met:
+
+    1. Both dimensions (height and width) are divisible by 'factor'.
+
+    2. The total number of pixels is within the range ['min_pixels', 'max_pixels'].
+
+    3. The aspect ratio of the image is maintained as closely as possible.
+    """
+    if max(height, width) / min(height, width) > MAX_RATIO:
+        raise ValueError(
+            f"absolute aspect ratio must be smaller than {MAX_RATIO}, got {max(height, width) / min(height, width)}"
+        )
+    h_bar = max(factor, round_by_factor(height, factor))
+    w_bar = max(factor, round_by_factor(width, factor))
+    if h_bar * w_bar > max_pixels:
+        beta = math.sqrt((height * width) / max_pixels)
+        h_bar = floor_by_factor(height / beta, factor)
+        w_bar = floor_by_factor(width / beta, factor)
+    elif h_bar * w_bar < min_pixels:
+        beta = math.sqrt(min_pixels / (height * width))
+        h_bar = ceil_by_factor(height * beta, factor)
+        w_bar = ceil_by_factor(width * beta, factor)
+    return h_bar, w_bar
 
 
 class Qwen25PromptTemplate(PromptTemplate):
@@ -35,30 +99,31 @@ class Qwen25PromptTemplate(PromptTemplate):
         """
         # handle code_interpreter
         _tools = []
-        for tool in tools_or_functions:
-            if tool["type"] == "code_interpreter":
-                _tools.append(
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "python",
-                            "description": "This tool is used to execute python code. Code will be executed in a stateful Jupyter notebook environment. Python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files.",
-                            "parameters": {
-                                "type": "object",
-                                "properties": {
-                                    "code": {
-                                        "type": "string",
-                                        "description": "The python code to run",
-                                    }
+        if tools_or_functions:
+            for tool in tools_or_functions:
+                if tool["type"] == "code_interpreter":
+                    _tools.append(
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "python",
+                                "description": "This tool is used to execute python code. Code will be executed in a stateful Jupyter notebook environment. Python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files.",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "string",
+                                            "description": "The python code to run",
+                                        }
+                                    },
                                 },
                             },
-                        },
-                    }
-                )
-            else:
-                _tools.append(tool)
-        
-        # find the assistant message that tool_call is python 
+                        }
+                    )
+                else:
+                    _tools.append(tool)
+
+        # find the assistant message that tool_call is python
         _messages = []
         for message in messages:
             n_message = copy.deepcopy(message)
@@ -66,10 +131,17 @@ class Qwen25PromptTemplate(PromptTemplate):
             if len(tool_calls) > 0:
                 for tool_call in tool_calls:
                     if tool_call["function"]["name"] == "python":
-                        code = tool_call["function"]["arguments"] # currently the code is in string format
-                        tool_call["function"]["arguments"] = json.dumps({"code": code}, ensure_ascii=False)
+                        arguments = tool_call["function"][
+                            "arguments"
+                        ]  # currently the code is in string format
+                        # check if argument is a valid JSON string or python code
+                        try:  # if this is a valid JSON string --> no need to change anything
+                            json.loads(arguments)
+                        except:
+                            tool_call["function"]["arguments"] = json.dumps(
+                                {"code": arguments}, ensure_ascii=False
+                            )
             _messages.append(n_message)
-            
 
         prompt = super().get_prompt_from_messages(
             messages=_messages,
@@ -80,7 +152,7 @@ class Qwen25PromptTemplate(PromptTemplate):
         return prompt
 
     def get_additional_tokens(self) -> List[str]:
-        return [self.function_separator]
+        return []
 
     def get_assistant_prefixes(self) -> List[str]:
         return [f"{self.start_of_turn}assistant\n"]
@@ -160,3 +232,17 @@ class Qwen25PromptTemplate(PromptTemplate):
             "content": text_content if len(text_content) > 0 else None,
             "tool_calls": tool_calls,
         }
+
+    def preprocess_image_input(self, image: Any) -> Any:
+        width, height = image.size
+        min_pixels = MIN_PIXELS
+        max_pixels = MAX_PIXELS
+        resized_height, resized_width = smart_resize(
+            height,
+            width,
+            factor=IMAGE_FACTOR,
+            min_pixels=min_pixels,
+            max_pixels=max_pixels,
+        )
+        image = image.resize((resized_width, resized_height))
+        return image
