@@ -10,6 +10,7 @@ from functionary.prompt_template.prompt_template_v1 import PromptTemplateV1
 from functionary.prompt_template.prompt_template_v2 import PromptTemplateV2
 from functionary.prompt_template.qwen_vl_template import Qwen2VLTemplate
 from functionary.prompt_template.llama31_reasoning_prompt_template import Llama31ReasoningTemplate
+from functionary.prompt_template.qwen25_template import Qwen25PromptTemplate
 
 
 def get_available_prompt_template_versions() -> List[PromptTemplate]:
