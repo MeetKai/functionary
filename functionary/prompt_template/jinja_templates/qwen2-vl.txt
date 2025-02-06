@@ -1,0 +1,77 @@
+{# version=qwen2-vl #}{%- if not tools -%}
+    {%- set tools = [] -%}
+{%- endif -%}
+{%- set has_reasoning = tools | selectattr("type", "equalto", "reasoning") | list | length > 0 -%}
+{%- if has_reasoning -%}
+    {%- set tools = tools | rejectattr("type", "equalto", "reasoning") | list -%}
+{%- endif -%}
+
+{%- set has_code_interpreter = tools | selectattr("type", "equalto", "code_interpreter") | list | length > 0 -%}
+{%- if has_code_interpreter -%}
+    {%- set tools = tools | rejectattr("type", "equalto", "code_interpreter") | list -%}
+{%- endif -%}
+
+{{- bos_token + '<|im_start|>system\nYou are capable of executing available function(s) if required.\nOnly execute function(s) when absolutely necessary.\nTo send text to user, use this format:\n>>>all\n{content}\n' -}}
+{%- if tools %}
+    {{- "\nYou have access to the following functions:\n\n" }}
+    {%- for t in tools %}
+        {%- if "type" in t -%}
+            {{ "Use the function '" + t["function"]["name"] + "' to '" + t["function"]["description"] + "'\n" + t["function"] | tojson() }}
+        {%- else -%}
+            {{ "Use the function '" + t["name"] + "' to '" + t["description"] + "'\n" + t | tojson }}
+        {%- endif -%}
+        {{- "\n\n" }}
+    {%- endfor %}
+    {{- '\nThink very carefully before calling functions.\nIf a you choose to call a function ONLY reply in the following format:\n>>>{function_name}\n{arguments}' -}}
+{%- endif %}
+
+{%- if has_code_interpreter -%}
+    {{- '\n\nWhen you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at \'/mnt/data\' can be used to save and persist user files.' -}}
+{%- endif -%}
+
+{%- if has_reasoning %}
+    {{- "\n\nReasoning Mode: On" }}
+{%- else -%}
+    {{ "\n\nReasoning Mode: Off" }}
+{%- endif %}
+{{- "<|im_end|>\n" -}}
+
+{%- for message in messages -%}
+    {%- if message['role'] == 'user' -%}
+        {%- if message['content'] -%}
+            {%- if message['content'] is string -%}
+                {{ '<|im_start|>user\n' + message['content'] }}
+            {%- else -%}
+                {{ '<|im_start|>user\n' }}
+                {%- for content in message['content'] -%}
+                    {%- if content['type'] == 'text' -%}
+                        {{ content['text'] }}
+                    {%- else -%}
+                        {{ '<|vision_start|><|image_pad|><|vision_end|>' }}
+                    {%- endif -%}
+                {%- endfor -%}
+            {%- endif -%}
+            {{ '<|im_end|>\n' }}
+        {%- endif -%}
+    {%- elif message['role'] == 'system' -%}
+        {{- '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n' -}}
+    {%- elif message['role'] == 'tool' -%}
+        {{- '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n' -}}
+    {%- else -%}
+        {%- if (message['content'] and message['content']|length > 0) or ('tool_calls' in message and message['tool_calls'] and message['tool_calls']|length > 0) -%}
+            {{- '<|im_start|>' + message['role'] + '\n'-}}
+        {%- endif -%}
+        {%- if message['content'] and message['content']|length > 0 -%}
+            {{- '>>>all\n' + message['content'] -}}
+        {%- endif -%}
+        {%- if 'tool_calls' in message and message['tool_calls'] and message['tool_calls']|length > 0 -%}
+            {%- for tool_call in message['tool_calls'] -%}
+                {{- '>>>' + tool_call['function']['name'] + '\n' + tool_call['function']['arguments'] -}}
+            {%- endfor -%}
+        {%- endif -%}
+        {%- if (message['content'] and message['content']|length > 0) or ('tool_calls' in message and message['tool_calls'] and message['tool_calls']|length > 0) -%}
+            {{- '<|im_end|>\n' -}}
+        {%- endif -%}
+    {%- endif -%}
+{%- endfor -%}
+{% if add_generation_prompt %}{{- '<|im_start|>assistant\n>>>' -}}{% endif %}

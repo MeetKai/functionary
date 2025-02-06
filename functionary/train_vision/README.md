@@ -6,15 +6,16 @@ pip install accelerate==0.27.2 bitsandbytes==0.41.1 scipy==1.11.3 sentencepiece=
 Example script:
 
 ```shell
+
 deepspeed functionary/train_vision/train.py \
-    --model_name_or_path lmms-lab/llama3-llava-next-8b \
-    --train_data_path TRAIN_PATH \
-    --eval_data_path VALIDATION_PATH \
+    --model_name_or_path Qwen/Qwen2.5-VL-3B-Instruct \
+    --train_data_path combine/val_combined.jsonl \
+    --eval_data_path combine/val_combined.jsonl \
     --bf16 True \
-    --output_dir functionary-with-metrics \
+    --output_dir qwen_vl_7b_instruct \
     --num_train_epochs 1 \
-    --per_device_train_batch_size 2\
-    --per_device_eval_batch_size 2 \
+    --per_device_train_batch_size 1\
+    --per_device_eval_batch_size 1 \
     --gradient_accumulation_steps 1 \
     --eval_accumulation_steps 1 \
     --evaluation_strategy "steps" \
@@ -29,11 +30,14 @@ deepspeed functionary/train_vision/train.py \
     --lr_scheduler_type "cosine" \
     --tf32 True \
     --model_max_length 8192 \
+    --model_class Qwen2_5_VLForConditionalGeneration \
+    --dataset_type LazyQwen2VLDataset\
     --gradient_checkpointing True \
-    --packing False\
+    --packing True\
     --optim "paged_adamw_32bit" \
     --deepspeed functionary/train/ds_config/zero3_wo_offload.json \
-    --pad_img_path pad_img.png \
-    --log_train_metrics True
-
+    --pad_img_path functionary/train_vision/pad_img2.png \
+    --use_liger False \
+    --prompt_template_version qwen2-vl \
+    --report_to none
 ```

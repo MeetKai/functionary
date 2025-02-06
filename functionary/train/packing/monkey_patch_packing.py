@@ -145,6 +145,7 @@ def monkey_patch_packing_for_model(pretrained_model):
     model_config = transformers.AutoConfig.from_pretrained(pretrained_model)
     config_type = type(model_config).__name__.lower()
     if hasattr(transformers, "modeling_flash_attention_utils"):
+        print("monkey-patch inside modeling_flash_attention_utils")
         transformers.modeling_flash_attention_utils._get_unpad_data = get_unpad_data
     else:  # if this is the old version of transformer
         model_type, modelling_type = "", ""

@@ -24,7 +24,7 @@ class Function(BaseModel):
 
 
 class Tool(BaseModel):
-    type: Literal["function", "code_interpreter"] = "function"
+    type: Literal["function", "code_interpreter", "reasoning"] = "function"
     function: Optional[Function] = None
 
 

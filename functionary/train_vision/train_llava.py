@@ -13,22 +13,19 @@ import numpy as np
 import torch
 import torch.distributed
 from aenum import extend_enum
+from llava.mm_utils import process_images
+from llava.model.language_model.llava_llama import LlavaConfig
 from PIL import Image
 from torch.optim.lr_scheduler import LambdaLR
-from functionary.train_vision.vision_datasets import (
-    get_vision_dataset_class,
-    get_collate_fn,
-)
-import re
-from typing import Any
 
 import transformers
+from functionary.train_vision.llava_dataset import LazyVisionDataset
+from functionary.train_vision.models.modeling_llava import (
+    FixedLlavaLlamaForCausalLM as LlavaLlamaForCausalLM,
+)
 from functionary.train.metrics import (
     extract_indices_of_first_tokens_of_param_values_in_assistant_response,
     extract_unmasked_chunks,
-)
-from functionary.train.packing.monkey_patch_packing import (
-    monkey_patch_packing_for_model,
 )
 
 # set this so we can reproduce
@@ -89,15 +86,6 @@ def print_rank0(*arg):
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="meta-llama/Llama-2-7b-hf")
-    model_class: str = field(
-        default="", metadata={"help": "the model_class to load model"}
-    )
-    frozen_pattern: str = field(
-        default="",
-        metadata={
-            "help": "regular expression of parameter names to be frozen during training"
-        },
-    )
 
 
 @dataclass
@@ -121,22 +109,17 @@ class DataArguments:
     packing: bool = field(
         default=False, metadata={"help": "Whether use packing or not"}
     )
+    pack_length: int = field(
+        default=0,
+        metadata={
+            "help": "pack_length used to pack data points, default = 0 --> = model_max_length"
+        },
+    )
     max_packed_size: int = field(
         default=-1,
         metadata={
             "help": "maximum number of data points can be merged. For example, max_packed_size=3, we can only merge 2 or 3 data points into a new one"
         },
-    )
-    dataset_type: str = field(
-        default="LazyQwen2VLDataset", metadata={"help": "The type of dataset to use"}
-    )
-    train_data_cached: str = field(
-        default="",
-        metadata={"help": "the path to the cached data for loading training data"},
-    )
-    validation_data_cached: str = field(
-        default="",
-        metadata={"help": "the path to the cached data for loading validation data"},
     )
 
 
@@ -163,13 +146,6 @@ class TrainingArguments(transformers.TrainingArguments):
         default=False,
         metadata={"help": "set this true to log training metrics during training"},
     )
-    
-    use_liger: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether use liger or not. Refer to this link for more details: https://github.com/triton-lang/triton?tab=readme-ov-file#compatibility"
-        },
-    )
 
 
 def trainer_save_model_safe(trainer: transformers.Trainer):
@@ -178,19 +154,6 @@ def trainer_save_model_safe(trainer: transformers.Trainer):
     if trainer.accelerator.state.fsdp_plugin.state_dict_type.name != "FULL_STATE_DICT":
         trainer.accelerator.state.fsdp_plugin.set_state_dict_type("FULL_STATE_DICT")
     trainer.save_model()
-
-
-def freeze_model_parameters(model: Any, frozen_pattern: str):
-    trainable_params = []
-    for name, param in model.named_parameters():
-        if re.search(frozen_pattern, name):
-            print_rank0(f"-----Freeze parameter in the training: {name}")
-            param.requires_grad = False
-        else:
-            trainable_params.append(name)
-    print_rank0("------------TRAINABLE PARAMETERS--------")
-    print_rank0("\n".join(trainable_params))
-    print_rank0("------------------")
 
 
 def initialize_tokenizer(
@@ -226,7 +189,7 @@ def initialize_tokenizer(
 
     # add chat_template for tokenizer
     tokenizer.chat_template = prompt_template.get_chat_template_jinja()
-    # print("tokenizer: ", tokenizer)
+    print("tokenizer: ", tokenizer)
 
     # Resize embedding if in the prompt template we add new tokens
     model.resize_token_embeddings(len(tokenizer))
@@ -247,50 +210,15 @@ def initialize_tokenizer(
     return tokenizer
 
 
-def get_cached_path(data_args, training_args, model_args, file_name):
-    current_folder = os.path.dirname(os.path.abspath(__file__))
-    cache_folder = os.path.join(current_folder, "cached_data")
-    if not os.path.exists(cache_folder):
-        os.makedirs(cache_folder)
-    
-    model_name = model_args.model_name_or_path.replace("/", "_")
-    data_name = file_name.replace("/", "_")
-    length = training_args.model_max_length
-    
-    cached_path = os.path.join(cache_folder, f"{model_name}_{data_name}_{length}.json")
-    return cached_path
-
-
-def get_model_class(model_args):
-    if model_args.model_class.lower() == "Qwen2VLForConditionalGeneration".lower():
-        from transformers import Qwen2VLForConditionalGeneration
-        from liger_kernel.transformers import apply_liger_kernel_to_qwen2_vl
-        print("-------USE LIGER KERNEL-------")
-        apply_liger_kernel_to_qwen2_vl()
-        return Qwen2VLForConditionalGeneration
-    if model_args.model_class.lower() == "Qwen2_5_VLForConditionalGeneration".lower():
-        from transformers import Qwen2_5_VLForConditionalGeneration
-        from liger_kernel.transformers import apply_liger_kernel_to_qwen2_vl
-        print("-------USE LIGER KERNEL-------")
-        apply_liger_kernel_to_qwen2_vl()
-        return Qwen2_5_VLForConditionalGeneration
-    return transformers.AutoModelForCausalLM
-
-
 def train():
     argument_parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments)
     )
     model_args, data_args, training_args = argument_parser.parse_args_into_dataclasses()
-    if data_args.packing:
-        if not data_args.train_data_cached:
-            data_args.train_data_cached = get_cached_path(data_args, training_args, model_args, data_args.train_data_path)
-            
-        if not data_args.validation_data_cached:
-            data_args.validation_data_cached = get_cached_path(data_args, training_args, model_args, data_args.eval_data_path)
     # this is a must
     training_args.remove_unused_columns = False
     # this is a must
+    training_args.prompt_template_version = "v3.llava_llama"
     print(
         "---------------------training_args.remove_unused_columns: ",
         training_args.remove_unused_columns,
@@ -302,29 +230,31 @@ def train():
         else (torch.bfloat16 if training_args.bf16 else torch.float32)
     )
 
+    # Copy this from: https://github.com/LLaVA-VL/LLaVA-NeXT/blob/inference/llava/model/builder.py#L169
+    llava_cfg = LlavaConfig.from_pretrained(model_args.model_name_or_path)
+    if "v1.5" in model_args.model_name_or_path.lower():
+        llava_cfg.delay_load = True  # a workaround for correctly loading v1.5 models
 
-    if training_args.use_liger:
-        from liger_kernel.transformers import AutoLigerKernelForCausalLM
-
-        print_rank0("---------------using LIGER------------")
-        model_class = AutoLigerKernelForCausalLM
-    else:
-        model_class = transformers.AutoModelForCausalLM
-        
-    model_class = get_model_class(model_args)
-    model = model_class.from_pretrained(
+    model = LlavaLlamaForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         torch_dtype=compute_dtype,
+        config=llava_cfg,
         cache_dir=training_args.cache_dir,
-        attn_implementation="flash_attention_2"
+        use_flash_attention_2=True,
     )
-
-    if model_args.frozen_pattern:
-        freeze_model_parameters(model, model_args.frozen_pattern)
 
     if hasattr(model.config, "tokenizer_model_max_length"):
         model.config.tokenizer_model_max_length = training_args.model_max_length
     model.config.use_cache = False
+
+    vision_tower = model.get_vision_tower()
+    if not vision_tower.is_loaded:
+        vision_tower.load_model(device_map="auto")
+    # if device_map != "auto":
+    #    vision_tower.to(device="cuda", dtype=torch.float16)
+    image_processor = vision_tower.image_processor
+
+    # model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, config=llava_cfg, **kwargs)
 
     print_rank0("Prompt template to use: ", training_args.prompt_template_version)
     prompt_template = get_prompt_template_by_version(
@@ -361,29 +291,7 @@ def train():
     with open(data_args.train_data_path, "r") as f:
         raw_train_ds = [json.loads(line) for line in f]
 
-    dataset_class = get_vision_dataset_class(
-        data_args.dataset_type, packing=data_args.packing
-    )
-    print("dataset_class: ", dataset_class)
-    add_params = {}
-    if data_args.packing:
-        # monkey-patch the model to support packing
-        monkey_patch_packing_for_model(model_args.model_name_or_path)
-        add_params = {"max_packed_size": data_args.max_packed_size}
-        if data_args.train_data_cached:
-            add_params["cached_path"] = data_args.train_data_cached
-            print("Use cached to load training dataset")
-
-    train_dataset = dataset_class(
-        raw_train_ds,
-        tokenizer,
-        model_args.model_name_or_path,
-        data_args.pad_img_path,
-        training_args.model_max_length,
-        use_img_pad_token=True,
-        **add_params,
-    )
-
+    train_dataset = LazyVisionDataset(raw_train_ds, tokenizer, data_args.pad_img_path)
     if torch.distributed.get_rank() == 0:
         print(f"Training Data Loaded: #{len(train_dataset)}")
 
@@ -391,19 +299,7 @@ def train():
         with open(data_args.eval_data_path, "r") as f:
             raw_eval_ds = [json.loads(line) for line in f]
 
-        if data_args.validation_data_cached:
-            add_params["cached_path"] = data_args.validation_data_cached
-            print("use cached to load validation dataset")
-
-        eval_dataset = dataset_class(
-            raw_eval_ds,
-            tokenizer,
-            model_args.model_name_or_path,
-            data_args.pad_img_path,
-            training_args.model_max_length,
-            use_img_pad_token=True,
-            **add_params,
-        )
+        eval_dataset = LazyVisionDataset(raw_eval_ds, tokenizer, data_args.pad_img_path)
 
         if torch.distributed.get_rank() == 0:
             print(f"Eval Data Loaded: #{len(eval_dataset)}")
@@ -555,28 +451,108 @@ def train():
         metrics.update(compute_accuracy_metrics(prediction_list, label_list))
         return metrics
 
-    collate_fn = get_collate_fn(data_args.dataset_type, model, tokenizer)
+    def collate_examples(features):
+        result = {}
+        first = features[0]
+        for k, v in first.items():
+            if k in ["input_ids", "attention_mask", "labels"]:
+                if isinstance(v, torch.Tensor):
+                    result[k] = torch.stack([f[k] for f in features])
+                elif isinstance(v, np.ndarray):
+                    result[k] = torch.tensor(np.stack([f[k] for f in features]))
+                else:
+                    result[k] = torch.tensor([f[k] for f in features])
+        # aggregate images & image_sizes
+        images = []
+        for feature in features:
+            images.extend(feature["images"])
+
+        image_sizes = [image.size for image in images]
+        if len(images) > 0:
+            image_tensor = process_images(images, image_processor, model.config)
+        else:
+            image_tensor = None
+        # if type(image_tensor) is not list:
+        #    image_tensor = image_tensor.to(model.dtype)
+
+        result["images"] = image_tensor
+        result["image_sizes"] = image_sizes
+        return result
+
+    class FunctionAccuracyTrackingTrainer(Trainer):
+        """This trainer will also log the metrics for each training step
+
+        Args:
+            Trainer (_type_): _description_
+        """
+
+        def compute_loss(self, model, inputs, return_outputs=False):
+            """
+            How the loss is computed by Trainer. By default, all models return the loss in the first element.
+
+            Subclass and override for custom behavior.
+            Besides return the loss, this function also compute the metrics for each training step
+            """
+            outputs = model(**inputs)
+            loss = outputs.loss
+            if (
+                model.training
+            ):  # only compute the metrics in the training loop, not eval loop
+                logits = outputs.logits["logits"]
+                labels = outputs.logits["labels"]
+
+                pred_ids = torch.argmax(logits, dim=-1)
+
+                # compute the metrics
+                predictions = pred_ids[:, :-1]
+                predictions = self.accelerator.pad_across_processes(
+                    predictions, dim=1, pad_index=-100
+                )
+                predictions = self.accelerator.gather_for_metrics((predictions))
+
+                labels = labels[:, 1:]
+                labels = self.accelerator.pad_across_processes(
+                    labels, dim=1, pad_index=-100
+                )
+                labels = self.accelerator.gather_for_metrics((labels))
+
+                prediction_list, label_list = (
+                    predictions.flatten().tolist(),
+                    labels.flatten().tolist(),
+                )
+                metrics = compute_accuracy_metrics(prediction_list, label_list)
+                prefix_metrics = {}
+                for key in metrics:
+                    prefix_metrics[f"train_{key}"] = metrics[key]
+                # Log to wandb
+                self.log(prefix_metrics)
+            return (loss, outputs) if return_outputs else loss
+
+    # if set log_train_metrics=true will compute the metrics after each training step
+    trainer_class = (
+        FunctionAccuracyTrackingTrainer if training_args.log_train_metrics else Trainer
+    )
 
     if training_args.do_eval:
-        trainer = Trainer(
+        trainer = trainer_class(
             model=model,
             tokenizer=tokenizer,
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            compute_metrics=None,
-            preprocess_logits_for_metrics=None,
-            data_collator=collate_fn,
+            compute_metrics=compute_metrics,
+            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+            data_collator=collate_examples,
         )
     else:
-        trainer = Trainer(
+        trainer = trainer_class(
             model=model,
             tokenizer=tokenizer,
             args=training_args,
             train_dataset=train_dataset,
-            data_collator=collate_fn,
-            compute_metrics=None,
-            preprocess_logits_for_metrics=None,
+            data_collator=collate_examples,
+            compute_metrics=compute_metrics,
+            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
         )
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):

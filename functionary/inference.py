@@ -1,18 +1,18 @@
 from typing import Dict, List, Optional, Union
 
 import torch
-from lmformatenforcer import CharacterLevelParser, JsonSchemaParser
-from lmformatenforcer.integrations.vllm import build_vllm_logits_processor
+#from lmformatenforcer import CharacterLevelParser, JsonSchemaParser
+#from lmformatenforcer.integrations.vllm import build_vllm_logits_processor
 from transformers import (
     LlamaForCausalLM,
     LlamaTokenizer,
     StoppingCriteria,
     StoppingCriteriaList,
 )
-from vllm.model_executor.guided_decoding.lm_format_enforcer_decoding import (
-    _cached_build_vllm_token_enforcer_tokenizer_data,
-    _normalize_json_schema_object,
-)
+# from vllm.model_executor.guided_decoding.lm_format_enforcer_decoding import (
+#     _cached_build_vllm_token_enforcer_tokenizer_data,
+#     _normalize_json_schema_object,
+# )
 from vllm.sampling_params import LogitsProcessor
 
 from functionary.openai_types import ChatMessage, Function, FunctionCall, Tool
