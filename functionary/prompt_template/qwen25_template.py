@@ -4,7 +4,8 @@ from functionary.prompt_template import prompt_utils
 import json
 import copy
 import math
-
+import re
+from lxml import etree
 
 # the following lines of code are copied from qwen_vl_utils
 IMAGE_FACTOR = 28
@@ -19,6 +20,44 @@ FRAME_FACTOR = 2
 FPS = 2.0
 FPS_MIN_FRAMES = 4
 FPS_MAX_FRAMES = 768
+
+
+def remove_emoji(text: str) -> str:
+    """
+    Remove emoji characters (such as: 📐, ⚗) from the text
+    """
+    # Unicode ranges for emojis
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+        "\U00002702-\U000027B0"  # dingbats
+        "\U000024C2-\U0001F251"
+        "]+",
+        flags=re.UNICODE,
+    )
+
+    return emoji_pattern.sub("", text)
+
+
+def post_process_llm_output(llm_output: str) -> str:
+    """
+    Post-process the LLM output to remove emoji characters and other non-printable characters
+    """
+    llm_output = remove_emoji(llm_output)
+    # fix invalid xml, inside llm_output, there can be invalid in complete xml tag, for example, it contains  <tool_call> but </tool_call> is missing
+    # we need to check if there are missing </tool_call> and add it. Note thare there can be multiple tool_call tags in the llm_output
+    # Count opening and closing tool_call tags
+    open_tags = llm_output.count("<tool_call>")
+    close_tags = llm_output.count("</tool_call>")
+
+    # Add missing closing tags if needed
+    if open_tags > close_tags:
+        missing_tags = open_tags - close_tags
+        llm_output = llm_output + "</tool_call>" * missing_tags
+    return llm_output
 
 
 def round_by_factor(number: int, factor: int) -> int:
@@ -195,6 +234,9 @@ class Qwen25PromptTemplate(PromptTemplate):
         elif tool_choice == "required":
             llm_output = self.function_separator + llm_output
 
+        print(f"+++LLM_OUTPUT: {llm_output}")
+        llm_output = post_process_llm_output(llm_output)
+        print(f"+++LLM_OUTPUT after post-processing: {llm_output}")
         text_content = ""
         tool_call_strs = []
 

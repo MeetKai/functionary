@@ -13,7 +13,7 @@ from functionary.prompt_template import get_prompt_template_by_version
 logger = logging.getLogger(__name__)
 
 # default: Load the model on the available device(s)
-model_id = "Qwen/Qwen2.5-VL-7B-Instruct"
+model_id = "Qwen2.5-VL-7B-Instruct"
 model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
     model_id, torch_dtype="auto", device_map="auto"
 )
