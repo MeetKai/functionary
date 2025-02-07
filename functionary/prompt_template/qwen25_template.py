@@ -1,6 +1,7 @@
 from functionary.prompt_template.base_template import PromptTemplate
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from functionary.prompt_template import prompt_utils
+from functionary.openai_types import Function, Tool
 import json
 import copy
 import math
@@ -288,3 +289,151 @@ class Qwen25PromptTemplate(PromptTemplate):
         )
         image = image.resize((resized_width, resized_height))
         return image
+
+    def initialize_fsm_gen_state(
+        self,
+        tool_choice: Union[str, Tool],
+        curr_text: str,
+        curr_tokens: Optional[List[int]],
+        add_code_interpreter: Optional[bool],
+    ) -> Dict:
+        """Initializes FSM state for both streaming and grammar sampling
+
+        Args:
+            tool_choice (str): tool_choice provided by user
+            curr_text (str): Text to initialize in gen_state
+            curr_tokens (List[int]): Corresponding tokens of curr_text
+            add_code_interpreter (bool): Flag indicating whether to add "python" tool in options in "function" stage.
+        Returns:
+            Dict: generation state
+        """
+        result = {
+            "stage": "start",
+            "func_index": -1,
+            "curr_text": curr_text,
+            "curr_tokens": curr_tokens,
+            "add_code_interpreter": add_code_interpreter,
+        }
+        return result
+
+    def stream_delta_text(
+        self,
+        gen_state: Dict,
+        delta_text: str,
+        finish_reason: Optional[str],
+        tools_or_functions: List[Dict],
+        tool_choice: Any,
+    ) -> Tuple[Dict, Optional[Union[Dict, List[Dict]]]]:
+        if finish_reason is not None:  # handle if finish
+            if gen_state["stage"] not in ["text_gen"]:
+                finish_reason = "tool_calls"
+            return gen_state, prompt_utils.get_text_delta_response(
+                None, False, finish_reason
+            )
+
+        current_text = gen_state["curr_text"] + delta_text
+        gen_state["curr_text"] = current_text
+        if gen_state["stage"] == "start":
+            if (
+                gen_state.get("end_of_prev_function_call", False) and delta_text == "\n"
+            ):  # ignore \n
+                gen_state["end_of_prev_function_call"] = False
+                gen_state["curr_text"] = ""
+
+            elif delta_text == "<tool_call>":
+                # print(f"delta text: {delta_text}; go to function_name")
+                gen_state["stage"] = "function_name"
+                gen_state["curr_text"] = ""
+                gen_state["func_index"] += 1
+                gen_state["call_id"] = prompt_utils.get_random_tool_call_id()
+            else:
+                # print(f"delta text: {delta_text}; go to text_gen")
+                gen_state["stage"] = "text_gen"
+                gen_state["curr_text"] = current_text
+                gen_state["buffer"] = (
+                    []
+                )  # put to buffer before we return because we need to check the last item
+                responses = [
+                    prompt_utils.get_text_delta_response("", True, finish_reason)
+                ]
+                if len(delta_text) > 0:
+                    gen_state["buffer"].append(delta_text)
+                return gen_state, responses
+
+        elif gen_state["stage"] == "function_name":
+            # wait until we get '{"name": "func_name", "arguments": {'
+            # print(f"current_text: {current_text}")
+            pattern = (
+                r'\s*{"name"\s*:\s*"(?P<function_name>.*)"\s*,\s*"arguments"\s*:\s*{'
+            )
+            match = re.search(pattern, current_text)
+            if match:
+                _, end_ind = match.start(), match.end()
+                new_delta = current_text[end_ind - 1 :]
+                gen_state["stage"] = "function_arguments"
+                gen_state["curr_text"] = new_delta  # -1 to retain "{"
+                gen_state["func_name"] = match.group("function_name")
+                responses = [
+                    prompt_utils.get_function_delta_response(
+                        gen_state, "", True, True, finish_reason
+                    )
+                ]  # the chunk containing function_name only
+                # generate another chunk for start of function_arguments
+                gen_state["buffer"] = [
+                    new_delta
+                ]  # we only generate a chunk if len(buffer) >= 4
+                # responses.append(prompt_utils.get_function_delta_response(
+                #     gen_state, new_delta, False, False, finish_reason
+                # ))
+                return gen_state, responses
+            else:
+                return gen_state, None
+
+        elif gen_state["stage"] == "text_gen":
+            if delta_text == "<tool_call>":  # start a tool call
+                # print("start a tool call after reasoning")
+                gen_state["stage"] = "function_name"
+                gen_state["curr_text"] = ""
+                gen_state["func_index"] += 1
+                gen_state["call_id"] = prompt_utils.get_random_tool_call_id()
+                buffer_str = "".join(gen_state["buffer"]).strip()
+                if len(buffer_str) > 0:
+                    return gen_state, prompt_utils.get_text_delta_response(
+                        buffer_str, False, finish_reason
+                    )
+            else:
+                gen_state["buffer"].append(delta_text)
+                if len(gen_state["buffer"]) >= 2:
+                    delta_text_item = gen_state["buffer"].pop(0)
+                    return gen_state, prompt_utils.get_text_delta_response(
+                        delta_text_item, False, finish_reason
+                    )
+
+        elif gen_state["stage"] == "function_arguments":
+            # generate until reach </tool_call>
+            if delta_text == "</tool_call>":
+                gen_state["stage"] = "start"
+                gen_state["curr_text"] = ""
+                gen_state["end_of_prev_function_call"] = True
+                # return all in the buffer but need to strip and remove the last "}"
+                buffer_str = "".join(gen_state["buffer"]).strip()
+                if buffer_str.endswith("}}"):
+                    buffer_str = buffer_str[:-1]  # remove the last "}"
+                return gen_state, prompt_utils.get_function_delta_response(
+                    gen_state, buffer_str, False, False, finish_reason
+                )
+            else:
+                gen_state["buffer"].append(delta_text)
+                if len(gen_state["buffer"]) >= 4:
+                    delta_text_item = gen_state["buffer"].pop(0)
+                    return gen_state, prompt_utils.get_function_delta_response(
+                        gen_state, delta_text_item, False, False, finish_reason
+                    )
+        return gen_state, None
+
+
+def match_pattern(pattern: str, text: str) -> Tuple[int, int]:
+    match = re.search(pattern, text)
+    if match:
+        return match.start(), match.end()
+    return -1, -1
