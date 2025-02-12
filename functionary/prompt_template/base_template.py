@@ -11,7 +11,8 @@ import jinja2
 from functionary.prompt_template.prompt_utils import resolve_json_refs
 from functionary.openai_types import Function, Tool
 from functionary.prompt_template import prompt_utils
-
+from PIL import Image
+import sys
 
 def raise_exception(message):
     raise jinja2.exceptions.TemplateError(message)
@@ -129,12 +130,21 @@ class PromptTemplate:
 
         tools = resolve_json_refs(tools_or_functions=tools_or_functions)
 
-        prompt = self._jinja_template.render(
-            messages=messages,
-            tools=tools,
-            bos_token=bos_token,
-            add_generation_prompt=add_generation_prompt,
-        )
+        try:
+            prompt = self._jinja_template.render(
+                messages=messages,
+                tools=tools,
+                bos_token=bos_token,
+                add_generation_prompt=add_generation_prompt,
+            )
+        except Exception as e:
+            print(f"Error in get_prompt_from_messages: {e}")
+            print(f"messages: {messages}")
+            print(f"tools: {tools}")
+            print(f"bos_token: {bos_token}")
+            print(f"add_generation_prompt: {add_generation_prompt}")
+            raise e
+            sys.exit(1)
 
         return prompt
 
@@ -385,6 +395,9 @@ class PromptTemplate:
         raise Exception(
             "tool-choice must be one of: None, none, auto, required, or a specific tool"
         )
+
+    def preprocess_image_input(self, image: Image) -> Image:
+        return image
 
     @classmethod
     def get_prompt_template(cls):

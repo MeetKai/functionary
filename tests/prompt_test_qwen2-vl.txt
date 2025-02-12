@@ -1,0 +1,82 @@
+<|im_start|>system
+You are capable of executing available function(s) if required.
+Only execute function(s) when absolutely necessary.
+To send text to user, use this format:
+>>>all
+{content}
+
+You have access to the following functions:
+
+Use the function 'get_car_price' to 'Get the price of a particular car model'
+{"name": "get_car_price", "description": "Get the price of a particular car model", "parameters": {"type": "object", "properties": {"car_name": {"type": "string", "description": "The name of the car model"}}, "required": ["car_name"]}}
+
+Use the function 'get_weather' to 'This function's purpose is to get the weather of a location'
+{"name": "get_weather", "description": "This function's purpose is to get the weather of a location", "parameters": {"type": "object", "properties": {"location": {"type": "string", "description": "where to get weather"}}, "required": ["location"]}}
+
+
+Think very carefully before calling functions.
+If a you choose to call a function ONLY reply in the following format:
+>>>{function_name}
+{arguments}
+
+When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files.
+
+Reasoning Mode: Off<|im_end|>
+<|im_start|>user
+who is the CEO of Meetkai<|im_end|>
+<|im_start|>assistant
+>>>all
+James Kaplan is the Co-Founder and CEO of MeetKai Inc.<|im_end|>
+<|im_start|>user
+is the car Song more expensive than car Tang?<|vision_start|><|image_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|><|im_end|>
+<|im_start|>assistant
+>>>all
+I will get the price of 2 cars and compare>>>get_car_price
+{"car_name": "Song"}>>>get_car_price
+{"car_name": "Tang"}<|im_end|>
+<|im_start|>tool
+{"price": {"price": "$25000"}}<|im_end|>
+<|im_start|>tool
+{"price": {"price": "$20000"}}<|im_end|>
+<|im_start|>assistant
+>>>all
+No, the car Tang is less expensive than the car Song. The car Song is priced at $25,000, while the car Tang is priced at $20,000.<|im_end|>
+<|im_start|>user
+<|vision_start|><|image_pad|><|vision_end|>what's the weather like in Hanoi?<|im_end|>
+<|im_start|>assistant
+>>>get_weather
+{"location": "Hanoi"}<|im_end|>
+<|im_start|>tool
+{"result": {"temperature": 10}}<|im_end|>
+<|im_start|>assistant
+>>>all
+The temperature in Hanoi is: 10 degree Celcious<|im_end|>
+<|im_start|>user
+Given the list of strings: '0','1','2','3','4','5' remove the number in the list that is close to 3.6 the most<|im_end|>
+<|im_start|>assistant
+>>>all
+I'll use code interpreter to handle this>>>python
+l=[int('0'),int('1'),int('2'),int('3'),int('4'),int('5')]
+l.remove(3.6)<|im_end|>
+<|im_start|>tool
+ValueError: list.remove(x): x not in list<|im_end|>
+<|im_start|>assistant
+>>>all
+I will fix the code>>>python
+l.remove(round(3.6))
+l<|im_end|>
+<|im_start|>tool
+[0,1,2,3,5,]<|im_end|>
+<|im_start|>assistant
+>>>all
+The final list is: 0,1,2,3,5<|im_end|>
+<|im_start|>user
+Thanks! What's the weather in San Francisco?<|im_end|>
+<|im_start|>assistant
+>>>get_weather
+{"location": "San Francisco, CA"}<|im_end|>
+<|im_start|>tool
+{"result": {"temperature": 20}}<|im_end|>
+<|im_start|>assistant
+>>>all
+The temperature in San Francisco is: 20 degree Celcious<|im_end|>

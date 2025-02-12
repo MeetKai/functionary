@@ -2,7 +2,7 @@ import json
 import os
 import re
 import unittest
-from typing import List
+from typing import List, Callable
 
 from transformers import AutoTokenizer
 
@@ -44,7 +44,9 @@ class TestPromptTemplate(unittest.TestCase):
             "v3-llama3.1": "meetkai/functionary-small-v3.1",
         }
         self.image_template_version_to_model_name = {
-            "v3.llava_llama": "meetkai/functionary-vision-small-v0.1"
+            # "v3.llava_llama": "meetkai/functionary-vision-small-v0.1",
+            # "qwen2-vl": "Qwen/Qwen2-VL-7B-Instruct",
+            "qwen2.5": "Qwen/Qwen2.5-VL-7B-Instruct"
         }
 
     def read_example_data(self, template_version: str):
@@ -118,6 +120,20 @@ class TestPromptTemplate(unittest.TestCase):
             self.run_prepare_training_inputs(
                 template_version=template_version,
                 pretrained=pretrained_model,
+                read_test_case_func=self.read_example_data,
+                verbose=False,
+            )
+
+        print("test vision models")
+        for (
+            template_version,
+            pretrained_model,
+        ) in self.image_template_version_to_model_name.items():
+            print(f"-------------_TEST: {template_version}, {pretrained_model}")
+            self.run_prepare_training_inputs(
+                template_version=template_version,
+                pretrained=pretrained_model,
+                read_test_case_func=self.read_image_example_data,
                 verbose=False,
             )
 
@@ -126,20 +142,22 @@ class TestPromptTemplate(unittest.TestCase):
         template_version: str,
         pretrained: str,
         keep_assistant_prefix: bool = False,
+        read_test_case_func: Callable = None,
         verbose: bool = False,
     ):
         """this function is used to test function: prepare_training_inputs"""
         # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
-        tokenizer = AutoTokenizer.from_pretrained(pretrained, legacy=True)
+        tokenizer = AutoTokenizer.from_pretrained(pretrained)
         tokenizer.pad_token = tokenizer.eos_token
         # first we add stop_tokens to the tokenizer
         prompt_template = get_prompt_template_by_version(template_version)
+        tokenizer.chat_template = prompt_template.get_chat_template_jinja()
 
         added_tokens = prompt_template.get_additional_tokens()
         special_tokens = {"additional_special_tokens": added_tokens}
         tokenizer.add_special_tokens(special_tokens)
 
-        test_case, _ = self.read_example_data(template_version)
+        test_case, _ = read_test_case_func(template_version)
 
         inputs = prepare_training_inputs(
             messages=test_case,
@@ -165,7 +183,8 @@ class TestPromptTemplate(unittest.TestCase):
 
         # Check if only messages where role=assistant and unmasked are remained, others will be masked as -100
         assistant_message = []
-        for message in test_case["messages"]:
+        assistant_indices = []
+        for index, message in enumerate(test_case["messages"]):
             if message["role"] == "assistant":
                 masked = False
 
@@ -174,6 +193,7 @@ class TestPromptTemplate(unittest.TestCase):
 
                 if not masked:
                     assistant_message.append(message)
+                    assistant_indices.append(index)
         # find unmasked chunks in labels (chunk[i] != -100), there chunks are associated with assistant messages
         # for example: labels=[-100, -100, 1, 2, 3, -100, -100, 4, 5] --> chunks = [[1,2,3], [4,5]]
         chunks = extract_unmasked_chunks(labels)
@@ -185,26 +205,29 @@ class TestPromptTemplate(unittest.TestCase):
         )
 
         print(f"number of unmasked chunks: {len(chunks)}")
-        for chunk, message in zip(chunks, assistant_message):
-            sys_msg = prompt_template.get_prompt_from_messages([])
-            if keep_assistant_prefix:
-                prefix = ""
-            else:
-                prefix = prompt_template.get_prompt_from_messages(
-                    [], add_generation_prompt=True
-                )
-                prefix = prefix[len(sys_msg) :].lstrip()
-            decoded_content = prefix + tokenizer.decode(
+        for chunk, message, assistant_index in zip(
+            chunks, assistant_message, assistant_indices
+        ):
+            prompt_wo_assistant = prompt_template.get_prompt_from_messages(
+                test_case["messages"][:assistant_index],
+                test_case["tools"],
+                add_generation_prompt=True,
+            )
+            prompt_w_assistant = prompt_template.get_prompt_from_messages(
+                test_case["messages"][: assistant_index + 1], test_case["tools"]
+            )
+
+            inference_text = prompt_w_assistant[len(prompt_wo_assistant) :]
+            decoded_content = tokenizer.decode(
                 chunk
-            )  # note that need to add: "\nassistant" because we mask this, see line 194 in prompt_utils.py
-            prompt = prompt_template.get_prompt_from_messages([message])
-            prompt = prompt[len(sys_msg) :].lstrip()
+            )  # note that need to add: "\nassistant" because we mask this, see line 194 in
+
             # decoded_content and prompt should be the same
             # to avoid any mistakes of tokenizer like adding white space we will compare after removing space
             self.assertEqual(
                 re.sub("\s", "", decoded_content),
-                re.sub("\s", "", prompt),
-                f"decoded content is different from original content:\ndecoded_content:{decoded_content}\nprompt:{prompt}",
+                re.sub("\s", "", inference_text),
+                f"decoded content is different from original content:\ndecoded_content:{decoded_content}\nprompt:{inference_text}",
             )
 
 

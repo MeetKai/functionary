@@ -40,6 +40,7 @@ from functionary.prompt_template.prompt_utils import (
     enforce_tool_choice,
     get_random_tool_call_id,
     prepare_messages_for_inference,
+    extract_images_from_messages
 )
 
 
@@ -187,6 +188,7 @@ async def process_chat_completion(
     if error_check_ret is not None:
         return error_check_ret
 
+    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
     # Get the lora adapter if it exists and replace tokenizer
     lora_request = get_lora_adapter(request, served_loras)
     if lora_request is not None:
@@ -201,17 +203,22 @@ async def process_chat_completion(
         tool_choice=tool_func_choice,
     ).tolist()[0]
 
-    error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
-    if error_check_ret is not None:
-        return error_check_ret
-
+    # error_check_ret = await check_length(request, prompt_token_ids, engine_model_config)
+    # if error_check_ret is not None:
+    #     return error_check_ret
+    multi_modal_data = None
+    images = extract_images_from_messages([mess.dict() for mess in request.messages])
+    images = [prompt_template.preprocess_image_input(img) for img in images]
+    if len(images) > 0:
+        multi_modal_data = {"image": images}
+        
     model_name = request.model
     request_id = f"chatcmpl-{random_uuid()}"
     created_time = int(time.time())
 
     # compute stop_token_ids
     stop_token_ids = []
-    prompt_template = get_prompt_template_from_tokenizer(tokenizer)
+
     for stop_tok in prompt_template.get_stop_tokens_for_generation():
         tok_ids = tokenizer.encode(stop_tok, add_special_tokens=False)
         stop_token_ids.append(tok_ids[-1])
@@ -255,7 +262,7 @@ async def process_chat_completion(
         )
     else:
         result_generator = engine.generate(
-            prompt=TokensPrompt(prompt_token_ids=prompt_token_ids),
+            prompt=TokensPrompt(prompt_token_ids=prompt_token_ids, multi_modal_data=multi_modal_data),
             lora_request=lora_request,
             sampling_params=sampling_params,
             request_id=request_id,

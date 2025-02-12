@@ -108,6 +108,7 @@ def prepare_messages_for_inference(
     return input_ids
 
 
+
 def get_function_delta_response(
     current_state: Dict,
     delta_text: str,
@@ -251,22 +252,27 @@ def download_image_from_image_url(image_url: str):
     base64_prefix = "data:image/jpg;base64,"
     file_prefix = "file://"
     url_prefix = "url://"
+    img_ob = None
     if image_url.startswith(base64_prefix):
         encoded_data = image_url[len(base64_prefix) :]
-        return Image.open(BytesIO(base64.b64decode(encoded_data)))
+        img_ob = Image.open(BytesIO(base64.b64decode(encoded_data)))
 
     elif image_url.startswith(file_prefix):
         img_path = image_url[len(file_prefix) :].strip()
-        return Image.open(open(img_path, "rb"))
+        img_ob = Image.open(open(img_path, "rb"))
 
     elif image_url.startswith(url_prefix):
         url = image_url[len(url_prefix) :].strip()
-        return Image.open(requests.get(url, stream=True).raw)
+        img_ob = Image.open(requests.get(url, stream=True).raw)
+
+    elif image_url.startswith("http://") or image_url.startswith("https://"):
+        img_ob = Image.open(requests.get(image_url, stream=True).raw)
 
     else:
-        raise (
+        raise Exception(
             f"image not found, image_url must startswith one of: '{base64_prefix}'; '{file_prefix}', '{url_prefix}'"
         )
+    return img_ob.convert("RGB")
 
 
 def resolve_json_refs(tools_or_functions):
