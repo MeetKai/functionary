@@ -121,6 +121,9 @@ class Qwen25PromptTemplate(PromptTemplate):
 
         return template
 
+    def get_tool_choice_required_prefix(self) -> str:
+        return "<tool_call>\n"
+
     def get_prompt_from_messages(
         self,
         messages: List[Dict],
@@ -182,7 +185,6 @@ class Qwen25PromptTemplate(PromptTemplate):
                                 {"code": arguments}, ensure_ascii=False
                             )
             _messages.append(n_message)
-
         prompt = super().get_prompt_from_messages(
             messages=_messages,
             tools_or_functions=_tools,
@@ -201,10 +203,9 @@ class Qwen25PromptTemplate(PromptTemplate):
         return [self.end_of_turn]
 
     def get_force_function_call_prefix(self, function_name: str):
-        return (
-            """<tool_call>
-{"name": "%s}"""
-            % function_name
+        return """<tool_call>
+{"name": "{function_name}", "arguments""".replace(
+            "{function_name}", function_name
         )
 
     def pre_process_messages_before_inference(self, messages: List[Dict]) -> List[Dict]:
@@ -227,17 +228,13 @@ class Qwen25PromptTemplate(PromptTemplate):
                 llm_output = llm_output[: -len(stop)]
 
         # add forced-function from tool_choice if exists
-        if type(tool_choice) is not str and tool_choice is not None:
-            llm_output = (
-                self.get_force_function_call_prefix(tool_choice.function.name)
-                + llm_output
-            )
-        elif tool_choice == "required":
-            llm_output = self.function_separator + llm_output
+        llm_output = (
+            self.get_generation_prefix_for_tool_choice(tool_choice) + llm_output
+        )
 
-        print(f"+++LLM_OUTPUT: {llm_output}")
+        # print(f"+++LLM_OUTPUT: {llm_output}")
         llm_output = post_process_llm_output(llm_output)
-        print(f"+++LLM_OUTPUT after post-processing: {llm_output}")
+        # print(f"+++LLM_OUTPUT after post-processing: {llm_output}")
         text_content = ""
         tool_call_strs = []
 
@@ -257,15 +254,17 @@ class Qwen25PromptTemplate(PromptTemplate):
         tool_calls = []
         for tool_call_str in tool_call_strs:
             tool_call_dic = json.loads(tool_call_str)
+            if tool_call_dic["name"] == "python":
+                arguments = tool_call_dic["arguments"]["code"]
+            else:
+                arguments = json.dumps(tool_call_dic["arguments"], ensure_ascii=False)
             tool_calls.append(
                 {
                     "type": "function",
                     "id": prompt_utils.get_random_tool_call_id(),
                     "function": {
                         "name": tool_call_dic["name"],
-                        "arguments": json.dumps(
-                            tool_call_dic["arguments"], ensure_ascii=False
-                        ),
+                        "arguments": arguments,
                     },
                 }
             )
@@ -273,7 +272,7 @@ class Qwen25PromptTemplate(PromptTemplate):
         return {
             "role": "assistant",
             "content": text_content if len(text_content) > 0 else None,
-            "tool_calls": tool_calls,
+            "tool_calls": None if len(tool_calls) == 0 else tool_calls,
         }
 
     def preprocess_image_input(self, image: Any) -> Any:
@@ -314,6 +313,25 @@ class Qwen25PromptTemplate(PromptTemplate):
             "curr_tokens": curr_tokens,
             "add_code_interpreter": add_code_interpreter,
         }
+        if tool_choice == "required":  # a tool must be used
+            result["stage"] = "function_name"
+            result["curr_text"] = ""
+            result["func_index"] += 1
+            result["call_id"] = prompt_utils.get_random_tool_call_id()
+
+        elif not isinstance(tool_choice, str):  # a predefined tool is used
+            func_name = (
+                tool_choice.name
+                if hasattr(tool_choice, "name")
+                else tool_choice.function.name
+            )
+            result["stage"] = "function_name"
+            result["curr_text"] = '{"name": "{function_name}", "arguments'.replace(
+                "{function_name}", func_name
+            )
+            result["func_index"] += 1
+            result["call_id"] = prompt_utils.get_random_tool_call_id()
+
         return result
 
     def stream_delta_text(
@@ -327,9 +345,39 @@ class Qwen25PromptTemplate(PromptTemplate):
         if finish_reason is not None:  # handle if finish
             if gen_state["stage"] not in ["text_gen"]:
                 finish_reason = "tool_calls"
-            return gen_state, prompt_utils.get_text_delta_response(
+
+            end_response = prompt_utils.get_text_delta_response(
                 None, False, finish_reason
             )
+            last_response = None
+            # still need to check if there is st in buffer
+            if "buffer" in gen_state and len(gen_state["buffer"]) > 0:
+                if gen_state["stage"] == "text_gen":
+                    buffer_str = "".join(
+                        gen_state["buffer"]
+                    ).rstrip()  # remove \n at the end
+                    last_response = prompt_utils.get_text_delta_response(
+                        buffer_str, False, None
+                    )
+
+                elif gen_state["stage"] == "function_arguments":
+                    buffer_str = "".join(
+                        gen_state["buffer"]
+                    ).rstrip()  # remove \n at the end
+                    if buffer_str.endswith("}}"):
+                        buffer_str = buffer_str[:-1]  # remove the last "}"
+
+                    if len(buffer_str) > 0:
+                        last_response = prompt_utils.get_function_delta_response(
+                            gen_state, buffer_str, False, False, None
+                        )
+                elif gen_state["stage"] == "python":
+                    last_response = return_all_code_from_buffer(gen_state)
+
+            if last_response is not None:
+                return gen_state, [last_response, end_response]
+            else:
+                return gen_state, [end_response]
 
         current_text = gen_state["curr_text"] + delta_text
         gen_state["curr_text"] = current_text
@@ -370,21 +418,22 @@ class Qwen25PromptTemplate(PromptTemplate):
             if match:
                 _, end_ind = match.start(), match.end()
                 new_delta = current_text[end_ind - 1 :]
-                gen_state["stage"] = "function_arguments"
                 gen_state["curr_text"] = new_delta  # -1 to retain "{"
                 gen_state["func_name"] = match.group("function_name")
+                gen_state["stage"] = (
+                    "function_arguments"
+                    if gen_state["func_name"] != "python"
+                    else "python"
+                )
                 responses = [
                     prompt_utils.get_function_delta_response(
                         gen_state, "", True, True, finish_reason
                     )
                 ]  # the chunk containing function_name only
-                # generate another chunk for start of function_arguments
-                gen_state["buffer"] = [
-                    new_delta
-                ]  # we only generate a chunk if len(buffer) >= 4
-                # responses.append(prompt_utils.get_function_delta_response(
-                #     gen_state, new_delta, False, False, finish_reason
-                # ))
+                gen_state["buffer"] = []
+                if gen_state["func_name"] != "python":
+                    gen_state["buffer"].append(new_delta)
+
                 return gen_state, responses
             else:
                 return gen_state, None
@@ -396,7 +445,9 @@ class Qwen25PromptTemplate(PromptTemplate):
                 gen_state["curr_text"] = ""
                 gen_state["func_index"] += 1
                 gen_state["call_id"] = prompt_utils.get_random_tool_call_id()
-                buffer_str = "".join(gen_state["buffer"]).strip()
+                buffer_str = "".join(
+                    gen_state["buffer"]
+                ).rstrip()  # remove \n at the end
                 if len(buffer_str) > 0:
                     return gen_state, prompt_utils.get_text_delta_response(
                         buffer_str, False, finish_reason
@@ -410,15 +461,20 @@ class Qwen25PromptTemplate(PromptTemplate):
                     )
 
         elif gen_state["stage"] == "function_arguments":
-            # generate until reach </tool_call>
+            # check if current function is python, we need to stream the code string inside, not a json
             if delta_text == "</tool_call>":
                 gen_state["stage"] = "start"
                 gen_state["curr_text"] = ""
                 gen_state["end_of_prev_function_call"] = True
                 # return all in the buffer but need to strip and remove the last "}"
-                buffer_str = "".join(gen_state["buffer"]).strip()
-                if buffer_str.endswith("}}"):
+                buffer_str = "".join(
+                    gen_state["buffer"]
+                ).rstrip()  # remove \n at the end
+                if buffer_str.endswith("}}\n"):
+                    buffer_str = buffer_str[:-2]  # remove the last "}\n"
+                elif buffer_str.endswith("}}"):
                     buffer_str = buffer_str[:-1]  # remove the last "}"
+
                 return gen_state, prompt_utils.get_function_delta_response(
                     gen_state, buffer_str, False, False, finish_reason
                 )
@@ -429,7 +485,55 @@ class Qwen25PromptTemplate(PromptTemplate):
                     return gen_state, prompt_utils.get_function_delta_response(
                         gen_state, delta_text_item, False, False, finish_reason
                     )
+
+        elif gen_state["stage"] == "python":
+            return streamining_python_code(gen_state, delta_text)
         return gen_state, None
+
+
+def return_all_code_from_buffer(gen_state: Dict) -> Optional[Union[Dict, List[Dict]]]:
+    buffer_str = "".join(gen_state["buffer"]).rstrip()  # remove \n at the end
+    if len(buffer_str) > 0:
+        return prompt_utils.get_function_delta_response(
+            gen_state, buffer_str, False, False, None
+        )
+    return None
+
+
+def streamining_python_code(
+    gen_state: Dict, delta_text: str
+) -> Tuple[Dict, Optional[Union[Dict, List[Dict]]]]:
+    if "current_code" not in gen_state:
+        gen_state["current_code"] = ""
+        return gen_state, None
+
+    current_text = gen_state["curr_text"]
+    current_code = gen_state["current_code"]
+    # try extracting the latest code from current_text
+    try:
+        if delta_text == "</tool_call>":  # end of code
+            full_code_arg_str = current_text.rstrip("</tool_call>").strip()
+            if full_code_arg_str.endswith("}}"):
+                full_code_arg_str = full_code_arg_str[:-1]
+            new_code = json.loads(full_code_arg_str)["code"]
+        else:
+            new_code = json.loads(current_text + '"}')["code"]
+            delta_code = new_code[len(current_code) :]
+
+        gen_state["buffer"].append(delta_code)
+        gen_state["current_code"] = new_code
+    except:  # nothing changed
+        return gen_state, None
+
+    if delta_text == "</tool_call>":
+        return gen_state, return_all_code_from_buffer(gen_state)
+    else:
+        if len(gen_state["buffer"]) >= 4:
+            delta_text_item = gen_state["buffer"].pop(0)
+            return gen_state, prompt_utils.get_function_delta_response(
+                gen_state, delta_text_item, False, False, None
+            )
+    return gen_state, None
 
 
 def match_pattern(pattern: str, text: str) -> Tuple[int, int]:

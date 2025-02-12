@@ -22,7 +22,8 @@ from functionary.prompt_template import (
     LlavaLlama,
     PromptTemplate,
     PromptTemplateV2,
-    Llama31ReasoningTemplate,   
+    Llama31ReasoningTemplate,
+    Qwen25PromptTemplate,
     get_available_prompt_template_versions,
 )
 from functionary.prompt_template.prompt_utils import (
@@ -153,6 +154,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
             Llama31Template: "meetkai/functionary-small-v3.1",
             Llama31ReasoningTemplate: "meetkai/functionary-small-v3.1",
             LlavaLlama: "lmms-lab/llama3-llava-next-8b",
+            Qwen25PromptTemplate: "Qwen/Qwen2.5-VL-7B-Instruct",
         }
         self.default_text_str = "Normal text generation"
         self.default_tool_call_name = "get_weather"
@@ -555,7 +557,6 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                     finish_reason = "function_call"
                 else:
                     finish_reason = "stop"
-
                 self.assertEqual(
                     ChatMessage(**chat_mess),
                     test_case["expected_result"],
