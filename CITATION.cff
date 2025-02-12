@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as follows."
+title: "Functionary"
+authors:
+  - family-names: Gultekin
+    given-names: Musab
+    email: musab@meetkai.com
+  - given-names: Jeffrey
+    family-names: Fong
+    email: jeffrey.fong@meetkai.com
+  - given-names: Khai
+    family-names: Mai
+    email: khai.mai@meetkai.com
+  - given-names: Sarah
+    family-names: Lintang
+    email: sarah.lintang@meetkai.com
+abstract: "Functionary is a language model that can interpret and execute functions/plugins. 
+The model determines when to execute functions, whether in parallel or serially, and can 
+understand their outputs. It only triggers functions as needed. Function definitions are given 
+as JSON Schema Objects, similar to OpenAI GPT function calls."
+repository-code: "https://github.com/MeetKai/functionary"
+url: "https://meetkai.com/blog/meetkai-functionary"
+license: "MIT"
+keywords:
+  - "Python" 
+  - "AI"
+  - "LLM"
+  - "Agents"
+  - "AI-Agents"
+  - "Function-Calling"
