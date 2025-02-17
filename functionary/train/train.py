@@ -57,7 +57,7 @@ from typing import Union
 from functionary.prompt_template import PromptTemplate, get_prompt_template_by_version
 from functionary.train.custom_datasets import read_dataset
 from functionary.train import training_utils
-from training_utils import print_rank0
+from functionary.train.training_utils import print_rank0
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
@@ -246,11 +246,11 @@ def train():
             print(f"Eval Data Loaded: #{len(eval_dataset)}")
 
     print_rank0("***** HERE ARE SOME EXAMPLES FROM TRAINING ****")
-    training_utils.print_some_examples(train_dataset, tokenizer)
+    #training_utils.print_some_examples(train_dataset, tokenizer)
 
     if training_args.do_eval:
         print_rank0("***** HERE ARE SOME EXAMPLES FROM EVALUATION ***")
-        training_utils.print_some_examples(eval_dataset, tokenizer)
+        #training_utils.print_some_examples(eval_dataset, tokenizer)
 
     def preprocess_logits_for_metrics(logits, labels):
         return training_utils.preprocess_logits_for_metrics(
