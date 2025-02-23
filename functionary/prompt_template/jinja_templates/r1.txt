@@ -1,0 +1,97 @@
+{# version=r1 #}{%- if not add_generation_prompt is defined -%}
+    {%- set add_generation_prompt = false -%}
+{%- endif -%}
+{{- bos_token }}
+{%- if not tools is defined -%}
+    {%- set tools = none -%}
+{%- endif -%}
+
+{%- set has_code_interpreter = tools | selectattr("type", "equalto", "code_interpreter") | list | length > 0 -%}
+{%- if has_code_interpreter -%}
+    {%- set tools = tools | rejectattr("type", "equalto", "code_interpreter") | list -%}
+{%- endif -%}
+{%- set has_reasoning = tools | selectattr("type", "equalto", "reasoning") | list | length > 0 -%}
+{%- if has_reasoning -%}
+    {%- set tools = tools | rejectattr("type", "equalto", "reasoning") | list -%}
+{%- endif -%}
+{#- System message + builtin tools -#}
+{#- If at lease: has_reasoning or has_code_interpreter or tools -#}
+{%- if has_reasoning or has_code_interpreter or tools -%}
+    {{- "<｜System｜>\n" }}
+{%- endif -%}
+{%- if has_reasoning -%}
+    {{- "Reasoning Mode: On\n\n" }}
+{%- endif -%}
+{%- if has_code_interpreter -%}
+    {{- "Environment: ipython\n\n" }}
+{%- endif %}
+{%- if tools %}
+    {{- "\nYou have access to the following functions:\n\n" }}
+    {%- for t in tools %}
+        {%- if "type" in t -%}
+            {{ "Use the function '" + t["function"]["name"] + "' to '" + t["function"]["description"] + "'\n" + t["function"] | tojson() }}
+        {%- else -%}
+            {{ "Use the function '" + t["name"] + "' to '" + t["description"] + "'\n" + t | tojson }}
+        {%- endif -%}
+        {{- "\n\n" }}
+    {%- endfor %}
+    {{- '\nThink very carefully before calling functions.\n\n' -}}
+{%- endif %}
+{%- set ns = namespace(
+    is_first=false,
+    is_tool=false, 
+    is_output_first=true,
+    system_prompt='',
+    is_first_sp=true
+) -%}
+{#- Process messages -#}
+{%- for message in messages -%}
+    {%- if message['role'] == 'user'-%}
+        {# Reset tool and output first flags #}
+        {%- set ns.is_tool = false -%}
+        {{-'<｜User｜>' + message['content'] -}}
+    {%- elif message['role'] == 'system' -%}
+        {{- '<｜System｜>' + message['content'] + '\n' -}}
+    {%- elif message['role'] == 'assistant' -%}
+        {# Need to check need to add <｜tool▁outputs▁end｜> if the previous message is tool message #}
+        {%- if ns.is_tool -%}
+            {{- '<｜tool▁outputs▁end｜>' -}}
+            {%- set ns.is_tool = false -%}
+        {%- endif -%}
+        {{-'<｜Assistant｜>'}}
+        {%- if message['content'] and message['content']|length > 0 -%}
+            {{ message['content'] }}
+        {%- endif -%}
+        {#Check if there is tool call#}
+        {%- if 'tool_calls' in message and message['tool_calls'] and message['tool_calls']|length > 0 -%}
+            {%- set ns.is_tool = true -%}
+            {%- set ns.is_output_first = true -%}
+            {{- '<｜tool▁calls▁begin｜>'}}
+            {%- for tool_call in message['tool_calls'] -%}
+                {%- if tool_call["function"]["name"] == "python" -%}
+                    {%- set prefix = 'python' -%}
+                {%- else -%}
+                    {%- set prefix = 'json' -%}
+                {%- endif -%}
+                {{- '<｜tool▁call▁begin｜>function<｜tool▁sep｜>' + tool_call['function']['name'] + '\n```' + prefix + '\n' +  tool_call['function']['arguments'] + '\n```<｜tool▁call▁end｜>'}}
+            {%- endfor -%}
+            {{ '<｜tool▁calls▁end｜><｜end▁of▁sentence｜>' }}
+        {%- elif message['content'] and message['content']|length > 0 -%}
+            {{ '<｜end▁of▁sentence｜>' }}
+        {%- endif -%}
+    {%- elif message['role'] == 'tool' -%}
+        {# Check if this is the result of the first tool call #}
+        {%- if ns.is_output_first -%}
+            {{- '<｜tool▁outputs▁begin｜>'}}
+            {%- set ns.is_output_first = false -%}
+        {%- endif -%}
+        {{- '<｜tool▁output▁begin｜>' + message["content"] + '<｜tool▁output▁end｜>'}}
+    {%- endif -%}
+{%- endfor -%}
+{# Need to add closing tag for list of tool messages #}
+{%- if ns.is_tool -%}
+    {{- '<｜tool▁outputs▁end｜>' -}}
+{%- endif -%}
+{%- if add_generation_prompt and not ns.is_tool -%}
+    {{- '<｜Assistant｜>'}}
+{% endif %}
