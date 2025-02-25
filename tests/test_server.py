@@ -22,7 +22,6 @@ def popen_launch_server(
     base_url: str,
     timeout: float,
     context_length: int,
-    grammar_sampling: bool,
     env: Optional[dict] = None,
     return_stdout_stderr: bool = False,
 ) -> subprocess.Popen:
@@ -35,7 +34,6 @@ def popen_launch_server(
         base_url (str): The base URL for the server.
         timeout (float): Maximum time to wait for server launch.
         context_length (int): The context length for the model.
-        grammar_sampling (bool): Whether to enable grammar sampling.
         env (Optional[dict]): Environment variables for the subprocess. Defaults to None.
         return_stdout_stderr (bool): Whether to capture and return stdout/stderr. Defaults to False.
 
@@ -62,8 +60,6 @@ def popen_launch_server(
         command += ["--max-model-len", str(context_length)]
     else:
         command += ["--context-length", str(context_length)]
-    if grammar_sampling:
-        command += ["--enable-grammar-sampling"]
 
     if return_stdout_stderr:
         process = subprocess.Popen(
@@ -667,16 +663,14 @@ class TestServer(unittest.TestCase):
 
     def test_vllm_server(self):
         for model in self.served_models:
-            for grammar_sample in [False, True]:
-                self.process = popen_launch_server(
-                    backend="vllm",
-                    model=model,
-                    base_url=self.base_url,
-                    timeout=DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
-                    context_length=4096,
-                    grammar_sampling=grammar_sample,
-                )
-                self._evaluate_test_cases(model)
+            self.process = popen_launch_server(
+                backend="vllm",
+                model=model,
+                base_url=self.base_url,
+                timeout=DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
+                context_length=4096,
+            )
+            self._evaluate_test_cases(model)
 
     def test_sgl_server(self):
         for model in self.served_models:
@@ -686,6 +680,5 @@ class TestServer(unittest.TestCase):
                 base_url=self.base_url,
                 timeout=DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
                 context_length=4096,
-                grammar_sampling=False,
             )
             self._evaluate_test_cases(model)

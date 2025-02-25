@@ -180,7 +180,6 @@ async def process_chat_completion(
     served_model: List[str],
     served_loras: List[LoRARequest],
     engine_model_config: Any,
-    enable_grammar_sampling: bool,
     engine: Any,
 ):
     error_check_ret = await check_all_errors(request, served_model, served_loras)
@@ -216,14 +215,6 @@ async def process_chat_completion(
         tok_ids = tokenizer.encode(stop_tok, add_special_tokens=False)
         stop_token_ids.append(tok_ids[-1])
 
-    # In vLLM==0.4.1, SamplingParams.logprobs has a proportional effect on latency
-    # We need to limit the size of SamplingParams.logprobs as a temporary fix first
-    # while investigating this problem in vLLM
-    if enable_grammar_sampling is False:
-        logprobs = None
-    else:
-        logprobs = 200
-
     try:
         sampling_params = SamplingParams(
             n=request.n,
@@ -238,28 +229,17 @@ async def process_chat_completion(
             top_k=request.top_k,
             ignore_eos=request.ignore_eos,
             skip_special_tokens=False,
-            logprobs=logprobs,
+            logprobs=None,
         )
     except ValueError as e:
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
 
-    if enable_grammar_sampling:
-        result_generator = engine.generate(
-            prompt=TokensPrompt(prompt_token_ids=prompt_token_ids),
-            lora_request=lora_request,
-            sampling_params=sampling_params,
-            request_id=request_id,
-            tools_or_functions=tools_or_functions,
-            prompt_template_cls=prompt_template,
-            tool_choice=tool_func_choice,
-        )
-    else:
-        result_generator = engine.generate(
-            prompt=TokensPrompt(prompt_token_ids=prompt_token_ids),
-            lora_request=lora_request,
-            sampling_params=sampling_params,
-            request_id=request_id,
-        )
+    result_generator = engine.generate(
+        prompt=TokensPrompt(prompt_token_ids=prompt_token_ids),
+        lora_request=lora_request,
+        sampling_params=sampling_params,
+        request_id=request_id,
+    )
 
     async def abort_request() -> None:
         await engine.abort(request_id)
