@@ -44,6 +44,7 @@ class TestPromptTemplate(unittest.TestCase):
             "v3-llama3.1": "meetkai/functionary-small-v3.1",
             "r1": "deepseek-ai/DeepSeek-R1",
             "r1_distilled_qwen": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+            "r1_distilled_llama": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         }
         self.image_template_version_to_model_name = {
             "v3.llava_llama": "meetkai/functionary-vision-small-v0.1"

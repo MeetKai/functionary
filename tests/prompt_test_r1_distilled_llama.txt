@@ -1,0 +1,47 @@
+<｜System｜>
+Environment: ipython
+
+
+You have access to the following functions:
+
+Use the function 'get_car_price' to 'Get the price of a particular car model'
+{"name": "get_car_price", "description": "Get the price of a particular car model", "parameters": {"type": "object", "properties": {"car_name": {"type": "string", "description": "The name of the car model"}}, "required": ["car_name"]}}
+
+Use the function 'get_weather' to 'This function's purpose is to get the weather of a location'
+{"name": "get_weather", "description": "This function's purpose is to get the weather of a location", "parameters": {"type": "object", "properties": {"location": {"type": "string", "description": "where to get weather"}}, "required": ["location"]}}
+
+
+Think very carefully before calling functions.
+If a you choose to call a function ONLY reply in the following format:
+<{start_tag}={function_name}>{parameters}{end_tag}
+where
+
+start_tag => `<function`
+parameters => a JSON dict with the function argument name as key and function argument value as value.
+end_tag => `</function>`
+
+Here is an example,
+<function=example_function_name>{"example_name": "example_value"}</function>
+
+Reminder:
+- If looking for real time information use relevant functions before falling back to brave_search
+- Function calls MUST follow the specified format, start with <function= and end with </function>
+- Required parameters MUST be specified
+- Only call one function at a time
+- Put the entire function call reply on one line
+
+<｜User｜>who is the CEO of Meetkai<｜Assistant｜>James Kaplan is the Co-Founder and CEO of MeetKai Inc.<｜end▁of▁sentence｜><｜User｜>is the car Song more expensive than car Tang?<｜Assistant｜>I will get the price of 2 cars and compare<function=get_car_price>{"car_name": "Song"}</function><function=get_car_price>{"car_name": "Tang"}</function><|eom_id|>ipython
+
+{"price": {"price": "$25000"}}ipython
+
+{"price": {"price": "$20000"}}<｜Assistant｜>No, the car Tang is less expensive than the car Song. The car Song is priced at $25,000, while the car Tang is priced at $20,000.<｜end▁of▁sentence｜><｜User｜>what's the weather like in Hanoi?<｜Assistant｜><function=get_weather>{"location": "Hanoi"}</function><|eom_id|>ipython
+
+{"result": {"temperature": 10}}<｜Assistant｜>The temperature in Hanoi is: 10 degree Celcious<｜end▁of▁sentence｜><｜User｜>Given the list of strings: '0','1','2','3','4','5' remove the number in the list that is close to 3.6 the most<｜Assistant｜>I'll use code interpreter to handle this<|python_tag|>l=[int('0'),int('1'),int('2'),int('3'),int('4'),int('5')]
+l.remove(3.6)<|eom_id|>ipython
+
+ValueError: list.remove(x): x not in list<｜Assistant｜>I will fix the code<|python_tag|>l.remove(round(3.6))
+l<|eom_id|>ipython
+
+[0,1,2,3,5,]<｜Assistant｜>The final list is: 0,1,2,3,5<｜end▁of▁sentence｜><｜User｜>Thanks! What's the weather in San Francisco?<｜Assistant｜><function=get_weather>{"location": "San Francisco, CA"}</function><|eom_id|>ipython
+
+{"result": {"temperature": 20}}<｜Assistant｜>The temperature in San Francisco is: 20 degree Celcious<｜end▁of▁sentence｜>

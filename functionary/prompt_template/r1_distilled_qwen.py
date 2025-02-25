@@ -12,7 +12,7 @@ import copy
 class R1DistilledQwen(PromptTemplate):
     version = "r1_distilled_qwen"
     chat_template = None
-    
+
     def get_additional_tokens(self) -> List[str]:
         return []
 
@@ -155,10 +155,12 @@ class R1DistilledQwen(PromptTemplate):
         )
 
         return prompt
-    
+
     def get_chat_template_jinja(self) -> str:
         if self.chat_template is None:
-            jinja_template_file = "./functionary/prompt_template/jinja_templates/r1_distilled_qwen.txt"
+            jinja_template_file = (
+                "./functionary/prompt_template/jinja_templates/r1_distilled_qwen.txt"
+            )
             with open(jinja_template_file, "r") as f:
                 self.chat_template = f.read()
         return self.chat_template
