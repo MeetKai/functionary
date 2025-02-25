@@ -8,8 +8,11 @@ from functionary.prompt_template.llama31_prompt_template import Llama31Template
 from functionary.prompt_template.llava_prompt_template import LlavaLlama
 from functionary.prompt_template.prompt_template_v1 import PromptTemplateV1
 from functionary.prompt_template.prompt_template_v2 import PromptTemplateV2
-from functionary.prompt_template.llama31_reasoning_prompt_template import Llama31ReasoningTemplate
+from functionary.prompt_template.llama31_reasoning_prompt_template import (
+    Llama31ReasoningTemplate,
+)
 from functionary.prompt_template.r1_template import R1Template
+from functionary.prompt_template.r1_distilled_qwen import R1DistilledQwen
 
 
 def get_available_prompt_template_versions() -> List[PromptTemplate]:

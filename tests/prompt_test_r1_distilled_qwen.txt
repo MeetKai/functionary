@@ -1,0 +1,49 @@
+<｜System｜>
+
+# Tools
+
+You may call one or more functions to assist with the user query.
+
+You are provided with function signatures within <tools></tools> XML tags:
+<tools>
+{"type": "function", "function": {"name": "get_car_price", "description": "Get the price of a particular car model", "parameters": {"type": "object", "properties": {"car_name": {"type": "string", "description": "The name of the car model"}}, "required": ["car_name"]}}}
+{"type": "function", "function": {"name": "get_weather", "description": "This function's purpose is to get the weather of a location", "parameters": {"type": "object", "properties": {"location": {"type": "string", "description": "where to get weather"}}, "required": ["location"]}}}
+{"type": "function", "function": {"name": "python", "description": "When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at \"/mnt/data\" can be used to save and persist user files.", "parameters": {"type": "object", "properties": {"code": {"type": "string", "description": "Python code"}}, "required": ["code"]}}}
+</tools>
+
+For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
+<tool_call>
+{"name": <function-name>, "arguments": <args-json-object>}
+</tool_call>
+<｜User｜>who is the CEO of Meetkai<｜Assistant｜>James Kaplan is the Co-Founder and CEO of MeetKai Inc.<｜end▁of▁sentence｜><｜User｜>is the car Song more expensive than car Tang?<｜Assistant｜>I will get the price of 2 cars and compare<tool_call>
+{"name": "get_car_price", "arguments": {'car_name': 'Song'}}
+</tool_call>
+<tool_call>
+{"name": "get_car_price", "arguments": {'car_name': 'Tang'}}
+</tool_call><｜end▁of▁sentence｜><｜User｜>
+<tool_response>
+{"price": {"price": "$25000"}}
+</tool_response>
+<tool_response>
+{"price": {"price": "$20000"}}
+</tool_response><｜Assistant｜>No, the car Tang is less expensive than the car Song. The car Song is priced at $25,000, while the car Tang is priced at $20,000.<｜end▁of▁sentence｜><｜User｜>what's the weather like in Hanoi?<｜Assistant｜><tool_call>
+{"name": "get_weather", "arguments": {'location': 'Hanoi'}}
+</tool_call><｜end▁of▁sentence｜><｜User｜>
+<tool_response>
+{"result": {"temperature": 10}}
+</tool_response><｜Assistant｜>The temperature in Hanoi is: 10 degree Celcious<｜end▁of▁sentence｜><｜User｜>Given the list of strings: '0','1','2','3','4','5' remove the number in the list that is close to 3.6 the most<｜Assistant｜>I'll use code interpreter to handle this<tool_call>
+{"name": "python", "arguments": {'code': "l=[int('0'),int('1'),int('2'),int('3'),int('4'),int('5')]\nl.remove(3.6)"}}
+</tool_call><｜end▁of▁sentence｜><｜User｜>
+<tool_response>
+ValueError: list.remove(x): x not in list
+</tool_response><｜Assistant｜>I will fix the code<tool_call>
+{"name": "python", "arguments": {'code': 'l.remove(round(3.6))\nl'}}
+</tool_call><｜end▁of▁sentence｜><｜User｜>
+<tool_response>
+[0,1,2,3,5,]
+</tool_response><｜Assistant｜>The final list is: 0,1,2,3,5<｜end▁of▁sentence｜><｜User｜>Thanks! What's the weather in San Francisco?<｜Assistant｜><tool_call>
+{"name": "get_weather", "arguments": {'location': 'San Francisco, CA'}}
+</tool_call><｜end▁of▁sentence｜><｜User｜>
+<tool_response>
+{"result": {"temperature": 20}}
+</tool_response><｜Assistant｜>The temperature in San Francisco is: 20 degree Celcious<｜end▁of▁sentence｜>

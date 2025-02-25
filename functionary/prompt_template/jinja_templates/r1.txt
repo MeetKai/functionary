@@ -42,17 +42,21 @@
     is_tool=false, 
     is_output_first=true,
     system_prompt='',
-    is_first_sp=true
+    is_first_sp=true,
+    last_message_is_tool=false
 ) -%}
 {#- Process messages -#}
 {%- for message in messages -%}
     {%- if message['role'] == 'user'-%}
         {# Reset tool and output first flags #}
+        {%- set ns.last_message_is_tool = false -%}
         {%- set ns.is_tool = false -%}
         {{-'<｜User｜>' + message['content'] -}}
     {%- elif message['role'] == 'system' -%}
+        {%- set ns.last_message_is_tool = false -%}
         {{- '<｜System｜>' + message['content'] + '\n' -}}
     {%- elif message['role'] == 'assistant' -%}
+        {%- set ns.last_message_is_tool = false -%}
         {# Need to check need to add <｜tool▁outputs▁end｜> if the previous message is tool message #}
         {%- if ns.is_tool -%}
             {{- '<｜tool▁outputs▁end｜>' -}}
@@ -80,6 +84,7 @@
             {{ '<｜end▁of▁sentence｜>' }}
         {%- endif -%}
     {%- elif message['role'] == 'tool' -%}
+        {%- set ns.last_message_is_tool = true -%}
         {# Check if this is the result of the first tool call #}
         {%- if ns.is_output_first -%}
             {{- '<｜tool▁outputs▁begin｜>'}}
@@ -89,7 +94,7 @@
     {%- endif -%}
 {%- endfor -%}
 {# Need to add closing tag for list of tool messages #}
-{%- if ns.is_tool -%}
+{%- if ns.last_message_is_tool -%}
     {{- '<｜tool▁outputs▁end｜>' -}}
 {%- endif -%}
 {%- if add_generation_prompt and not ns.is_tool -%}
