@@ -27,7 +27,6 @@ Documentation and more examples: [functionary.meetkai.com](https://functionary.m
   + [2024/05/17] We release [meetkai/functionary-small-v2.5](https://huggingface.co/meetkai/functionary-small-v2.5) with better capability for function calling and code interpreter compared with [functionary-small-v2.4](https://huggingface.co/meetkai/functionary-small-v2.4)
   + [2024/05/06] Streaming support for functionary v2 to v2.4 models is released in [llama-cpp-python](https://github.com/abetlen/llama-cpp-python)!
   + [2024/05/03] Added support for serverless vLLM deployment on [Modal.com](https://modal.com/)
-  + [2024/04/27] New and improved grammar sampling! Ensures 100% accuracy in generating function names, prompt template and parameters.
   + [2024/04/02] We release [meetkai/functionary-small-v2.4](https://huggingface.co/meetkai/functionary-small-v2.4) and [meetkai/functionary-medium-v2.4](https://huggingface.co/meetkai/functionary-medium-v2.4)! The first functionary models with code-interpreter ability (by passing in `{type: "code_interpreter"}` in tools)!
 
 </details>
@@ -112,17 +111,6 @@ curl -X POST http://localhost:8000/v1/unload_lora_adapter \
     "lora_name": "my_lora"
   }'
 ```
-
-
-### Grammar Sampling (Only in vLLM)
-
-We also offer our own function-calling grammar sampling feature which constrains the LLM's generation to always follow the prompt template, and ensures 100% accuracy for function name. The parameters are generated using the efficient [lm-format-enforcer](https://github.com/noamgat/lm-format-enforcer), which ensures that the parameters follow the schema of the tool called. To enable grammar sampling, run the vLLM server with the command-line argument <code>--enable-grammar-sampling</code>:
-
-```shell
-python3 server_vllm.py --model "meetkai/functionary-medium-v3.1" --max-model-len 8192 --tensor-parallel-size 2 --enable-grammar-sampling
-```
-
-**Note:** Grammar Sampling support is applicable only for the V2, V3.0, V3.2 models. There is no such support for V1 and V3.1 models.
 
 
 ### Text-Generation-Inference (TGI)
@@ -711,11 +699,6 @@ Evaluation function call prediction in SGD dataset. The accuracy metric measures
 
 See training [README](functionary/train/README.md)
 
-## Safety & Security
-
-While its not strictly enforced, to ensure more *secure* function execution, one can enable grammar sampling to enforce type checking.
-Main safety checks needs to be done in the functions/actions themselves. Such as validation of the given input, or the ouput that will be given to the model.
-
 ## Roadmap
 
 - [ ] OpenAPI specification based plugin support.
@@ -724,7 +707,6 @@ Main safety checks needs to be done in the functions/actions themselves. Such as
   - [X] [text-generation-inference](https://github.com/huggingface/text-generation-inference)
   - [X] Streaming Support
   - [X] function_call parameter to server
-  - [X] Grammar Sampling to ensure 100% accuracy for function and parameter names
 - [X] Parallel function calling support
 - [X] Python function calling support (Automatic detection of type annotations and calling them automatically)
 - [X] Real world usage examples, such as creating agents.
