@@ -29,6 +29,7 @@ from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from vllm.engine.arg_utils import AsyncEngineArgs
+from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.entrypoints.openai.api_server import mount_metrics
 from vllm.entrypoints.openai.protocol import (
     LoadLoraAdapterRequest,
@@ -125,7 +126,6 @@ async def create_chat_completion(raw_request: Request):
         served_model=served_model,
         served_loras=served_loras,
         engine_model_config=engine_model_config,
-        enable_grammar_sampling=args.grammar_sampling,
         engine=engine,
     )
 
@@ -181,27 +181,9 @@ if __name__ == "__main__":
         help="LoRA modules in the format 'name=path name=path ...'",
         default=[],
     )
-    parser.add_argument(
-        "--enable-grammar-sampling",
-        dest="grammar_sampling",
-        action="store_true",
-        default=False,
-        help="enable grammar sampling for function names",
-    )
 
     parser = AsyncEngineArgs.add_cli_args(parser)
     args = parser.parse_args()
-
-    v1_pattern = r"v1.*$"
-    v31_pattern = r"v3.1$"
-    if re.search(v1_pattern, args.model) or re.search(v31_pattern, args.model):
-        args.grammar_sampling = False
-
-    if args.grammar_sampling:
-        logger.info("Grammar sampling enabled.")
-        from functionary.vllm_monkey_patch.async_llm_engine import AsyncLLMEngine
-    else:
-        from vllm.engine.async_llm_engine import AsyncLLMEngine
 
     mount_metrics(app)
 
@@ -235,8 +217,6 @@ if __name__ == "__main__":
     tokenizer = get_tokenizer(
         engine_args.tokenizer, tokenizer_mode=engine_args.tokenizer_mode
     )
-    # Overwrite vLLM's default ModelConfig.max_logprobs of 5
-    engine_args.max_logprobs = len(tokenizer.vocab.keys())
 
     engine = AsyncLLMEngine.from_engine_args(engine_args)
     engine_model_config = asyncio.run(engine.get_model_config())

@@ -1,24 +1,17 @@
 from typing import Dict, List, Optional, Union
 
 import torch
-from lmformatenforcer import CharacterLevelParser, JsonSchemaParser
-from lmformatenforcer.integrations.vllm import build_vllm_logits_processor
 from transformers import (
     LlamaForCausalLM,
     LlamaTokenizer,
     StoppingCriteria,
     StoppingCriteriaList,
 )
-from vllm.model_executor.guided_decoding.lm_format_enforcer_decoding import (
-    _cached_build_vllm_token_enforcer_tokenizer_data,
-    _normalize_json_schema_object,
-)
-from vllm.sampling_params import LogitsProcessor
 
+from functionary.inference_utils import StopWordsCriteria
 from functionary.openai_types import ChatMessage, Function, FunctionCall, Tool
 from functionary.prompt_template import get_prompt_template_from_tokenizer
 from functionary.prompt_template.prompt_utils import prepare_messages_for_inference
-from functionary.inference_utils import StopWordsCriteria
 
 
 def tokenize(message: ChatMessage, tokenizer: LlamaTokenizer, device="cuda:0"):
@@ -98,30 +91,6 @@ def generate_message(
     ).strip()
     result = prompt_template.parse_assistant_response(generated_content)
     return ChatMessage(**result)
-
-
-async def get_lm_format_enforcer_vllm_logits_processor_from_tool_name(
-    tool_name, tools_or_functions, tokenizer
-) -> LogitsProcessor:
-    """
-    Given a tool_name and list of tool definitions, find the json schema
-    of the tool with tool_name name and get the necessary vLLM logits processor
-    for the given tool schema."""
-
-    tokenizer_data = _cached_build_vllm_token_enforcer_tokenizer_data(tokenizer)
-    character_level_parser: CharacterLevelParser
-
-    # Get the tool schema
-    for tool_or_function in tools_or_functions:
-        if tool_or_function["name"] == tool_name:
-            raw_tool_schema = tool_or_function["parameters"]
-            break
-    schema = _normalize_json_schema_object(raw_tool_schema)
-    character_level_parser = JsonSchemaParser(schema)
-    logits_processor = build_vllm_logits_processor(
-        tokenizer_data, character_level_parser
-    )
-    return logits_processor
 
 
 if __name__ == "__main__":
