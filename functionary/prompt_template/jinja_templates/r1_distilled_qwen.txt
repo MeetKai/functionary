@@ -29,7 +29,12 @@
         {%- if message.content %}
             {{- message.content }}
         {%- endif %}
-        {%- for tool_call in message.tool_calls %}
+        {%- if "tool_calls" in message and message["tool_calls"] is not none -%}
+            {%- set tool_calls = message["tool_calls"] -%}
+        {%-else-%}
+            {%- set tool_calls = [] -%}
+        {%- endif -%}
+        {%- for tool_call in tool_calls %}
             {%- if tool_call.function is defined %}
                 {%- set tool_call = tool_call.function %}
             {%- endif %}
