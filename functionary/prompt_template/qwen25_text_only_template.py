@@ -132,7 +132,7 @@ class Qwen25TextOnlyPromptTemplate(PromptTemplate):
         )
 
         # print(f"+++LLM_OUTPUT: {llm_output}")
-        llm_output = post_process_llm_output(llm_output)
+        # llm_output = post_process_llm_output(llm_output)
         # print(f"+++LLM_OUTPUT after post-processing: {llm_output}")
         text_content = ""
         tool_call_strs = []
