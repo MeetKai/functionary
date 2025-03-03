@@ -14,6 +14,7 @@ from functionary.prompt_template.llama31_reasoning_prompt_template import (
 from functionary.prompt_template.r1_template import R1Template
 from functionary.prompt_template.r1_distilled_qwen import R1DistilledQwen
 from functionary.prompt_template.r1_distilled_llama import R1DistilledLlama
+from functionary.prompt_template.qwen25_text_only_template import Qwen25TextOnlyPromptTemplate
 
 
 def get_available_prompt_template_versions() -> List[PromptTemplate]:
