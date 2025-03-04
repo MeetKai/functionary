@@ -37,6 +37,7 @@ def get_available_prompt_template_versions() -> List[PromptTemplate]:
     all_templates_obj.append(LlavaLlama.get_prompt_template())
     all_templates_obj.append(Llama31ReasoningTemplate.get_prompt_template())
     all_templates_obj.append(R1DistilledLlama.get_prompt_template())
+    all_templates_obj.append(R1DistilledQwen.get_prompt_template())
     return all_templates_obj
 
 

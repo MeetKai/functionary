@@ -5,11 +5,13 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from functionary.openai_types import Function, Tool
 from functionary.prompt_template import prompt_utils
-from functionary.prompt_template.base_template import PromptTemplate
+from functionary.prompt_template.qwen25_text_only_template import (
+    Qwen25TextOnlyPromptTemplate,
+)
 import copy
 
 
-class R1DistilledQwen(PromptTemplate):
+class R1DistilledQwen(Qwen25TextOnlyPromptTemplate):
     version = "r1_distilled_qwen"
     chat_template = None
 
@@ -90,71 +92,6 @@ class R1DistilledQwen(PromptTemplate):
             tool_calls = None
 
         return {"role": "assistant", "content": text_response, "tool_calls": tool_calls}
-
-    def get_prompt_from_messages(
-        self,
-        messages: List[Dict],
-        tools_or_functions: Optional[List[Dict]] = None,
-        bos_token: Optional[str] = "",
-        add_generation_prompt: bool = False,
-    ) -> str:
-        """This function is used to get the complete prompt for list of messages
-
-        Args:
-            messages (List[Dict]): List of messages
-            tools_or_functions (Optional[List[Dict]], optional): List of tools or functions. Defaults to None.
-
-        Returns:
-            str: the prompt for inference/training
-        """
-        # qwen 2.5 use transformers chat template, need to convert argument string --> dictionary, this is noted in: https://huggingface.co/docs/transformers/main/en/chat_templating#a-complete-tool-use-example
-        # If you’re familiar with the OpenAI API, you should pay attention to an important difference here - the tool_call is a dict, but in the OpenAI API it’s a JSON string. Passing a string may cause errors or strange model behaviour!
-        new_messages = copy.deepcopy(messages)
-        for message in new_messages:
-            tool_calls = message.get("tool_calls", [])
-            if tool_calls:
-                for tool_call in tool_calls:
-                    if type(tool_call["function"]["arguments"]) is str:
-                        if tool_call["function"]["name"] != "python":
-                            tool_call["function"]["arguments"] = json.loads(
-                                tool_call["function"]["arguments"]
-                            )
-                        else:
-                            tool_call["function"] = {
-                                "name": "python",
-                                "arguments": {
-                                    "code": tool_call["function"]["arguments"]
-                                },
-                            }
-        # check if contain code_interpreter, replace with python
-        new_tools = copy.deepcopy(tools_or_functions)
-        if tools_or_functions is not None and len(tools_or_functions) == 0:
-            new_tools = None
-
-        if new_tools:
-            for tool in new_tools:
-                if tool["type"] == "code_interpreter":
-                    tool["type"] = "function"
-                    tool["function"] = {
-                        "name": "python",
-                        "description": 'When you send a message containing Python code to python, it will be executed in a stateful Jupyter notebook environment. python will respond with the output of the execution or time out after 60.0 seconds. The drive at "/mnt/data" can be used to save and persist user files.',
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "code": {"type": "string", "description": "Python code"}
-                            },
-                            "required": ["code"],
-                        },
-                    }
-
-        prompt = self._jinja_template.render(
-            messages=new_messages,
-            tools=new_tools,
-            bos_token=bos_token,
-            add_generation_prompt=add_generation_prompt,
-        )
-
-        return prompt
 
     def get_chat_template_jinja(self) -> str:
         if self.chat_template is None:
