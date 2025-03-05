@@ -11,11 +11,10 @@ from functionary.prompt_template.prompt_template_v2 import PromptTemplateV2
 from functionary.prompt_template.llama31_reasoning_prompt_template import (
     Llama31ReasoningTemplate,
 )
-from functionary.prompt_template.r1_template import R1Template
+from functionary.prompt_template.r1_original_template import R1Template
 from functionary.prompt_template.r1_distilled_qwen import R1DistilledQwen
 from functionary.prompt_template.r1_distilled_llama import R1DistilledLlama
 from functionary.prompt_template.qwen25_text_only_template import Qwen25TextOnlyPromptTemplate
-
 
 def get_available_prompt_template_versions() -> List[PromptTemplate]:
     """This function will get all the available prompt templates in the module.
