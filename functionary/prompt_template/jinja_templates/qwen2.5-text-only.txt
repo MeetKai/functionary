@@ -76,5 +76,5 @@
     {%- endif %}
 {%- endfor %}
 {%- if add_generation_prompt %}
-    {{- '<|im_start|>assistant\n' }}
+    {{- '<|im_start|>assistant\n<think>\n' }}
 {%- endif %}
