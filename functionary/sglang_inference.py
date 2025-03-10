@@ -570,6 +570,7 @@ async def v1_chat_completions(
     """
     request_json = await raw_request.json()
     request = ChatCompletionRequest(**request_json)
+    
     tokenizer = (
         tokenizer_manager.tokenizer
         if tokenizer_manager
