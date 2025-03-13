@@ -12,6 +12,7 @@ from datasets import load_dataset
 from packed_dataset import PackedDataset
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoTokenizer
+from transformers import Gemma3ForConditionalGeneration
 
 random.seed(1)
 torch.manual_seed(3)
@@ -79,7 +80,7 @@ def compute_loss_for_model_class(
     Returns:
         _type_: _description_
     """
-    model = transformers.AutoModelForCausalLM.from_pretrained(
+    model = Gemma3ForConditionalGeneration.from_pretrained(
         pretrained_path,
         torch_dtype=torch.bfloat16,
         device_map="auto",
