@@ -215,7 +215,9 @@ if __name__ == "__main__":
     engine_args = AsyncEngineArgs.from_cli_args(args)
     # A separate tokenizer to map token IDs to strings.
     tokenizer = get_tokenizer(
-        engine_args.tokenizer, tokenizer_mode=engine_args.tokenizer_mode
+        engine_args.tokenizer, 
+        tokenizer_mode=engine_args.tokenizer_mode,
+        trust_remote_code=engine_args.trust_remote_code,
     )
 
     engine = AsyncLLMEngine.from_engine_args(engine_args)
