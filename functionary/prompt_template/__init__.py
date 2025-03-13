@@ -15,6 +15,8 @@ from functionary.prompt_template.r1_original_template import R1Template
 from functionary.prompt_template.r1_distilled_qwen import R1DistilledQwen
 from functionary.prompt_template.r1_distilled_llama import R1DistilledLlama
 from functionary.prompt_template.qwen25_text_only_template import Qwen25TextOnlyPromptTemplate
+from functionary.prompt_template.gemma3_prompt_template import Gemma3Template
+
 
 def get_available_prompt_template_versions() -> List[PromptTemplate]:
     """This function will get all the available prompt templates in the module.
@@ -37,6 +39,7 @@ def get_available_prompt_template_versions() -> List[PromptTemplate]:
     all_templates_obj.append(Llama31ReasoningTemplate.get_prompt_template())
     all_templates_obj.append(R1DistilledLlama.get_prompt_template())
     all_templates_obj.append(R1DistilledQwen.get_prompt_template())
+    all_templates_obj.append(Gemma3Template.get_prompt_template())
     return all_templates_obj
 
 
