@@ -168,9 +168,14 @@ class Qwen25TextOnlyPromptTemplate(PromptTemplate):
                 }
             )
         content, reasoning_content = None, None
-        total_content = "<think>\n" + text_content if len(text_content) > 0 else None
+        total_content = "\n" + text_content if len(text_content) > 0 else None
         if total_content: # parase
-            content, reasoning_content = total_content.split("</think>")
+            parts = total_content.split("</think>")
+            if len(parts) == 2:
+                reasoning_content = parts[0]
+                content = parts[1]
+            else:
+                content = "<think>" + total_content
         return {
             "role": "assistant",
             "content": content,
