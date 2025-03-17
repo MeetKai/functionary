@@ -130,6 +130,7 @@ def get_function_delta_response(
     return {
         "delta": {
             "content": None,
+            "reasoning_content": None,
             "function_call": None,
             "role": None if not return_role else "assistant",
             "tool_calls": [
@@ -152,7 +153,7 @@ def get_function_delta_response(
 
 
 def get_text_delta_response(
-    delta_text: Optional[str], return_role: bool, finish_reason: Optional[str]
+    delta_text: Optional[str], return_role: bool, finish_reason: Optional[str], content_type: str = "main_content"
 ) -> Dict:
     """Return delta for text_response in streaming
 
@@ -166,7 +167,8 @@ def get_text_delta_response(
     """
     return {
         "delta": {
-            "content": delta_text,
+            "content": delta_text if content_type == "main_content" else None,
+            "reasoning_content": delta_text if content_type == "reasoning" else None,
             "function_call": None,
             "role": None if not return_role else "assistant",
             "tool_calls": None,

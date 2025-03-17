@@ -167,10 +167,14 @@ class Qwen25TextOnlyPromptTemplate(PromptTemplate):
                     },
                 }
             )
-
+        content, reasoning_content = None, None
+        total_content = "<think>\n" + text_content if len(text_content) > 0 else None
+        if total_content: # parase
+            content, reasoning_content = total_content.split("</think>")
         return {
             "role": "assistant",
-            "content": "<think>\n" + text_content if len(text_content) > 0 else None,
+            "content": content,
+            "reasoning_content": reasoning_content,
             "tool_calls": None if len(tool_calls) == 0 else tool_calls,
         }
 
@@ -228,6 +232,7 @@ class Qwen25TextOnlyPromptTemplate(PromptTemplate):
         tools_or_functions: List[Dict],
         tool_choice: Any,
     ) -> Tuple[Dict, Optional[Union[Dict, List[Dict]]]]:
+        # print(f"delta_text: ###", {"delta": delta_text})
         if finish_reason is not None:  # handle if finish
             if gen_state["stage"] not in ["text_gen"]:
                 finish_reason = "tool_calls"
@@ -242,9 +247,7 @@ class Qwen25TextOnlyPromptTemplate(PromptTemplate):
                     buffer_str = "".join(
                         gen_state["buffer"]
                     ).rstrip()  # remove \n at the end
-                    last_response = prompt_utils.get_text_delta_response(
-                        buffer_str, False, None
-                    )
+                    last_response = handle_buffer_for_finish_generating_text(buffer_str, gen_state)
 
                 elif gen_state["stage"] == "function_arguments":
                     buffer_str = "".join(
@@ -261,6 +264,8 @@ class Qwen25TextOnlyPromptTemplate(PromptTemplate):
                     last_response = return_all_code_from_buffer(gen_state)
 
             if last_response is not None:
+                if type(last_response) == list:
+                    return gen_state, last_response + [end_response]
                 return gen_state, [last_response, end_response]
             else:
                 return gen_state, [end_response]
@@ -287,10 +292,11 @@ class Qwen25TextOnlyPromptTemplate(PromptTemplate):
                 gen_state["buffer"] = (
                     []
                 )  # put to buffer before we return because we need to check the last item
+                gen_state["content_type"] = "reasoning"
                 responses = [
-                    prompt_utils.get_text_delta_response("", True, finish_reason)
+                    prompt_utils.get_text_delta_response("", True, finish_reason, content_type="reasoning")
                 ]
-                gen_state["buffer"].extend(["<think>", "\n"])
+                gen_state["buffer"].extend(["\n"]) # always reasoning_content first
                 if len(delta_text) > 0:
                     gen_state["buffer"].append(delta_text)
                 return gen_state, responses
@@ -335,17 +341,42 @@ class Qwen25TextOnlyPromptTemplate(PromptTemplate):
                 buffer_str = "".join(
                     gen_state["buffer"]
                 ).rstrip()  # remove \n at the end
+                
                 if len(buffer_str) > 0:
-                    return gen_state, prompt_utils.get_text_delta_response(
-                        buffer_str, False, finish_reason
-                    )
+                    response = handle_buffer_for_finish_generating_text(buffer_str, gen_state)
+                    return gen_state, response
             else:
                 gen_state["buffer"].append(delta_text)
-                if len(gen_state["buffer"]) >= 2:
-                    delta_text_item = gen_state["buffer"].pop(0)
-                    return gen_state, prompt_utils.get_text_delta_response(
-                        delta_text_item, False, finish_reason
-                    )
+                if len(gen_state["buffer"]) < 4: # must have 4 items in buffer
+                    return gen_state, None
+                
+                if gen_state["content_type"] == "reasoning":
+                    text_in_buffer = "".join(gen_state["buffer"])
+                    index = text_in_buffer.find("</think>")
+                    if index >= 0: # reach the end of reasoning
+                        gen_state["content_type"] = "main_content"
+                        last_reasoning_chunk = text_in_buffer[:index]
+                        remaining_buffer = text_in_buffer[index + len("</think>"):]
+                        gen_state["buffer"] = []
+                        if len(remaining_buffer) > 0:
+                            gen_state["buffer"].append(remaining_buffer)
+                        
+                        if len(last_reasoning_chunk) > 0:
+                            return gen_state, prompt_utils.get_text_delta_response(
+                                last_reasoning_chunk, False, finish_reason, content_type="reasoning"
+                            )
+                    else: # still not found end of reasoning
+                        if len(gen_state["buffer"]) >= 2:
+                            delta_text_item = gen_state["buffer"].pop(0)
+                            return gen_state, prompt_utils.get_text_delta_response(
+                                delta_text_item, False, finish_reason, content_type="reasoning"
+                            )
+                else:
+                    if len(gen_state["buffer"]) >= 2:
+                        delta_text_item = gen_state["buffer"].pop(0)
+                        return gen_state, prompt_utils.get_text_delta_response(
+                            delta_text_item, False, finish_reason, content_type="main_content"
+                        )
 
         elif gen_state["stage"] == "function_arguments":
             # check if current function is python, we need to stream the code string inside, not a json
@@ -428,3 +459,34 @@ def match_pattern(pattern: str, text: str) -> Tuple[int, int]:
     if match:
         return match.start(), match.end()
     return -1, -1
+
+
+def handle_buffer_for_finish_generating_text(buffer_str: str, gen_state: Dict):
+    last_response = []
+    if gen_state["content_type"] == "reasoning": # still at reasoning stage
+        index = buffer_str.find("</think>")
+        if index >=0:
+            last_reasoning_chunk = buffer_str[:index]
+            remaining_buffer = buffer_str[index + len("</think>"):]
+            if len(last_reasoning_chunk) > 0:
+                last_response.append(
+                    prompt_utils.get_text_delta_response(
+                        last_reasoning_chunk, False, None, content_type="reasoning"
+                    )
+                )
+                
+            if len(remaining_buffer) > 0:
+                last_response.append(
+                    prompt_utils.get_text_delta_response(
+                        remaining_buffer, False, None, content_type="main_content"
+                    )
+                )
+        else: # </think> not found, still at reasoning stage
+            last_response = prompt_utils.get_text_delta_response(
+                buffer_str, False, None, content_type="reasoning"
+            )
+    else: # return the last chunk of main content
+        last_response = prompt_utils.get_text_delta_response(
+            buffer_str, False, None, content_type="main_content"
+        )
+    return last_response
