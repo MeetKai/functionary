@@ -159,7 +159,6 @@ def v1_chat_generate_request(
         top_logprobs_num=request.top_logprobs,
         stream=request.stream,
         return_text_in_logprobs=True,
-        rid=f"chatcmpl-{uuid.uuid4().hex}",
     )
 
     return adapted_request, request
@@ -393,7 +392,7 @@ async def completion_stream_generator(params: ChatCompletionParams):
 
 async def v1_chat_generate_completion(
     params: ChatCompletionParams,
-) -> Tuple[Union[StreamingResponse, str], Optional[JSONResponse]]:
+) -> Tuple[Union[StreamingResponse, str, List[str]], Optional[JSONResponse]]:
     """
     Generate a text completion.
 
@@ -470,11 +469,16 @@ async def v1_chat_generate_completion(
                 return None, create_error_response(
                     status_code=HTTPStatus.BAD_REQUEST, message=str(e), param=None
                 )
-            return ret["text"], None
+            if (
+                type(ret) == list
+            ):  # if n > 1 (multiple samples), we return a list of strings
+                return [item["text"] for item in ret], None
+            else:
+                return ret["text"], None
 
 
 def v1_chat_generate_response(
-    output_text: str, params: ChatCompletionParams
+    output_text: Union[str, List[str]], params: ChatCompletionParams
 ) -> ChatCompletionResponse:
     """
     Generate a ChatCompletionResponse from the output text and parameters.
@@ -490,44 +494,49 @@ def v1_chat_generate_response(
         ChatCompletionResponse: An OpenAI-compatible response containing the assistant's message,
         usage information, and other metadata.
     """
+    output_texts = output_text if type(output_text) == list else [output_text]
+    choices = []
+    prompt_tokens, completion_tokens = 0, 0
     # Parse the output text using the specific prompt template
-    chat_mess = params.prompt_template.parse_assistant_response(
-        llm_output=output_text, tool_choice=params.tool_func_choice
-    )
-    # Convert tool_calls to function_call if request.functions is provided
-    chat_mess = convert_tool_calls_to_function_call(
-        functions=params.request.functions, chat_message=chat_mess
-    )
-
-    # Postprocess finish reason
-    finish_reason = "stop"
-    if params.tool_func_choice is None or params.tool_func_choice in [
-        "auto",
-        "required",
-    ]:
-        if "function_call" in chat_mess and chat_mess["function_call"]:
-            finish_reason = "function_call"
-        if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
-            finish_reason = "tool_calls"
-
-    choices = [
-        ChatCompletionResponseChoice(
-            index=0,
-            message=ChatMessage(**chat_mess),
-            finish_reason=finish_reason,
+    for text in output_texts:
+        chat_mess = params.prompt_template.parse_assistant_response(
+            llm_output=text, tool_choice=params.tool_func_choice
         )
-    ]
-    prompt_tokens = (
-        len(params.adapted_request.input_ids)
-        if params.adapted_request.input_ids
-        else len(params.tokenizer.encode(params.adapted_request.text))
-    )
-    completion_tokens = (
-        len(params.tokenizer.encode(output_text, add_special_tokens=False)) + 1
-    )  # +1 for the eos token
+        # Convert tool_calls to function_call if request.functions is provided
+        chat_mess = convert_tool_calls_to_function_call(
+            functions=params.request.functions, chat_message=chat_mess
+        )
+
+        # Postprocess finish reason
+        finish_reason = "stop"
+        if params.tool_func_choice is None or params.tool_func_choice in [
+            "auto",
+            "required",
+        ]:
+            if "function_call" in chat_mess and chat_mess["function_call"]:
+                finish_reason = "function_call"
+            if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
+                finish_reason = "tool_calls"
+
+        choices.append(
+            ChatCompletionResponseChoice(
+                index=0,
+                message=ChatMessage(**chat_mess),
+                finish_reason=finish_reason,
+            )
+        )
+
+        prompt_tokens += (
+            len(params.adapted_request.input_ids)
+            if params.adapted_request.input_ids
+            else len(params.tokenizer.encode(params.adapted_request.text))
+        )
+        completion_tokens += (
+            len(params.tokenizer.encode(text, add_special_tokens=False)) + 1
+        )  # +1 for the eos token
 
     response = ChatCompletionResponse(
-        id=params.adapted_request.rid,
+        id=f"chatcmpl-{uuid.uuid4().hex}",
         model=params.request.model,
         choices=choices,
         usage=UsageInfo(

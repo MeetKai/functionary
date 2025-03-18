@@ -59,9 +59,6 @@ from sglang.srt.utils import (
 )
 
 from functionary.sglang_inference import v1_chat_completions
-from functionary.sglang_monkey_patch.tokenizer_manager import (
-    MonkeyPatchTokenizerManager,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -255,6 +252,10 @@ def launch_engine(server_args: ServerArgs):
 
     # Launch tokenizer process
     if args.logfile is not None:
+        from functionary.sglang_monkey_patch.tokenizer_manager import (
+            MonkeyPatchTokenizerManager,
+        )
+
         tokenizer_manager = MonkeyPatchTokenizerManager(
             server_args, port_args, args.logfile
         )
