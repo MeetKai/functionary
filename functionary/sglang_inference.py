@@ -23,18 +23,16 @@ import time
 import uuid
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
 
 import sglang as sgl
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from outlines.fsm.json_schema import build_regex_from_schema
 from sglang.lang.choices import greedy_token_selection
 from sglang.lang.interpreter import ProgramState
 from sglang.srt.managers.io_struct import GenerateReqInput
 from sglang.srt.managers.tokenizer_manager import TokenizerManager
 from sglang.srt.openai_api.protocol import ErrorResponse
-from sglang.srt.server import Runtime
 from transformers import AutoTokenizer
 
 from functionary.inference_stream import generate_openai_format_from_stream_async
@@ -76,7 +74,7 @@ class ChatCompletionParams:
     request: ChatCompletionRequest
     tokenizer: AutoTokenizer
     tokenizer_manager: Optional[TokenizerManager]
-    srt_backend: Optional[Runtime]
+    srt_backend: Any
     prompt_template: PromptTemplate
     tools_or_functions: List[Dict]
     tool_func_choice: Optional[Union[str, Tool, Function]]
@@ -550,7 +548,7 @@ def v1_chat_generate_response(
 
 async def v1_chat_completions(
     tokenizer_manager: Optional[TokenizerManager],
-    srt_backend: Optional[Runtime],
+    srt_backend: Any,
     raw_request: Request,
     served_model: List[str],
 ):
