@@ -49,6 +49,7 @@ from sglang.srt.entrypoints.http_server import (
     _wait_and_warmup,
     enable_func_timer,
     add_prometheus_middleware,
+    lifespan,
 )
 from sglang.srt.managers.detokenizer_manager import run_detokenizer_process
 from sglang.srt.managers.io_struct import GenerateReqInput
@@ -63,7 +64,7 @@ from sglang.srt.utils import (
     is_port_available,
     prepare_model_and_tokenizer,
 )
-
+from sglang.srt.utils import kill_process_tree
 from functionary.sglang_inference import v1_chat_completions
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ logger = logging.getLogger(__name__)
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 tokenizer_manager = None
 served_model = []
 
@@ -269,4 +270,7 @@ if __name__ == "__main__":
 
     server_args = ServerArgs.from_cli_args(args)
 
-    launch_server(server_args)
+    try:
+        launch_server(server_args)
+    finally:
+        kill_process_tree(os.getpid(), include_parent=False)
