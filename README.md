@@ -43,7 +43,7 @@ pip install -e .[vllm]
 ```
 **SGLang**
 ```shell
-pip install -e .[sglang] --find-links https://flashinfer.ai/whl/cu121/torch2.4/flashinfer/
+pip install -e .[sglang] --find-links https://flashinfer.ai/whl/cu124/torch2.5/flashinfer-python
 ```
 
 ### Running the server
