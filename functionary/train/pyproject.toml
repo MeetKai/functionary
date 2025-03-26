@@ -18,8 +18,8 @@ dependencies = [
     "tensorboard==2.15.1",
     "aenum==3.1.15",
     "transformers @ git+https://github.com/huggingface/transformers.git",
-    "flash-attn==2.6.3",
     "json_source_map==1.0.5",
+    "flash-attn==2.7.4.post1"
 ]
 
 [build-system]
@@ -38,3 +38,5 @@ lora = [
     "peft==0.13.2",
     "datasets==2.8.0",
 ]
+[tool.pip]
+install-options = { "flash-attn" = ["--no-build-isolation"] }
