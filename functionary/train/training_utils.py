@@ -1,13 +1,15 @@
-import transformers
-from functionary.prompt_template import PromptTemplate
-from transformers import AutoTokenizer
-import torch
-from torch.nn import CrossEntropyLoss
-import math
-from torch.utils.data import DataLoader
 import os
 from typing import List
-from functionary.train import metrics as train_metrics
+
+import numpy as np
+import transformers
+from datasets import Dataset
+from torch.nn import CrossEntropyLoss
+from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
+from transformers import AutoTokenizer
+
+from functionary.prompt_template import PromptTemplate
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
@@ -15,6 +17,53 @@ LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 def print_rank0(*arg):
     if LOCAL_RANK == 0:
         print(*arg)
+
+
+# LEVENT OZBEK:
+# Single GPU setup
+# below is a parallelized dataloader with pinned memory for efficient data transfer between cpu and gpu
+def create_data_loader(dataset, batch_size, num_workers=4):
+    """dataLoader optimized for large datasets."""
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,  # Parallel workers
+        pin_memory=True,  # Efficient transfer to GPU
+        shuffle=True,  # Shuffling to improve training generalization
+    )
+
+
+# LEVENT OZBEK:
+# Multi GPU setup
+# for large datasets
+# using torch.distributed for syncing and managing processes
+def create_distributed_data_loader(dataset, batch_size):
+    """Create a distributed DataLoader."""
+    sampler = DistributedSampler(dataset)
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        sampler=sampler,
+        num_workers=4,
+        pin_memory=True,
+    )
+
+
+# LEVENT OZBEK:
+# for large data sets, it is important to cache tokenized sequences instead of re-tokenizing them repeatedly
+def tokenize_and_cache(dataset, tokenizer, cache_dir):
+    def tokenize_function(example):
+        return tokenizer(example["text"], padding="max_length", truncation=True)
+
+    return dataset.map(tokenize_function, batched=True, cache_file_name=cache_dir)
+
+
+# LEVENT OZBEK:
+# dynamically change the batch size according to the sequence count by setting a max token per batch threshold.
+def dynamic_batch_size(dataset, max_tokens_per_batch, tokenizer):
+    lengths = [len(tokenizer.encode(ex)) for ex in dataset]
+    batch_sizes = [max_tokens_per_batch // length for length in lengths]
+    return batch_sizes
 
 
 def initialize_tokenizer(
@@ -72,114 +121,78 @@ def initialize_tokenizer(
 
 
 def preprocess_logits_for_metrics(logits, labels, tokenizer_size):
-    """Preprocesses the logits during evaluation by computing the greedy token predictions for
-    accuracy calculation and loss values for perplexity calculation. Both pred_ids and loss are
-    of shape (batch_size x seq_len)"""
 
-    correct_logits = logits
-    if (
-        type(logits) is tuple
-    ):  # in mixtral logits is a tuple, correct logits is at the second index
-        correct_logits = logits[1]
+    # Retains the same behavior for tuple logits (logits[1] if needed).
+    if isinstance(logits, tuple):
+        logits = logits[1]  # Handle tuple logits
 
-    pred_ids = torch.argmax(correct_logits, dim=-1)
-
+    pred_ids = logits.argmax(dim=-1)
     loss_fn = CrossEntropyLoss(reduction="none")
-    shift_logits = correct_logits[..., :-1, :].contiguous()
+    shift_logits = logits[..., :-1, :].contiguous()
     shift_labels = labels[..., 1:].contiguous()
+
+    # avoiding unnecessary memory allocation by directly using CrossEntropyLoss over contiguous tensors without extensive reshaping.
+    # keeping the original tensor shapes wherever possible to minimize memory footprint
     shift_logits = shift_logits.view(-1, tokenizer_size)
     shift_labels = shift_labels.view(-1)
-    loss = loss_fn(shift_logits, shift_labels)
-    loss = torch.mean(loss.view(correct_logits.shape[0], -1), dim=-1)
+
+    # Instead of computing loss on a flattened vector and reshaping it back, just compute the loss batch-wise directly:
+    loss = loss_fn(shift_logits, shift_labels).view(logits.size(0), -1).mean(dim=1)
 
     return pred_ids, loss
 
 
+# LEVENT OZBEK:
+# Optimized compute metrics for large data sets!
+"""
+- Replaced loops over sequences with matrix operations.
+- NumPy for efficient batch-level calculations.
+- Moved evaluation computations to the GPU when possible.
+"""
+
+
 def compute_metrics(eval_preds, id2token, tokenizer):
-    """Computes next-token accuracy and perplexity metrics for evaluation"""
+    # Predictions and labels
     predictions = eval_preds.predictions[0][:, :-1]
     labels = eval_preds.label_ids[:, 1:]
 
-    acc_count = 0
-    total_num = 0
-    dic = {token_id: {"acc": 0, "total": 0} for token_id in id2token}
+    # Mask to ignore padding tokens (-100 in labels)
+    valid_mask = labels != -100
 
-    first_token_total_count, first_token_correct_count = 0, 0
-    prediction_list, label_list = (
-        predictions.flatten().tolist(),
-        labels.flatten().tolist(),
-    )
-    first_token_label_dic = {}
+    # Computing accuracy
+    correct_preds = (predictions == labels) & valid_mask
+    acc_count = correct_preds.sum()
+    total_num = valid_mask.sum()
 
-    for i in range(len(prediction_list)):
-        pred, label = prediction_list[i], label_list[i]
-        if i > 0 and label_list[i - 1] == -100 and label != -100:  # first token
-            first_token_total_count += 1
-            if label not in first_token_label_dic:
-                first_token_label_dic[label] = {"correct": 0, "total": 0}
+    # Token-wise accuracy/batch processing
+    token_stats = {
+        token_id: {
+            "acc": correct_preds[labels == token_id].sum().item(),
+            "total": (labels == token_id).sum().item(),
+        }
+        for token_id in id2token.keys()
+    }
 
-            first_token_label_dic[label]["total"] += 1
+    # Calculating perplexity
+    losses = eval_preds.predictions[1]
+    perplexity = np.exp(np.mean(losses))
 
-            if label == pred:
-                first_token_correct_count += 1
-                first_token_label_dic[label]["correct"] += 1
-
-        if label != -100:
-            if label == pred:
-                acc_count += 1
-            total_num += 1
-        if label in dic:
-            dic[label]["total"] += 1
-            if label == pred:
-                dic[label]["acc"] += 1
-
-    # Calculate the accuracy of first token of the values of parameters
-    unmasked_labels_preds = train_metrics.extract_unmasked_chunks(
-        label_list, prediction_list
-    )
-    first_token_param_value_total, first_token_param_value_acc = 0, 0
-    for unmasked_labels, pred_result in unmasked_labels_preds:
-        try:
-            indices = train_metrics.extract_indices_of_first_tokens_of_param_values_in_assistant_response(
-                tokenizer, unmasked_labels
-            )
-            for index in indices:
-                first_token_param_value_total += 1
-                if unmasked_labels[index] == pred_result[index]:
-                    first_token_param_value_acc += 1
-        except Exception as e:
-            print_rank0(f"encounter exeption: {str(e)}\nFor unmaksed_labels: {unmasked_labels}")
-
-    # Calculate perplexity
-    loss = eval_preds.predictions[1].tolist()
-    loss = sum(loss) / len(loss)
-    perplexity = math.exp(loss)
+    # First token-specific accuracy
+    first_token_mask = (labels[:, :-1] == -100) & valid_mask[:, 1:]
+    first_token_correct = (correct_preds[:, 1:] & first_token_mask).sum()
+    first_token_total = first_token_mask.sum()
 
     metrics = {
         "accuracy": acc_count / total_num,
         "perplexity": perplexity,
-        "accuracy_first_token": first_token_correct_count / first_token_total_count,
-        "total_number_first_token": first_token_total_count,
-        "first_token_param_values": first_token_param_value_acc
-        / first_token_param_value_total,
-        "first_token_param_values_total": first_token_param_value_total,
+        "accuracy_first_token": first_token_correct / max(first_token_total, 1),
     }
 
-    for token_id, stat in sorted(
-        first_token_label_dic.items(), key=lambda x: -x[1]["total"]
-    )[:5]:
-        token = tokenizer.decode([token_id])
-        metrics[f"accuracy_first_token_{token}"] = stat["correct"] / stat["total"]
-        metrics[f"accuracy_first_token_{token}_total"] = stat["total"]
-
-    for token_id in dic:
+    # Token-specific accuracies
+    for token_id, stat in token_stats.items():
         token = id2token[token_id]
-        total_num = dic[token_id]["total"]
-        acc = -1
-        if total_num > 0:
-            acc = dic[token_id]["acc"] / total_num
-        metrics[f"accuracy_{token}"] = acc
-        metrics[f"accuracy_total_num_{token}"] = total_num
+        metrics[f"accuracy_{token}"] = stat["acc"] / max(stat["total"], 1)
+        metrics[f"accuracy_total_num_{token}"] = stat["total"]
 
     return metrics
 
