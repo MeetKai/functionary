@@ -184,8 +184,8 @@ def train():
         model_class = AutoLigerKernelForCausalLM
     else:
         model_class = transformers.AutoModelForCausalLM
-    from transformers import Gemma3ForConditionalGeneration
-    model_class = Gemma3ForConditionalGeneration
+    # from transformers import Gemma3ForConditionalGeneration
+    # model_class = Gemma3ForConditionalGeneration
 
     model = model_class.from_pretrained(
         model_args.model_name_or_path,
