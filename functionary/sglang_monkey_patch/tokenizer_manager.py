@@ -88,7 +88,14 @@ class MonkeyPatchTokenizerManager(TokenizerManager):
             # if self.server_args.log_requests and state.finished:
             if state.finished:
                 if obj.text is None and obj.input_ids is not None:
-                    obj.text = self.tokenizer.decode(obj.input_ids)
+                    if (
+                        type(obj.input_ids) == list
+                        and len(obj.input_ids) > 0
+                        and type(obj.input_ids[0]) == list
+                    ):  # this is for multiple sampling
+                        obj.text = self.tokenizer.decode(obj.input_ids[0])
+                    else:
+                        obj.text = self.tokenizer.decode(obj.input_ids)
                     obj.input_ids = None
                 logger.info(dict(input=obj.__dict__, output=out))
 

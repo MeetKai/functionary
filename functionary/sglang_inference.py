@@ -23,18 +23,15 @@ import time
 import uuid
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
 
 import sglang as sgl
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from outlines.fsm.json_schema import build_regex_from_schema
 from sglang.lang.choices import greedy_token_selection
 from sglang.lang.interpreter import ProgramState
 from sglang.srt.managers.io_struct import GenerateReqInput
 from sglang.srt.managers.tokenizer_manager import TokenizerManager
-from sglang.srt.openai_api.protocol import ErrorResponse
-from sglang.srt.server import Runtime
 from transformers import AutoTokenizer
 
 from functionary.inference_stream import generate_openai_format_from_stream_async
@@ -76,7 +73,7 @@ class ChatCompletionParams:
     request: ChatCompletionRequest
     tokenizer: AutoTokenizer
     tokenizer_manager: Optional[TokenizerManager]
-    srt_backend: Optional[Runtime]
+    srt_backend: Any
     prompt_template: PromptTemplate
     tools_or_functions: List[Dict]
     tool_func_choice: Optional[Union[str, Tool, Function]]
@@ -159,128 +156,9 @@ def v1_chat_generate_request(
         top_logprobs_num=request.top_logprobs,
         stream=request.stream,
         return_text_in_logprobs=True,
-        rid=f"chatcmpl-{uuid.uuid4().hex}",
     )
 
     return adapted_request, request
-
-
-@sgl.function
-def generate_sglang_srt_response(
-    s: ProgramState,
-    prompt: str,
-    prompt_template,
-    tools_or_functions,
-    tool_func_choice,
-    tokenizer,
-):
-    """
-    Generate a response using SGLang Frontend Runtime (SRT).
-
-    This function is used when grammar-sampling is enabled. It uses the SRT program
-    state to update the specific prompt-template Finite State Machine (FSM) generation
-    state. Constrained generation is performed at specific stages of the FSM.
-
-    Args:
-        s (ProgramState): The current program state in SGLang.
-        prompt (str): The input prompt to generate a response for.
-        prompt_template: The template used to structure the prompt and response.
-        tools_or_functions (list): Available tools or functions for the model to use.
-        tool_func_choice (str): The chosen tool or function choice.
-        tokenizer: The tokenizer used for encoding and decoding text.
-
-    Returns:
-        ProgramState: The updated program state after generating the response.
-    """
-    completion_tokens = 0
-    stop_tokens = prompt_template.get_stop_tokens_for_generation()
-    function_call_token = prompt_template.get_start_of_function_call_token()
-    gen_state = prompt_template.initialize_fsm_gen_state(
-        tool_choice=tool_func_choice,
-        curr_text="",
-        curr_tokens=None,
-        add_code_interpreter=(
-            True
-            if any(
-                [
-                    "type" in tool_or_func
-                    and tool_or_func["type"] == "code_interpreter"
-                    for tool_or_func in tools_or_functions
-                ]
-            )
-            else False
-        ),
-    )
-    # Form the options for the following stages
-    tools = []
-    for tool in tools_or_functions:
-        if "type" in tool:
-            if tool["type"] == "function":
-                tools.append(tool["function"])
-        else:
-            tools.append(tool)
-    options = prompt_template.get_options_from_gen_state(
-        gen_state=gen_state, tools_or_functions=tools
-    )
-
-    def check_stop_condition():
-        stop_match = s.get_meta_info(CONTENT_VAR)["finish_reason"]["matched"]
-        if not isinstance(stop_match, str):
-            stop_match = tokenizer.decode(stop_match)
-        return stop_match in stop_tokens
-
-    s += prompt
-    while True:
-        if gen_state["stage"] == "function":
-            choices = [
-                tool["function"]["name"]
-                for tool in tools_or_functions
-                if tool["type"] == "function"
-            ]
-            if gen_state["add_all_recipient"]:
-                choices.append("all")
-            if gen_state["add_code_interpreter"]:
-                choices.append("python")
-            s += sgl.select(
-                name=CONTENT_VAR,
-                choices=choices,
-                choices_method=CHOICES_SAMPLING_METHOD,
-            )
-            new_token = s[CONTENT_VAR]
-            completion_tokens += len(
-                tokenizer.encode(s[CONTENT_VAR], add_special_tokens=False)
-            )
-        elif gen_state["stage"] == "pre-parameter":
-            s += prompt_template.fn_param_sep_token
-            new_token = prompt_template.fn_param_sep_token
-        elif gen_state["stage"] == "parameter":
-            tool = next(t for t in tools if t["name"] == gen_state["func_name"])
-            regex = build_regex_from_schema(json.dumps(tool["parameters"]))
-            s += sgl.gen(name=CONTENT_VAR, regex=regex, stop=function_call_token)
-            new_token = s[CONTENT_VAR]
-            completion_tokens += s.get_meta_info(CONTENT_VAR)["completion_tokens"]
-            # Generate new token to determin if there is another tool call
-            s += sgl.gen(name=CONTENT_VAR, stop=function_call_token)
-            if check_stop_condition():
-                break
-        elif gen_state["stage"] in ["text-gen", "code-interpreter"]:
-            s += sgl.gen(name=CONTENT_VAR, stop=function_call_token)
-            completion_tokens += s.get_meta_info(CONTENT_VAR)["completion_tokens"]
-            if check_stop_condition():
-                break
-            else:
-                s += function_call_token
-                new_token = s[CONTENT_VAR] + function_call_token
-        elif gen_state["stage"] == "pre-function":
-            s += function_call_token
-            new_token = function_call_token
-        gen_state = prompt_template.update_fsm_gen_state(
-            gen_state=gen_state,
-            new_token=new_token,
-            new_token_id=None,
-            options=options,
-            tokenizer=tokenizer,
-        )
 
 
 async def wrap_sgl_generator(params: ChatCompletionParams):
@@ -298,36 +176,23 @@ async def wrap_sgl_generator(params: ChatCompletionParams):
             - str: The generated text chunk.
             - Optional[str]: The finish reason, if any (e.g., "stop", "length", etc.).
     """
-    if params.grammar_sampling:
-        prompt = (
-            params.adapted_request.text
-            if params.adapted_request.text
-            else params.tokenizer.decode(params.adapted_request.input_ids)
-        )
-        # Iterates over the text generated by the SGLang Frontend Runtime
-        for out in params.frontend_state.text_iter():
-            if out.startswith(prompt):
-                continue
-            yield out, None
-        yield "", "stop"
-    else:
-        # Iterates over the text generated by the tokenizer manager
-        stream_buffer = ""
-        async for content in params.tokenizer_manager.generate_request(
-            params.adapted_request, params.raw_request
-        ):
-            text = content["text"]
-            delta = text[len(stream_buffer) :]
-            stream_buffer = stream_buffer + delta
-            finish_reason = content["meta_info"]["finish_reason"]
+    # Iterates over the text generated by the tokenizer manager
+    stream_buffer = ""
+    async for content in params.tokenizer_manager.generate_request(
+        params.adapted_request, params.raw_request
+    ):
+        text = content["text"]
+        delta = text[len(stream_buffer) :]
+        stream_buffer = stream_buffer + delta
+        finish_reason = content["meta_info"]["finish_reason"]
 
-            # If finish_reason is not None and delta_text is not empty,
-            # the delta_text is the eos_token and just remove it
-            if finish_reason is not None:
-                finish_reason = finish_reason["type"]
-                if len(delta) > 0:
-                    delta = ""
-            yield delta, finish_reason
+        # If finish_reason is not None and delta_text is not empty,
+        # the delta_text is the eos_token and just remove it
+        if finish_reason is not None:
+            finish_reason = finish_reason["type"]
+            if len(delta) > 0:
+                delta = ""
+        yield delta, finish_reason
 
 
 async def completion_stream_generator(params: ChatCompletionParams):
@@ -393,7 +258,7 @@ async def completion_stream_generator(params: ChatCompletionParams):
 
 async def v1_chat_generate_completion(
     params: ChatCompletionParams,
-) -> Tuple[Union[StreamingResponse, str], Optional[JSONResponse]]:
+) -> Tuple[Union[StreamingResponse, str, List[str]], Optional[JSONResponse]]:
     """
     Generate a text completion.
 
@@ -416,65 +281,36 @@ async def v1_chat_generate_completion(
         - Streaming responses are handled by the completion_stream_generator function.
     """
     # If streaming, return the StreamingResponse else return the text
-    if params.grammar_sampling:
-        # Form the text prompt and run the SGLang Frontend Runtime
-        prompt = (
-            params.adapted_request.text
-            if params.adapted_request.text
-            else params.tokenizer.decode(params.adapted_request.input_ids)
-        )
-        state = generate_sglang_srt_response.run(
-            prompt=prompt,
-            prompt_template=params.prompt_template,
-            tools_or_functions=params.tools_or_functions,
-            tool_func_choice=params.tool_func_choice,
-            tokenizer=params.tokenizer,
-            max_new_tokens=params.request.max_tokens,
-            temperature=params.request.temperature,
-            top_p=params.request.top_p,
-            top_k=params.request.top_k,
-            frequency_penalty=params.request.frequency_penalty,
-            presence_penalty=params.request.presence_penalty,
-            stream=params.request.stream,
-        )
-
-        if params.adapted_request.stream:
-            params.frontend_state = state
-            return (
-                StreamingResponse(
-                    completion_stream_generator(params),
-                    media_type="text/event-stream",
+    if params.adapted_request.stream:
+        return (
+            StreamingResponse(
+                completion_stream_generator(params),
+                media_type="text/event-stream",
+                background=params.tokenizer_manager.create_abort_task(
+                    params.adapted_request
                 ),
-                None,
-            )
-        else:
-            return state.text()[len(prompt) :], None
+            ),
+            None,
+        )
     else:
-        if params.adapted_request.stream:
-            return (
-                StreamingResponse(
-                    completion_stream_generator(params),
-                    media_type="text/event-stream",
-                    background=params.tokenizer_manager.create_abort_task(
-                        params.adapted_request
-                    ),
-                ),
-                None,
+        try:
+            ret = await params.tokenizer_manager.generate_request(
+                params.adapted_request, params.raw_request
+            ).__anext__()
+        except ValueError as e:
+            return None, create_error_response(
+                status_code=HTTPStatus.BAD_REQUEST, message=str(e), param=None
             )
+        if (
+            type(ret) == list
+        ):  # if n > 1 (multiple samples), we return a list of strings
+            return [item["text"] for item in ret], None
         else:
-            try:
-                ret = await params.tokenizer_manager.generate_request(
-                    params.adapted_request, params.raw_request
-                ).__anext__()
-            except ValueError as e:
-                return None, create_error_response(
-                    status_code=HTTPStatus.BAD_REQUEST, message=str(e), param=None
-                )
             return ret["text"], None
 
 
 def v1_chat_generate_response(
-    output_text: str, params: ChatCompletionParams
+    output_text: Union[str, List[str]], params: ChatCompletionParams
 ) -> ChatCompletionResponse:
     """
     Generate a ChatCompletionResponse from the output text and parameters.
@@ -490,44 +326,49 @@ def v1_chat_generate_response(
         ChatCompletionResponse: An OpenAI-compatible response containing the assistant's message,
         usage information, and other metadata.
     """
+    output_texts = output_text if type(output_text) == list else [output_text]
+    choices = []
+    prompt_tokens, completion_tokens = 0, 0
     # Parse the output text using the specific prompt template
-    chat_mess = params.prompt_template.parse_assistant_response(
-        llm_output=output_text, tool_choice=params.tool_func_choice
-    )
-    # Convert tool_calls to function_call if request.functions is provided
-    chat_mess = convert_tool_calls_to_function_call(
-        functions=params.request.functions, chat_message=chat_mess
-    )
-
-    # Postprocess finish reason
-    finish_reason = "stop"
-    if params.tool_func_choice is None or params.tool_func_choice in [
-        "auto",
-        "required",
-    ]:
-        if "function_call" in chat_mess and chat_mess["function_call"]:
-            finish_reason = "function_call"
-        if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
-            finish_reason = "tool_calls"
-
-    choices = [
-        ChatCompletionResponseChoice(
-            index=0,
-            message=ChatMessage(**chat_mess),
-            finish_reason=finish_reason,
+    for text in output_texts:
+        chat_mess = params.prompt_template.parse_assistant_response(
+            llm_output=text, tool_choice=params.tool_func_choice
         )
-    ]
-    prompt_tokens = (
-        len(params.adapted_request.input_ids)
-        if params.adapted_request.input_ids
-        else len(params.tokenizer.encode(params.adapted_request.text))
-    )
-    completion_tokens = (
-        len(params.tokenizer.encode(output_text, add_special_tokens=False)) + 1
-    )  # +1 for the eos token
+        # Convert tool_calls to function_call if request.functions is provided
+        chat_mess = convert_tool_calls_to_function_call(
+            functions=params.request.functions, chat_message=chat_mess
+        )
+
+        # Postprocess finish reason
+        finish_reason = "stop"
+        if params.tool_func_choice is None or params.tool_func_choice in [
+            "auto",
+            "required",
+        ]:
+            if "function_call" in chat_mess and chat_mess["function_call"]:
+                finish_reason = "function_call"
+            if "tool_calls" in chat_mess and chat_mess["tool_calls"]:
+                finish_reason = "tool_calls"
+
+        choices.append(
+            ChatCompletionResponseChoice(
+                index=0,
+                message=ChatMessage(**chat_mess),
+                finish_reason=finish_reason,
+            )
+        )
+
+        prompt_tokens += (
+            len(params.adapted_request.input_ids)
+            if params.adapted_request.input_ids
+            else len(params.tokenizer.encode(params.adapted_request.text))
+        )
+        completion_tokens += (
+            len(params.tokenizer.encode(text, add_special_tokens=False)) + 1
+        )  # +1 for the eos token
 
     response = ChatCompletionResponse(
-        id=params.adapted_request.rid,
+        id=f"chatcmpl-{uuid.uuid4().hex}",
         model=params.request.model,
         choices=choices,
         usage=UsageInfo(
@@ -541,7 +382,7 @@ def v1_chat_generate_response(
 
 async def v1_chat_completions(
     tokenizer_manager: Optional[TokenizerManager],
-    srt_backend: Optional[Runtime],
+    srt_backend: Any,
     raw_request: Request,
     served_model: List[str],
 ):

@@ -25,7 +25,7 @@ import os
 import threading
 import time
 from http import HTTPStatus
-from typing import AsyncIterator, Dict, List, Optional, Union
+from typing import AsyncIterator, Dict, List, Optional, Union, Any, Callable
 
 import orjson
 
@@ -43,13 +43,20 @@ from sglang.lang.backend.runtime_endpoint import RuntimeEndpoint
 from sglang.srt.managers.data_parallel_controller import (
     run_data_parallel_controller_process,
 )
+from sglang.srt.entrypoints.http_server import (
+    _launch_subprocesses,
+    set_uvicorn_logging_configs,
+    _wait_and_warmup,
+    enable_func_timer,
+    add_prometheus_middleware,
+    lifespan,
+)
 from sglang.srt.managers.detokenizer_manager import run_detokenizer_process
 from sglang.srt.managers.io_struct import GenerateReqInput
 from sglang.srt.managers.scheduler import run_scheduler_process
 from sglang.srt.managers.tokenizer_manager import TokenizerManager
 from sglang.srt.openai_api.adapter import load_chat_template_for_openai_api
 from sglang.srt.openai_api.protocol import ModelCard, ModelList
-from sglang.srt.server import Runtime, _set_envs_and_config, _wait_and_warmup
 from sglang.srt.server_args import PortArgs, ServerArgs
 from sglang.srt.utils import (
     add_api_key_middleware,
@@ -57,18 +64,15 @@ from sglang.srt.utils import (
     is_port_available,
     prepare_model_and_tokenizer,
 )
-
+from sglang.srt.utils import kill_process_tree
 from functionary.sglang_inference import v1_chat_completions
-from functionary.sglang_monkey_patch.tokenizer_manager import (
-    MonkeyPatchTokenizerManager,
-)
 
 logger = logging.getLogger(__name__)
 
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 tokenizer_manager = None
 served_model = []
 
@@ -187,129 +191,56 @@ def available_models():
     return ModelList(data=model_cards)
 
 
-def launch_engine(server_args: ServerArgs):
-    """
-    Launch the Tokenizer Manager in the main process, the Scheduler in a subprocess, and the Detokenizer Manager in another subprocess.
-    """
-
-    global tokenizer_manager
-
-    # Configure global environment
-    configure_logger(server_args)
-    server_args.check_server_args()
-    _set_envs_and_config(server_args)
-
-    # Allocate ports for inter-process communications
-    port_args = PortArgs.init_new(server_args)
-    logger.info(f"{server_args=}")
-
-    # If using model from www.modelscope.cn, first download the model.
-    server_args.model_path, server_args.tokenizer_path = prepare_model_and_tokenizer(
-        server_args.model_path, server_args.tokenizer_path
-    )
-
-    if server_args.dp_size == 1:
-        # Launch tensor parallel scheduler processes
-        scheduler_procs = []
-        scheduler_pipe_readers = []
-        tp_size_per_node = server_args.tp_size // server_args.nnodes
-        tp_rank_range = range(
-            tp_size_per_node * server_args.node_rank,
-            tp_size_per_node * (server_args.node_rank + 1),
-        )
-        for tp_rank in tp_rank_range:
-            reader, writer = mp.Pipe(duplex=False)
-            gpu_id = tp_rank % tp_size_per_node
-            proc = mp.Process(
-                target=run_scheduler_process,
-                args=(server_args, port_args, gpu_id, tp_rank, None, writer),
-            )
-            proc.start()
-            scheduler_procs.append(proc)
-            scheduler_pipe_readers.append(reader)
-
-        if server_args.node_rank >= 1:
-            # For other nodes, they do not need to run tokenizer or detokenizer,
-            # so they can just wait here.
-            while True:
-                pass
-    else:
-        # Launch the data parallel controller
-        reader, writer = mp.Pipe(duplex=False)
-        scheduler_pipe_readers = [reader]
-        proc = mp.Process(
-            target=run_data_parallel_controller_process,
-            args=(server_args, port_args, writer),
-        )
-        proc.start()
-
-    # Launch detokenizer process
-    detoken_proc = mp.Process(
-        target=run_detokenizer_process,
-        args=(
-            server_args,
-            port_args,
-        ),
-    )
-    detoken_proc.start()
-
-    # Launch tokenizer process
-    if args.logfile is not None:
-        tokenizer_manager = MonkeyPatchTokenizerManager(
-            server_args, port_args, args.logfile
-        )
-    else:
-        tokenizer_manager = TokenizerManager(server_args, port_args)
-    if server_args.chat_template:
-        load_chat_template_for_openai_api(tokenizer_manager, server_args.chat_template)
-
-    # Wait for model to finish loading
-    for i in range(len(scheduler_pipe_readers)):
-        scheduler_pipe_readers[i].recv()
-
-
 def launch_server(
     server_args: ServerArgs,
     pipe_finish_writer: Optional[mp.connection.Connection] = None,
+    launch_callback: Optional[Callable[[], None]] = None,
 ):
     """
-    Launch SRT (SGLang Runtime) Server
+    Launch SRT (SGLang Runtime) Server.
 
-    The SRT server consists of an HTTP server and the SRT engine.
+    The SRT server consists of an HTTP server and an SRT engine.
 
-    1. HTTP server: A FastAPI server that routes requests to the engine.
-    2. SRT engine:
-        1. Tokenizer Manager: Tokenizes the requests and sends them to the scheduler.
+    - HTTP server: A FastAPI server that routes requests to the engine.
+    - The engine consists of three components:
+        1. TokenizerManager: Tokenizes the requests and sends them to the scheduler.
         2. Scheduler (subprocess): Receives requests from the Tokenizer Manager, schedules batches, forwards them, and sends the output tokens to the Detokenizer Manager.
-        3. Detokenizer Manager (subprocess): Detokenizes the output tokens and sends the result back to the Tokenizer Manager.
+        3. DetokenizerManager (subprocess): Detokenizes the output tokens and sends the result back to the Tokenizer Manager.
 
     Note:
-    1. The HTTP server and Tokenizer Manager both run in the main process.
-    2. Inter-process communication is done through ICP (each process uses a different port) via the ZMQ library.
+    1. The HTTP server, Engine, and TokenizerManager both run in the main process.
+    2. Inter-process communication is done through IPC (each process uses a different port) via the ZMQ library.
     """
-
-    launch_engine(server_args=server_args)
+    global tokenizer_manager, scheduler_info
+    tokenizer_manager, scheduler_info = _launch_subprocesses(server_args=server_args)
 
     # Add api key authorization
     if server_args.api_key:
         add_api_key_middleware(app, server_args.api_key)
 
-    # Send a warmup request
-    t = threading.Thread(
-        target=_wait_and_warmup, args=(server_args, pipe_finish_writer, os.getpid())
+    # Add prometheus middleware
+    if server_args.enable_metrics:
+        add_prometheus_middleware(app)
+        enable_func_timer()
+
+    # Send a warmup request - we will create the thread launch it
+    # in the lifespan after all other warmups have fired.
+    warmup_thread = threading.Thread(
+        target=_wait_and_warmup,
+        args=(
+            server_args,
+            pipe_finish_writer,
+            "",
+            launch_callback,
+        ),
     )
-    t.start()
+    app.warmup_thread = warmup_thread
 
     try:
+        # Update logging configs
+        set_uvicorn_logging_configs()
+        app.server_args = server_args
         # Listen for HTTP requests
-        LOGGING_CONFIG["formatters"]["default"][
-            "fmt"
-        ] = "[%(asctime)s] %(levelprefix)s %(message)s"
-        LOGGING_CONFIG["formatters"]["default"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
-        LOGGING_CONFIG["formatters"]["access"][
-            "fmt"
-        ] = '[%(asctime)s] %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'
-        LOGGING_CONFIG["formatters"]["access"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
         uvicorn.run(
             app,
             host=server_args.host,
@@ -319,62 +250,7 @@ def launch_server(
             loop="uvloop",
         )
     finally:
-        t.join()
-
-
-class FunctionaryRuntime(Runtime):
-    """
-    A wrapper for the server.
-    This is used for launching the server in a python program without
-    using the commond line interface.
-    """
-
-    def __init__(
-        self,
-        log_level: str = "error",
-        *args,
-        **kwargs,
-    ):
-        """See the arguments in server_args.py::ServerArgs"""
-        self.server_args = ServerArgs(*args, log_level=log_level, **kwargs)
-
-        # before python program terminates, call shutdown implicitly. Therefore, users don't have to explicitly call .shutdown()
-        atexit.register(self.shutdown)
-
-        # Pre-allocate ports
-        for port in range(10000, 40000):
-            if is_port_available(port):
-                break
-            port += 1
-        self.server_args.port = port
-
-        self.url = self.server_args.url()
-        self.generate_url = self.url + "/generate"
-
-        # NOTE: We store pid instead of proc to fix some issues during __delete__
-        self.pid = None
-        pipe_reader, pipe_writer = mp.Pipe(duplex=False)
-
-        proc = mp.Process(
-            target=launch_server,
-            args=(self.server_args, pipe_writer),
-        )
-        proc.start()
-        pipe_writer.close()
-        self.pid = proc.pid
-
-        try:
-            init_state = pipe_reader.recv()
-        except EOFError:
-            init_state = ""
-
-        if init_state != "ready":
-            self.shutdown()
-            raise RuntimeError(
-                "Initialization failed. Please see the error messages above."
-            )
-
-        self.endpoint = RuntimeEndpoint(self.url)
+        warmup_thread.join()
 
 
 if __name__ == "__main__":
@@ -385,13 +261,6 @@ if __name__ == "__main__":
         default=None,
         help="enable detailed request input/output logging by providing logfile",
     )
-    # parser.add_argument(
-    #     "--enable-grammar-sampling",
-    #     dest="grammar_sampling",
-    #     action="store_true",
-    #     default=False,
-    #     help="enable grammar sampling for function names",
-    # )
     ServerArgs.add_cli_args(parser)
     args = parser.parse_args()
 
@@ -401,22 +270,7 @@ if __name__ == "__main__":
 
     server_args = ServerArgs.from_cli_args(args)
 
-    launch_server(server_args)
-
-    # if args.grammar_sampling:
-    #     backend = FunctionaryRuntime(**vars(server_args))
-    #     sgl.set_default_backend(
-    #         sgl.RuntimeEndpoint(
-    #             f"http://{backend.server_args.host}:{backend.server_args.port}"
-    #         )
-    #     )
-    #     uvicorn.run(
-    #         app,
-    #         host=server_args.host,
-    #         port=server_args.port,
-    #         log_level=server_args.log_level_http or server_args.log_level,
-    #         timeout_keep_alive=5,
-    #         loop="uvloop",
-    #     )
-    # else:
-    #     launch_server(server_args)
+    try:
+        launch_server(server_args)
+    finally:
+        kill_process_tree(os.getpid(), include_parent=False)
