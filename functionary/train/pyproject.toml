@@ -20,8 +20,7 @@ dependencies = [
     "tensorboard==2.15.1",
     "aenum==3.1.15",
     "transformers==4.50.3",
-    "json_source_map==1.0.5",
-    "flash-attn==2.7.4.post1"
+    "json_source_map==1.0.5"
 ]
 
 [build-system]
