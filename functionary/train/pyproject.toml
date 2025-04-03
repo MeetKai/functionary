@@ -4,11 +4,13 @@ version = "0.0.1"
 description = "Chat language model that can use tools and interpret the results"
 requires-python = ">=3.9"
 dependencies = [
+    "wheel==0.45.1",
+    "setuptools==78.0.2",
     "accelerate==0.34.0",
-    "bitsandbytes==0.44.1",
+    "bitsandbytes==0.45.4",
+    "packaging",
     "scipy==1.11.3",
     "sentencepiece==0.1.99",
-    "packaging==23.1",
     "ninja==1.11.1",
     "einops==0.7.0",
     "wandb==0.15.11",
@@ -17,7 +19,7 @@ dependencies = [
     "typer==0.9.0",
     "tensorboard==2.15.1",
     "aenum==3.1.15",
-    "transformers @ git+https://github.com/huggingface/transformers.git",
+    "transformers==4.50.3",
     "json_source_map==1.0.5",
     "flash-attn==2.7.4.post1"
 ]
@@ -32,7 +34,7 @@ packages = ["train"]
 
 [project.optional-dependencies]
 liger = [
-    "liger-kernel==0.3.1",
+    "liger-kernel==0.5.5",
 ]
 lora = [
     "peft==0.13.2",
