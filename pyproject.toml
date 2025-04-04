@@ -18,7 +18,7 @@ packages = ["functionary"]
 
 [project.optional-dependencies]
 vllm = [
-    "vllm==0.6.3.post1; sys_platform != 'darwin'",
+    "vllm==0.8.2; sys_platform != 'darwin'",
 ]
 sglang = [
     "python-multipart==0.0.12",
