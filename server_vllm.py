@@ -32,11 +32,9 @@ from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.entrypoints.openai.api_server import mount_metrics
 from vllm.entrypoints.openai.protocol import (
-    LoadLoraAdapterRequest,
     ModelCard,
     ModelList,
     ModelPermission,
-    UnloadLoraAdapterRequest,
 )
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
@@ -131,7 +129,7 @@ async def create_chat_completion(raw_request: Request):
 
 
 @app.post("/v1/load_lora_adapter")
-async def load_lora_adapter(request: LoadLoraAdapterRequest):
+async def load_lora_adapter(request: Any):
     global served_loras
 
     error, served_loras = await process_load_lora_adapter(
@@ -145,7 +143,7 @@ async def load_lora_adapter(request: LoadLoraAdapterRequest):
 
 
 @app.post("/v1/unload_lora_adapter")
-async def unload_lora_adapter(request: UnloadLoraAdapterRequest):
+async def unload_lora_adapter(request: Any):
     global served_loras
 
     error, served_loras = await process_unload_lora_adapter(request, served_loras)

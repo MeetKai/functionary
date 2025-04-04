@@ -5,10 +5,10 @@ from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Un
 
 from fastapi import BackgroundTasks, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from vllm.entrypoints.openai.protocol import (
-    LoadLoraAdapterRequest,
-    UnloadLoraAdapterRequest,
-)
+# from vllm.entrypoints.openai.protocol import (
+#     LoadLoraAdapterRequest,
+#     UnloadLoraAdapterRequest,
+# )
 from vllm.inputs import TokensPrompt
 from vllm.lora.request import LoRARequest
 from vllm.outputs import RequestOutput
@@ -44,7 +44,9 @@ from functionary.prompt_template.prompt_utils import (
 
 
 async def check_length(request, input_ids, model_config):
-    if hasattr(model_config.hf_config, "max_sequence_length"):
+    if hasattr(model_config, "max_model_len"):
+        context_len = model_config.max_model_len
+    elif hasattr(model_config.hf_config, "max_sequence_length"):
         context_len = model_config.hf_config.max_sequence_length
     elif hasattr(model_config.hf_config, "seq_length"):
         context_len = model_config.hf_config.seq_length
@@ -90,7 +92,7 @@ async def check_length(request, input_ids, model_config):
 
 
 async def process_load_lora_adapter(
-    request: LoadLoraAdapterRequest,
+    request: Any,
     served_loras: List[LoRARequest],
     lora_id_counter: AtomicCounter,
 ) -> Tuple[Union[str, JSONResponse], List[LoRARequest]]:
@@ -128,8 +130,8 @@ async def process_load_lora_adapter(
 
 
 async def process_unload_lora_adapter(
-    request: UnloadLoraAdapterRequest, served_loras: List[LoRARequest]
-) -> Tuple[Union[str, JSONResponse], List[LoRARequest]]:
+    request: Any, served_loras: List[Any]
+) -> Tuple[Union[str, JSONResponse], List[Any]]:
     # Check if either 'lora_name' or 'lora_int_id' is provided
     if not request.lora_name and not request.lora_int_id:
         return (
