@@ -170,7 +170,7 @@ class Qwen25TextOnlyPromptTemplate(PromptTemplate):
 
         return {
             "role": "assistant",
-            "content": "<think>\n" + text_content if len(text_content) > 0 else None,
+            "content": text_content if len(text_content) > 0 else None,
             "tool_calls": None if len(tool_calls) == 0 else tool_calls,
         }
 
@@ -290,7 +290,7 @@ class Qwen25TextOnlyPromptTemplate(PromptTemplate):
                 responses = [
                     prompt_utils.get_text_delta_response("", True, finish_reason)
                 ]
-                gen_state["buffer"].extend(["<think>", "\n"])
+                # gen_state["buffer"].extend(["<think>", "\n"])
                 if len(delta_text) > 0:
                     gen_state["buffer"].append(delta_text)
                 return gen_state, responses
