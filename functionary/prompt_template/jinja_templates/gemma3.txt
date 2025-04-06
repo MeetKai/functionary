@@ -1,4 +1,4 @@
-{# version=gemma3 #}{%- if tools %}
+{# version=gemma3 #}{{- bos_token -}}{%- if tools %}
     {{- '<start_of_turn>system\nYou are capable of executing available function(s) if required.' }}
     {%- set has_reasoning = tools | selectattr("type", "equalto", "reasoning") | list | length > 0 -%}
     {%- if has_reasoning -%}
