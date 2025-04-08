@@ -121,7 +121,7 @@ class ChatCompletionRequest(BaseModel):
     function_call: Optional[Union[str, Function]] = None
     tool_choice: Optional[Union[str, Tool]] = None
     temperature: Optional[float] = 0.6
-    top_p: Optional[float] = 1.0
+    top_p: Optional[float] = 0.95
     n: Optional[int] = 1
     max_tokens: Optional[int] = 4096
     stop: Optional[Union[str, List[str]]] = Field(default_factory=list)
