@@ -1,0 +1,105 @@
+<|header_start|>system<|header_end|>
+
+Environment: ipython
+You have access to the following functions. To call a function, please respond with JSON for a function call.Respond in the format {"name": function name, "parameters": dictionary of argument name and its value}.Do not use variables.
+
+{
+    "type": "function",
+    "function": {
+        "name": "get_car_price",
+        "description": "Get the price of a particular car model",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "car_name": {
+                    "type": "string",
+                    "description": "The name of the car model"
+                }
+            },
+            "required": [
+                "car_name"
+            ]
+        }
+    }
+}
+
+{
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "description": "This function's purpose is to get the weather of a location",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "where to get weather"
+                }
+            },
+            "required": [
+                "location"
+            ]
+        }
+    }
+}
+
+{
+    "type": "function",
+    "function": {
+        "name": "python",
+        "description": "This tool is used to execute python code. Code will be executed in a stateful Jupyter notebook environment. Python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "The python code to run"
+                }
+            }
+        }
+    }
+}
+
+<|eot|><|header_start|>user<|header_end|>
+
+who is the CEO of Meetkai<|eot|><|header_start|>assistant<|header_end|>
+
+James Kaplan is the Co-Founder and CEO of MeetKai Inc.<|eot|><|header_start|>user<|header_end|>
+
+is the car Song more expensive than car Tang?<|eot|><|header_start|>assistant<|header_end|>
+
+<|python_start|>I will get the price of 2 cars and compare<|python_end|>{"name": "get_car_price", "parameters": {"car_name": "Song"}}{"name": "get_car_price", "parameters": {"car_name": "Tang"}}<|eot|><|header_start|>ipython<|header_end|>
+
+{"price": {"price": "$25000"}}<|eot|><|header_start|>ipython<|header_end|>
+
+{"price": {"price": "$20000"}}<|eot|><|header_start|>assistant<|header_end|>
+
+No, the car Tang is less expensive than the car Song. The car Song is priced at $25,000, while the car Tang is priced at $20,000.<|eot|><|header_start|>user<|header_end|>
+
+what's the weather like in Hanoi?<|eot|><|header_start|>assistant<|header_end|>
+
+<|python_start|><|python_end|>{"name": "get_weather", "parameters": {"location": "Hanoi"}}<|eot|><|header_start|>ipython<|header_end|>
+
+{"result": {"temperature": 10}}<|eot|><|header_start|>assistant<|header_end|>
+
+The temperature in Hanoi is: 10 degree Celcious<|eot|><|header_start|>user<|header_end|>
+
+Given the list of strings: '0','1','2','3','4','5' remove the number in the list that is close to 3.6 the most<|eot|><|header_start|>assistant<|header_end|>
+
+<|python_start|>I'll use code interpreter to handle this<|python_end|>{"name": "python", "parameters": {"code": "l=[int('0'),int('1'),int('2'),int('3'),int('4'),int('5')]\nl.remove(3.6)"}}<|eot|><|header_start|>ipython<|header_end|>
+
+ValueError: list.remove(x): x not in list<|eot|><|header_start|>assistant<|header_end|>
+
+<|python_start|>I will fix the code<|python_end|>{"name": "python", "parameters": {"code": "l.remove(round(3.6))\nl"}}<|eot|><|header_start|>ipython<|header_end|>
+
+[0,1,2,3,5,]<|eot|><|header_start|>assistant<|header_end|>
+
+The final list is: 0,1,2,3,5<|eot|><|header_start|>user<|header_end|>
+
+Thanks! What's the weather in San Francisco?<|eot|><|header_start|>assistant<|header_end|>
+
+<|python_start|><|python_end|>{"name": "get_weather", "parameters": {"location": "San Francisco, CA"}}<|eot|><|header_start|>ipython<|header_end|>
+
+{"result": {"temperature": 20}}<|eot|><|header_start|>assistant<|header_end|>
+
+The temperature in San Francisco is: 20 degree Celcious<|eot|>
