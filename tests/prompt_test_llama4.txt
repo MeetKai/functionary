@@ -68,7 +68,8 @@ James Kaplan is the Co-Founder and CEO of MeetKai Inc.<|eot|><|header_start|>use
 
 is the car Song more expensive than car Tang?<|eot|><|header_start|>assistant<|header_end|>
 
-<|python_start|>I will get the price of 2 cars and compare<|python_end|>{"name": "get_car_price", "parameters": {"car_name": "Song"}}{"name": "get_car_price", "parameters": {"car_name": "Tang"}}<|eot|><|header_start|>ipython<|header_end|>
+<|python_start|>I will get the price of 2 cars and compare<|python_end|>{"name": "get_car_price", "parameters": {"car_name": "Song"}}
+{"name": "get_car_price", "parameters": {"car_name": "Tang"}}<|eot|><|header_start|>ipython<|header_end|>
 
 {"price": {"price": "$25000"}}<|eot|><|header_start|>ipython<|header_end|>
 
