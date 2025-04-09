@@ -1,13 +1,13 @@
 from functionary.prompt_template.base_template import PromptTemplate
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from functionary.prompt_template import prompt_utils
-import copy 
-import json 
+import copy
+import json
 
 
 class LLama4PromptTemplate(PromptTemplate):
     version = "llama4"
-    
+
     def get_additional_tokens(self) -> List[str]:
         return []
 
@@ -27,7 +27,7 @@ class LLama4PromptTemplate(PromptTemplate):
 
     def get_stop_tokens_for_generation(self) -> List[str]:
         return ["<|eot|>"]
-    
+
     def get_force_function_call_prefix(self, function_name: str):
         return '<|python_start|><|python_end|>{"name": "' + function_name + '"}'
 
@@ -35,8 +35,8 @@ class LLama4PromptTemplate(PromptTemplate):
         return f""
 
     def get_tool_choice_required_prefix(self):
-        return '<|python_start|>'
-    
+        return "<|python_start|>"
+
     def get_prompt_from_messages(
         self,
         messages: List[Dict],
@@ -105,3 +105,50 @@ class LLama4PromptTemplate(PromptTemplate):
             add_generation_prompt=add_generation_prompt,
         )
         return prompt
+
+    def parse_assistant_response(
+        self, llm_output: str, tool_choice: Any | None
+    ) -> Dict:
+        for stop in self.get_stop_tokens_for_generation():
+            if llm_output.endswith(stop):
+                llm_output = llm_output[: -len(stop)]
+
+        # add forced-function from tool_choice if exists
+        llm_output = (
+            self.get_generation_prefix_for_tool_choice(tool_choice) + llm_output
+        )
+        # if there is a tool call, it will be in the format: <|python_start|><|python_end|>{"name": "python", "parameters": JSON_STRING}
+        python_start_index = llm_output.find("<|python_start|>")
+        tool_calls = []
+        content = None
+        if python_start_index >= 0:
+            python_end_index = llm_output.find("<|python_end|>", python_start_index)
+            if python_end_index >= 0:
+                content = llm_output[
+                    python_start_index + len("<|python_start|>") : python_end_index
+                ].strip()
+                tool_call_text = llm_output[
+                    python_end_index + len("<|python_end|>") :
+                ].strip()
+                for line in tool_call_text.split("\n"):
+                    if line.strip():
+                        tool_call_item = json.loads(line)
+                        tool_calls.append(
+                            {
+                                "id": prompt_utils.get_random_tool_call_id(),
+                                "type": "function",
+                                "function": {
+                                    "name": tool_call_item["name"],
+                                    "arguments": json.dumps(
+                                        tool_call_item["parameters"], ensure_ascii=False
+                                    ),
+                                },
+                            }
+                        )
+            else:
+                content = llm_output
+        return {
+            "role": "assistant",
+            "content": content,
+            "tool_calls": tool_calls if tool_calls else None,
+        }

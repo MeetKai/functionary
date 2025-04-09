@@ -53,7 +53,7 @@
            {{- '{"name": "' + tool_call.function.name + '", ' }}
            {{- '"parameters": ' }}
            {{- tool_call.function.arguments }}
-           {{- "}" }}
+           {{- "}" if loop.last else "}\n" }}
         {%- endfor %}
        {{- "<|eot|>" }}
     {%- elif message.role == "tool" or message.role == "ipython" %}
