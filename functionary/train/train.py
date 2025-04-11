@@ -188,14 +188,16 @@ def train():
     is_llama4 = "llama-4" in model_args.model_name_or_path.strip().lower()
     if is_llama4:
         model_class = transformers.Llama4ForConditionalGeneration
+        data_args.packing = False
+        print_rank0("LLama-4 detected, disabling packing, because Flex_attention doesn't support packing")
 
+    attention_type = "flex_attention" if is_llama4 else "flash_attention_2"
+    print_rank0(f"Using {attention_type} attention")
     model = model_class.from_pretrained(
         model_args.model_name_or_path,
         torch_dtype=compute_dtype,
         cache_dir=training_args.cache_dir,
-        attn_implementation=(
-            "flex_attention" if is_llama4 else "flash_attention_2"
-        ),  # Currently LLama-4 only supports flex_attention, not flash_attention_2
+        attn_implementation=attention_type # temporarily using flex_attention for llama-4
     )
     # Freeze parameters containing "vision_model" in their name
     if is_llama4:
