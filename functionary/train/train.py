@@ -185,13 +185,25 @@ def train():
     else:
         model_class = transformers.AutoModelForCausalLM
 
+    is_llama4 = "llama-4" in model_args.model_name_or_path.strip().lower()
+    if is_llama4:
+        model_class = transformers.Llama4ForConditionalGeneration
+
     model = model_class.from_pretrained(
         model_args.model_name_or_path,
         torch_dtype=compute_dtype,
-        config=config,
         cache_dir=training_args.cache_dir,
-        attn_implementation="flash_attention_2",  # use_flash_attention_2 is replaced by this from version: 4.36.0
+        attn_implementation=(
+            "flex_attention" if is_llama4 else "flash_attention_2"
+        ),  # Currently LLama-4 only supports flex_attention, not flash_attention_2
     )
+    # Freeze parameters containing "vision_model" in their name
+    if is_llama4:
+        for name, param in model.named_parameters():
+            if "vision" in name:
+                param.requires_grad = False
+            print_rank0(f"Freezing parameter: {name}")
+
     model.config.use_cache = False
     # Activate computing load balancing loss iin MixtralForCausalLM
     if hasattr(model.config, "output_router_logits"):
