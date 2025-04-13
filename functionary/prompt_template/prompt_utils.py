@@ -3,6 +3,7 @@ import os
 import random
 import string
 from copy import deepcopy
+import json
 from io import BytesIO
 from typing import Dict, List, Optional, Union
 
@@ -284,3 +285,53 @@ def resolve_json_refs(tools_or_functions):
                 )
 
     return tools
+
+
+def convert_code_interpreter_to_function(tools: List[Dict]) -> List[Dict]:
+    _tools = []
+    if tools:
+        for tool in tools:
+            if tool["type"] == "code_interpreter":
+                _tools.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "python",
+                            "description": "This tool is used to execute python code. Code will be executed in a stateful Jupyter notebook environment. Python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files.",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "description": "The python code to run",
+                                    }
+                                },
+                            },
+                        },
+                    }
+                )
+            else:
+                _tools.append(tool)
+    return _tools
+
+
+def convert_code_interpreter_tool_calls(messages: List[Dict]) -> List[Dict]:
+    _messages = []
+    for message in messages:
+        n_message = deepcopy(message)
+        tool_calls = n_message.get("tool_calls", []) or []
+        if len(tool_calls) > 0:
+            for tool_call in tool_calls:
+                if tool_call["function"]["name"] == "python":
+                    arguments = tool_call["function"][
+                        "arguments"
+                    ]  # currently the code is in string format
+                    # check if argument is a valid JSON string or python code
+                    try:  # if this is a valid JSON string --> no need to change anything
+                        json.loads(arguments)
+                    except:
+                        tool_call["function"]["arguments"] = json.dumps(
+                            {"code": arguments}, ensure_ascii=False
+                        )
+        _messages.append(n_message)
+    return _messages

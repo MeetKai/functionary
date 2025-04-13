@@ -42,48 +42,12 @@ class Qwen25TextOnlyPromptTemplate(PromptTemplate):
         # handle code_interpreter
         _tools = []
         if tools_or_functions:
-            for tool in tools_or_functions:
-                if tool["type"] == "code_interpreter":
-                    _tools.append(
-                        {
-                            "type": "function",
-                            "function": {
-                                "name": "python",
-                                "description": "This tool is used to execute python code. Code will be executed in a stateful Jupyter notebook environment. Python will respond with the output of the execution or time out after 60.0 seconds. The drive at '/mnt/data' can be used to save and persist user files.",
-                                "parameters": {
-                                    "type": "object",
-                                    "properties": {
-                                        "code": {
-                                            "type": "string",
-                                            "description": "The python code to run",
-                                        }
-                                    },
-                                },
-                            },
-                        }
-                    )
-                else:
-                    _tools.append(tool)
+            _tools = prompt_utils.convert_code_interpreter_to_function(
+                tools_or_functions
+            )
 
         # find the assistant message that tool_call is python
-        _messages = []
-        for message in messages:
-            n_message = copy.deepcopy(message)
-            tool_calls = n_message.get("tool_calls", []) or []
-            if len(tool_calls) > 0:
-                for tool_call in tool_calls:
-                    if tool_call["function"]["name"] == "python":
-                        arguments = tool_call["function"][
-                            "arguments"
-                        ]  # currently the code is in string format
-                        # check if argument is a valid JSON string or python code
-                        try:  # if this is a valid JSON string --> no need to change anything
-                            json.loads(arguments)
-                        except:
-                            tool_call["function"]["arguments"] = json.dumps(
-                                {"code": arguments}, ensure_ascii=False
-                            )
-            _messages.append(n_message)
+        _messages = prompt_utils.convert_code_interpreter_tool_calls(messages)
         prompt = super().get_prompt_from_messages(
             messages=_messages,
             tools_or_functions=_tools,
@@ -173,7 +137,6 @@ class Qwen25TextOnlyPromptTemplate(PromptTemplate):
             "content": text_content if len(text_content) > 0 else None,
             "tool_calls": None if len(tool_calls) == 0 else tool_calls,
         }
-
 
     def initialize_fsm_gen_state(
         self,
