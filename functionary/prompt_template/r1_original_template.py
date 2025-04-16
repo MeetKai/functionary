@@ -96,7 +96,7 @@ class R1Template(PromptTemplate):
         return ["<｜end▁of▁sentence｜>"]
 
     def parse_assistant_response(
-        self, llm_output: str, tool_choice: Any | None
+        self, llm_output: str, tool_choice: Optional[Any] = None
     ) -> Dict:
         for stop in self.get_stop_tokens_for_generation():
             if llm_output.endswith(stop):
