@@ -172,10 +172,6 @@ app.put("/generate")(generate_request)
 
 @app.post("/v1/chat/completions")
 async def openai_v1_chat_completions(raw_request: Request):
-    global tokenizer_manager
-
-    # if not args.grammar_sampling:
-    #     backend = None
     return await v1_chat_completions(tokenizer_manager, None, raw_request, served_model)
 
 
