@@ -44,8 +44,8 @@ class TestPromptTemplate(unittest.TestCase):
             # "v3-llama3.1": "meetkai/functionary-small-v3.1",
             # "r1": "deepseek-ai/DeepSeek-R1",
             # "r1_distilled_qwen": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
-            # "r1_distilled_llama": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-            # "qwen2.5-text-only": "Qwen/Qwen2.5-32B",
+            "r1_distilled_llama": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+            "qwen2.5-text-only": "Qwen/Qwen2.5-32B",
             "gemma3": "google/gemma-3-27b-it",
             "cogito": "deepcogito/cogito-v1-preview-qwen-32B",
         }

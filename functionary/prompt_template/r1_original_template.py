@@ -124,7 +124,7 @@ class R1Template(PromptTemplate):
             for tool_call_str in tool_calls_strs:
                 tool_calls.append(parse_tool_call(tool_call_str))
         return {
-            "role": "assistant", 
-            "content": text_content if text_content else None, 
-            "tool_calls": tool_calls if tool_calls else None
+            "role": "assistant",
+            "content": text_content if text_content else None,
+            "tool_calls": tool_calls if tool_calls else None,
         }

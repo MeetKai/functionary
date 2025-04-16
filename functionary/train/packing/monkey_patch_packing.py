@@ -7,7 +7,9 @@ import sys
 
 def get_max_seqlen_in_batch(attention_mask):
     max_num = torch.max(attention_mask)
-    max_num = int(max_num) # there are cases that type of attention_mask is bfloat16 such as Gemma3ForConditionalGeneration
+    max_num = int(
+        max_num
+    )  # there are cases that type of attention_mask is bfloat16 such as Gemma3ForConditionalGeneration
     counts = []
     for i in range(1, max_num + 1):
         counts.append(
