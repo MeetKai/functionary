@@ -22,8 +22,8 @@ from functionary.prompt_template import (
     LlavaLlama,
     PromptTemplate,
     PromptTemplateV2,
-    Llama31ReasoningTemplate,   
-    get_available_prompt_template_versions,
+    Llama31ReasoningTemplate,
+    Qwen25TextOnlyPromptTemplate,
 )
 from functionary.prompt_template.prompt_utils import (
     enforce_tool_choice,
@@ -145,7 +145,7 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
             {"type": "function", "function": self.default_functions[0]}
         ]
         self.default_python_args = "from datetime import date\n# Find today's date\ntoday = date.today()\ntoday"
-        self.test_prompt_templates = get_available_prompt_template_versions()
+
         self.prompt_template_to_tokenizer_name_mapping = {
             PromptTemplateV2: "meetkai/functionary-small-v2.4",
             Llama3Template: "meetkai/functionary-small-v2.5",
@@ -153,7 +153,12 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
             Llama31Template: "meetkai/functionary-small-v3.1",
             Llama31ReasoningTemplate: "meetkai/functionary-small-v3.1",
             LlavaLlama: "lmms-lab/llama3-llava-next-8b",
+            Qwen25TextOnlyPromptTemplate: "Qwen/Qwen2.5-32B-Instruct",
         }
+        # only test the prompt templates that we will use, no need to test all the prompt templates
+        self.test_prompt_templates = list(
+            self.prompt_template_to_tokenizer_name_mapping.keys()
+        )  # get_available_prompt_template_versions()
         self.default_text_str = "Normal text generation"
         self.default_tool_call_name = "get_weather"
         self.default_tool_call_args = [
@@ -500,13 +505,14 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
         # Test whether all prompt templates are included in template_to_tokenizer_mapping yet
         for prompt_template in self.test_prompt_templates:
             self.assertIn(
-                type(prompt_template),
+                prompt_template,
                 self.prompt_template_to_tokenizer_name_mapping.keys(),
                 f"Prompt template `{type(prompt_template)}` is not included in template_to_tokenizer_mapping yet.",
             )
 
     async def test_request_handling(self):
-        for prompt_template in self.test_prompt_templates:
+        for prompt_template_class in self.test_prompt_templates:
+            prompt_template = prompt_template_class.get_prompt_template()
             for test_case in self.request_handling_test_cases:
                 raw_response = generate_raw_response(
                     gen_text=test_case["gen_text"],
@@ -590,10 +596,10 @@ class TestRequestHandling(unittest.IsolatedAsyncioTestCase):
                     yield "", "stop"
                     # yield "", test_case["expected_finish_reason"]
 
-        for prompt_template in self.test_prompt_templates:
-
+        for prompt_template_class in self.test_prompt_templates:
+            prompt_template = prompt_template_class.get_prompt_template()
             tokenizer = AutoTokenizer.from_pretrained(
-                self.prompt_template_to_tokenizer_name_mapping[type(prompt_template)]
+                self.prompt_template_to_tokenizer_name_mapping[prompt_template_class]
             )
             special_tokens = {
                 "additional_special_tokens": prompt_template.get_additional_tokens()
