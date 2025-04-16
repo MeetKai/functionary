@@ -46,7 +46,7 @@ class TestPromptTemplate(unittest.TestCase):
             # "r1_distilled_qwen": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
             "r1_distilled_llama": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
             "qwen2.5-text-only": "Qwen/Qwen2.5-32B",
-            "gemma3": "google/gemma-3-27b-it",
+            "gemma3": "unsloth/gemma-3-12b-it",
             "cogito": "deepcogito/cogito-v1-preview-qwen-32B",
         }
         self.image_template_version_to_model_name = {
