@@ -1,0 +1,63 @@
+{# version=r1_distilled_qwen #}
+{%- if tools %}
+    {{- '<｜System｜>' }}
+    {%- set has_reasoning = tools | selectattr("type", "equalto", "reasoning") | list | length > 0 -%}
+    {%- if has_reasoning -%}
+        {%- set tools = tools | rejectattr("type", "equalto", "reasoning") | list -%}
+    {%- endif -%}
+    {{- "\n\n# Tools\n\nYou may call one or more functions to assist with the user query." }}
+    {%- if has_reasoning %}
+        {{- " Please generate reasoning before deciding which tools to use." }}
+    {%- else %}
+        {{- "" }}
+    {%- endif %}
+    {{- "\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>" }}
+    {%- for tool in tools %}
+        {{- "\n" }}
+        {{- tool | tojson }}
+    {%- endfor %}
+    {{- "\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call>\n" }}
+{%- else %}
+{%- endif %}
+{%- for message in messages -%}
+    {%- if message.role == "user" -%}
+        {{ '<｜User｜>' + message['content'] }}
+    {%- elif message.role == "system" %}
+        {{ '<｜System｜>' + message['content'] + '\n'}}
+    {%- elif message.role == "assistant" %}
+        {{- '<｜Assistant｜>'}}
+        {%- if message.content %}
+            {{- message.content }}
+        {%- endif %}
+        {%- if "tool_calls" in message and message["tool_calls"] is not none -%}
+            {%- set tool_calls = message["tool_calls"] -%}
+        {%-else-%}
+            {%- set tool_calls = [] -%}
+        {%- endif -%}
+        {%- for tool_call in tool_calls %}
+            {%- if tool_call.function is defined %}
+                {%- set tool_call = tool_call.function %}
+            {%- endif %}
+            {%- if loop.first %}
+                {{- '<tool_call>\n{"name": "' }}
+            {%- else %}
+                {{- '\n<tool_call>\n{"name": "' }}
+            {%- endif %}
+            {{- tool_call.name }}
+            {{- '", "arguments": ' }}
+            {{- tool_call.arguments }}
+            {{- '}\n</tool_call>' }}
+        {%- endfor %}
+        {{- '<｜end▁of▁sentence｜>' }}
+    {%- elif message.role == "tool" %}
+        {%- if (loop.index0 == 0) or (messages[loop.index0 - 1].role != "tool") %}
+            {{- '<｜User｜>' }}
+        {%- endif %}
+        {{- '\n<tool_response>\n' }}
+        {{- message.content }}
+        {{- '\n</tool_response>' }}
+    {%- endif %}
+{%- endfor %}
+{%- if add_generation_prompt %}
+    {{- '<｜Assistant｜>' }}
+{%- endif %}

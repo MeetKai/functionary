@@ -69,13 +69,12 @@ class PromptTemplate:
         """
         raise NotImplementedError
 
-    @abstractmethod
     def get_additional_tokens(self) -> List[str]:
         """return list of added tokens if using this template
         Returns:
             List[str]: list of tokens, each token is a string
         """
-        raise NotImplementedError
+        return []
 
     @abstractmethod
     def get_stop_tokens_for_generation(self) -> List[str]:

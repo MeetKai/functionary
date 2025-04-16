@@ -38,10 +38,16 @@ class TestPromptTemplate(unittest.TestCase):
         super(TestPromptTemplate, self).__init__(*args, **kwargs)
 
         self.template_version_to_model_name = {
-            "v2": "meetkai/functionary-small-v2.4",
-            "v2.llama3": "meetkai/functionary-small-v2.5",
-            "v3.llama3": "meetkai/functionary-medium-v3.0",
-            "v3-llama3.1": "meetkai/functionary-small-v3.1",
+            # "v2": "meetkai/functionary-small-v2.4",
+            # "v2.llama3": "meetkai/functionary-small-v2.5",
+            # "v3.llama3": "meetkai/functionary-medium-v3.0",
+            # "v3-llama3.1": "meetkai/functionary-small-v3.1",
+            # "r1": "deepseek-ai/DeepSeek-R1",
+            # "r1_distilled_qwen": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+            "r1_distilled_llama": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+            "qwen2.5-text-only": "Qwen/Qwen2.5-32B",
+            "gemma3": "unsloth/gemma-3-12b-it",
+            "cogito": "deepcogito/cogito-v1-preview-qwen-32B",
         }
         self.image_template_version_to_model_name = {
             "v3.llava_llama": "meetkai/functionary-vision-small-v0.1"
@@ -130,7 +136,7 @@ class TestPromptTemplate(unittest.TestCase):
     ):
         """this function is used to test function: prepare_training_inputs"""
         # note that must set legacy=True, read more: https://github.com/huggingface/transformers/issues/25176
-        tokenizer = AutoTokenizer.from_pretrained(pretrained, legacy=True)
+        tokenizer = AutoTokenizer.from_pretrained(pretrained)
         tokenizer.pad_token = tokenizer.eos_token
         # first we add stop_tokens to the tokenizer
         prompt_template = get_prompt_template_by_version(template_version)
@@ -138,6 +144,7 @@ class TestPromptTemplate(unittest.TestCase):
         added_tokens = prompt_template.get_additional_tokens()
         special_tokens = {"additional_special_tokens": added_tokens}
         tokenizer.add_special_tokens(special_tokens)
+        tokenizer.chat_template = prompt_template.get_chat_template_jinja()
 
         test_case, _ = self.read_example_data(template_version)
 
@@ -145,7 +152,7 @@ class TestPromptTemplate(unittest.TestCase):
             messages=test_case,
             tokenizer=tokenizer,
             padding="longest",
-            max_length=1024,
+            max_length=2048,
             return_tensor=False,
             verbose=True,
             keep_assistant_prefix=keep_assistant_prefix,

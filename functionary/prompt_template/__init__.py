@@ -8,8 +8,15 @@ from functionary.prompt_template.llama31_prompt_template import Llama31Template
 from functionary.prompt_template.llava_prompt_template import LlavaLlama
 from functionary.prompt_template.prompt_template_v1 import PromptTemplateV1
 from functionary.prompt_template.prompt_template_v2 import PromptTemplateV2
-from functionary.prompt_template.llama31_reasoning_prompt_template import Llama31ReasoningTemplate
-
+from functionary.prompt_template.llama31_reasoning_prompt_template import (
+    Llama31ReasoningTemplate,
+)
+from functionary.prompt_template.r1_original_template import R1Template
+from functionary.prompt_template.r1_distilled_qwen import R1DistilledQwen
+from functionary.prompt_template.r1_distilled_llama import R1DistilledLlama
+from functionary.prompt_template.qwen25_text_only_template import Qwen25TextOnlyPromptTemplate
+from functionary.prompt_template.gemma3_prompt_template import Gemma3Template
+from functionary.prompt_template.cogito_prompt_template import CogitoPromptTemplate
 
 def get_available_prompt_template_versions() -> List[PromptTemplate]:
     """This function will get all the available prompt templates in the module.
@@ -30,6 +37,10 @@ def get_available_prompt_template_versions() -> List[PromptTemplate]:
     # we don't use get_prompt_template or this will return the parent class
     all_templates_obj.append(LlavaLlama.get_prompt_template())
     all_templates_obj.append(Llama31ReasoningTemplate.get_prompt_template())
+    all_templates_obj.append(R1DistilledLlama.get_prompt_template())
+    all_templates_obj.append(R1DistilledQwen.get_prompt_template())
+    all_templates_obj.append(Gemma3Template.get_prompt_template())
+    all_templates_obj.append(CogitoPromptTemplate.get_prompt_template())
     return all_templates_obj
 
 

@@ -57,7 +57,7 @@ from typing import Union
 from functionary.prompt_template import PromptTemplate, get_prompt_template_by_version
 from functionary.train.custom_datasets import read_dataset
 from functionary.train import training_utils
-from training_utils import print_rank0
+from functionary.train.training_utils import print_rank0
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 
@@ -184,6 +184,8 @@ def train():
         model_class = AutoLigerKernelForCausalLM
     else:
         model_class = transformers.AutoModelForCausalLM
+    # from transformers import Gemma3ForConditionalGeneration
+    # model_class = Gemma3ForConditionalGeneration
 
     model = model_class.from_pretrained(
         model_args.model_name_or_path,
@@ -250,7 +252,7 @@ def train():
 
     if training_args.do_eval:
         print_rank0("***** HERE ARE SOME EXAMPLES FROM EVALUATION ***")
-        training_utils.print_some_examples(eval_dataset, tokenizer)
+ #       training_utils.print_some_examples(eval_dataset, tokenizer)
 
     def preprocess_logits_for_metrics(logits, labels):
         return training_utils.preprocess_logits_for_metrics(
@@ -283,7 +285,7 @@ def train():
     else:
         trainer.train()
 
-    trainer.save_state()
+    # trainer.save_state()
 
     # FSDP requires state_dict_type=FULL_STATE_DICT in order to save the model weights in .bin format
     if trainer.is_fsdp_enabled:

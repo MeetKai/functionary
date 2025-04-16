@@ -1,0 +1,67 @@
+{# version=r1_distilled_llama #}{%- if not tools is defined -%}
+    {%- set tools = none -%}
+{%- endif -%}
+
+{%- set has_code_interpreter = tools | selectattr("type", "equalto", "code_interpreter") | list | length > 0 -%}
+{%- if has_code_interpreter -%}
+    {%- set tools = tools | rejectattr("type", "equalto", "code_interpreter") | list -%}
+{%- endif -%}
+
+{%- set has_reasoning = tools | selectattr("type", "equalto", "reasoning") | list | length > 0 -%}
+{%- if has_reasoning -%}
+    {%- set tools = tools | rejectattr("type", "equalto", "reasoning") | list -%}
+{%- endif -%}
+
+{#- System message + builtin tools #}
+{{- bos_token }}
+{%- if has_reasoning or has_code_interpreter or tools -%}
+    {{- "<｜System｜>\n" }}
+{%- endif -%}
+{%- if has_reasoning %}
+    {{- "Reasoning Mode: On\n\n" }}
+{%- endif %}
+{%- if has_code_interpreter %}
+    {{- "Environment: ipython\n\n" }}
+{%- endif %}
+{%- if tools %}
+    {{- "\nYou have access to the following functions:\n\n" }}
+    {%- for t in tools %}
+        {%- if "type" in t -%}
+            {{ "Use the function '" + t["function"]["name"] + "' to '" + t["function"]["description"] + "'\n" + t["function"] | tojson() }}
+        {%- else -%}
+            {{ "Use the function '" + t["name"] + "' to '" + t["description"] + "'\n" + t | tojson }}
+        {%- endif -%}
+        {{- "\n\n" }}
+    {%- endfor %}
+    {{- '\nThink very carefully before calling functions.\nIf a you choose to call a function ONLY reply in the following format:\n<{start_tag}={function_name}>{parameters}{end_tag}\nwhere\n\nstart_tag => `<function`\nparameters => a JSON dict with the function argument name as key and function argument value as value.\nend_tag => `</function>`\n\nHere is an example,\n<function=example_function_name>{"example_name": "example_value"}</function>\n\nReminder:\n- If looking for real time information use relevant functions before falling back to brave_search\n- Function calls MUST follow the specified format, start with <function= and end with </function>\n- Required parameters MUST be specified\n- Only call one function at a time\n- Put the entire function call reply on one line\n\n' -}}
+{%- endif %}
+
+{%- for message in messages -%}
+    {%- if message['role'] == 'user' -%}
+        {{-'<｜User｜>' + message['content'] -}}
+    {%- elif message['role'] == 'system' -%}
+        {{- '<｜System｜>' + message['content'] + '\n' -}}
+    {%- elif message['role'] == 'tool' -%}
+        {{ 'ipython\n\n' + message['content'] }}
+    {%- else -%}
+        {{-'<｜Assistant｜>'}}
+        {%- if message['content'] and message['content']|length > 0 -%}
+            {{ message['content'] }}
+        {%- endif -%}
+        {%- if 'tool_calls' in message and message['tool_calls'] and message['tool_calls']|length > 0 -%}
+            {%- for tool_call in message['tool_calls'] -%}
+                {%- if tool_call["function"]["name"] == "python" -%}
+                    {{ '<|python_tag|>' + tool_call['function']['arguments'] }}
+                {%- else -%}
+                    {{ '<function=' + tool_call['function']['name'] + '>' + tool_call['function']['arguments'] + '</function>' }}
+                {%- endif -%}
+            {%- endfor -%}
+            {{ '<|eom_id|>' }}
+        {%- elif message['content'] and message['content']|length > 0 -%}
+            {{ '<｜end▁of▁sentence｜>' }}
+        {%- endif -%}
+    {%- endif -%}
+{%- endfor -%}
+{%- if add_generation_prompt -%}
+    {{ '<｜Assistant｜>' }}
+{%- endif -%}

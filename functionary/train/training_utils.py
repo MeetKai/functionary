@@ -50,7 +50,7 @@ def initialize_tokenizer(
 
     # add chat_template for tokenizer
     tokenizer.chat_template = prompt_template.get_chat_template_jinja()
-    print("tokenizer: ", tokenizer)
+    # print("tokenizer: ", tokenizer)
 
     # Resize embedding
     model.resize_token_embeddings(len(tokenizer))
@@ -218,6 +218,7 @@ def print_some_examples(ds, tokenizer):
         print_rank0("shape of input_ids: ", batch["input_ids"].shape)  # B x L
         print_rank0("shape of labels: ", batch["labels"].shape)
         print_rank0("shape of attention_mask: ", batch["attention_mask"].shape)
+        print_rank0("attetnion_mask", batch["attention_mask"])
         # print_rank0('input_ids: ', batch["input_ids"].tolist())
         # print_rank0('labels: ', batch["labels"].tolist())
         print_rank0("attention mask: ", batch["attention_mask"])
