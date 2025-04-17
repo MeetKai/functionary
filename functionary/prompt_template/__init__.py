@@ -17,6 +17,8 @@ from functionary.prompt_template.r1_distilled_llama import R1DistilledLlama
 from functionary.prompt_template.qwen25_text_only_template import Qwen25TextOnlyPromptTemplate
 from functionary.prompt_template.gemma3_prompt_template import Gemma3Template
 from functionary.prompt_template.cogito_prompt_template import CogitoPromptTemplate
+from functionary.prompt_template.moonlight_template import MoonlightTemplate
+
 
 def get_available_prompt_template_versions() -> List[PromptTemplate]:
     """This function will get all the available prompt templates in the module.
