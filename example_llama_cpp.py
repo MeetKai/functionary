@@ -4,7 +4,6 @@
 import asyncio
 import json
 import random
-import sys
 from typing import List
 
 from chatlab import FunctionRegistry, tool_result
@@ -18,12 +17,16 @@ from functionary.prompt_template import get_prompt_template_from_tokenizer
 
 
 class FunctionaryAPI:
-    def __init__(self):
+    def __init__(self, model="functionary-small-v2.2"):
         # Model repository on the Hugging Face model hub
-        model_repo = "meetkai/functionary-small-v2.2-GGUF"
+        model_repo = f"meetkai/{model}-GGUF"
 
-        # File to download
-        file_name = "functionary-small-v2.2.f16.gguf"
+        if model == "functionary-medium-v2.2":
+            # TODO: Ask about f16 for medium model
+            file_name = "functionary-medium-v2.2.q8_0.gguf"
+        else:
+            # File to download
+            file_name = "functionary-small-v2.2.f16.gguf"
 
         # Download the file
         local_file_path = hf_hub_download(repo_id=model_repo, filename=file_name)
@@ -79,7 +82,16 @@ class FunctionaryAPI:
 
 
 async def main():
-    functionary = FunctionaryAPI()
+    import sys
+
+    # Check for command line arguments for model size
+    model_size = "functionary-small-v2.2"
+    if "--small" in sys.argv:
+        model_size = "functionary-small-v2.2"
+    elif "--medium" in sys.argv:
+        model_size = "functionary-medium-v2.2"
+
+    functionary = FunctionaryAPI(model=model_size)
 
     # Provide some space after the llama_cpp logs
     print("\n\n")
