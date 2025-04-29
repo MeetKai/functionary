@@ -163,6 +163,15 @@ sudo docker build -t functionary-sglang -f dockerfiles/Dockerfile.sgl .
 sudo docker run --runtime nvidia --gpus all -p 8000:8000 functionary-sglang
 ```
 
+#### Run in Docker
+
+You can also run functionary in Docker
+
+```shell
+docker build . -t functionary
+docker run -p 8000:8000 functionary
+```
+
 ### OpenAI Compatible Usage
 
 ```python
