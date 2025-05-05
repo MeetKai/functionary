@@ -23,8 +23,8 @@ vllm = [
 sglang = [
     "python-multipart==0.0.12",
     "orjson==3.10.10",
-    "sglang[all]==0.4.4.post1",
-    "transformers==4.48.3"
+    "sglang[all]==0.4.6",
+    "transformers==4.51.1"
 ]
 
 [project.urls]
