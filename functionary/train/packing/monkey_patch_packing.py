@@ -188,3 +188,8 @@ def monkey_patch_packing_for_model(pretrained_model):
         transformers.models.mixtral.modeling_mixtral.load_balancing_loss_func = (
             load_balancing_loss_func
         )
+    if config_type == "qwen3moeconfig":
+        print("*****Monkey_patch the load_balancing_loss_func for Qwen3_MOE*****")
+        transformers.models.qwen3_moe.modeling_qwen3_moe.load_balancing_loss_func = (
+            load_balancing_loss_func
+        )
