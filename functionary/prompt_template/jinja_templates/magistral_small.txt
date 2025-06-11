@@ -1,0 +1,12 @@
+{%- for message in messages -%}
+    {%- if message.role == "user" -%}
+        [INST]{{ message.content }}
+    {%- elif message.role == "assistant" -%}
+        [/INST]{{ message.content }}</s>
+    {%- elif message.role == "system" -%}
+        [SYSTEM_PROMPT]{{ message.content }}[/SYSTEM_PROMPT]
+    {%- endif -%}
+{%- endfor -%}
+{%- if add_generation_prompt -%}
+    [/INST]
+{%- endif -%}
