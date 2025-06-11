@@ -26,3 +26,9 @@ class MagistralSmallPromptTemplate(PromptTemplate):
 
     def get_stop_tokens_for_generation(self) -> List[str]:
         return ["</s>"]
+
+    def parse_assistant_response(self, llm_output: str, tool_choice: Any | None) -> Dict:
+        return {
+            "role": "assistant",
+            "content": llm_output,
+        }

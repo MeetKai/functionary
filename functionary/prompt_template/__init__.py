@@ -17,7 +17,6 @@ from functionary.prompt_template.r1_distilled_llama import R1DistilledLlama
 from functionary.prompt_template.qwen25_text_only_template import Qwen25TextOnlyPromptTemplate
 from functionary.prompt_template.gemma3_prompt_template import Gemma3Template
 from functionary.prompt_template.cogito_prompt_template import CogitoPromptTemplate
-from functionary.prompt_template.qwen3_prompt_template import Qwen3PromptTemplate
 from functionary.prompt_template.magistral_small_template import MagistralSmallPromptTemplate
 
 def get_available_prompt_template_versions() -> List[PromptTemplate]:
@@ -43,7 +42,6 @@ def get_available_prompt_template_versions() -> List[PromptTemplate]:
     all_templates_obj.append(R1DistilledQwen.get_prompt_template())
     all_templates_obj.append(Gemma3Template.get_prompt_template())
     all_templates_obj.append(CogitoPromptTemplate.get_prompt_template())
-    all_templates_obj.append(Qwen3PromptTemplate.get_prompt_template())
     return all_templates_obj
 
 
