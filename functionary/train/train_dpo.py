@@ -6,6 +6,7 @@ from typing import Dict, Optional
 import requests
 import json
 import random
+
 # from torch.utils.data import Dataset
 from datasets import Dataset
 from transformers import AutoTokenizer, BitsAndBytesConfig
@@ -99,8 +100,8 @@ def get_dataset_from_jsonl(data_path: str, prompt_template_version: str):
     for item in data:
         messages = item["messages"]
         tools = item.get("tools", []) or []
-        chosen = item["chosen"]
-        rejected = item["rejected"]
+        chosen = item["selected_answer"]
+        rejected = item["rejected_answer"]
         input_prompt = prompt_template.get_prompt_from_messages(
             messages, tools_or_functions=tools, add_generation_prompt=True
         )
@@ -119,7 +120,10 @@ def get_dataset_from_jsonl(data_path: str, prompt_template_version: str):
         list_chosen.append(chosen_output)
         list_rejected.append(rejected_output)
 
-    return Dataset.from_dict({"prompt": list_prompts, "chosen": list_chosen, "rejected": list_rejected})
+    return Dataset.from_dict(
+        {"prompt": list_prompts, "chosen": list_chosen, "rejected": list_rejected}
+    )
+
 
 @dataclass
 class ModelArguments(ModelConfig):
@@ -161,6 +165,12 @@ def main():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    if LOCAL_RANK == 0:
+        if not os.path.exists(training_args.output_dir):
+            os.mkdir(training_args.output_dir)
+
+        tokenizer.save_pretrained(training_args.output_dir)
+
     train_ds = get_dataset_from_jsonl(
         data_args.train_data_path, training_args.prompt_template_version
     )
@@ -170,14 +180,14 @@ def main():
 
     print_rank0(f"train_ds: {len(train_ds)}")
     print_rank0(f"dev_ds: {len(dev_ds)}")
-    
+
     quantization_config = get_quantization_config(model_args)
     device_string = "cuda:" + str(LOCAL_RANK)
     device_map = (
-            get_kbit_device_map()
-            if quantization_config is not None
-            else {"": device_string}
-        )
+        get_kbit_device_map()
+        if quantization_config is not None
+        else {"": device_string}
+    )
     if len(training_args.fsdp) > 0 or is_deepspeed_zero3_enabled():
         device_map = None
 
@@ -203,7 +213,9 @@ def main():
     ref_model = None
     if is_deepspeed_zero3_enabled():
         if peft_config is None:
-            ref_model = model_class.from_pretrained(model_args.model_name_or_path, **model_kwargs)
+            ref_model = model_class.from_pretrained(
+                model_args.model_name_or_path, **model_kwargs
+            )
 
     trainer = DPOTrainer(
         model=model,

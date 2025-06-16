@@ -9,6 +9,9 @@ pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https
 # Install Dependencies
 pip install -e .
 
+# Install flash-attention 
+pip install flash-attn==2.7.4.post1 --no-build-isolation
+
 # Install Liger if using liger:
 pip install -e .[liger]
 ```
@@ -274,7 +277,7 @@ deepspeed functionary/train/train_dpo.py \
     --gradient_checkpointing True \
     --optim paged_adamw_8bit \
     --deepspeed functionary/train/ds_config/zero3_wo_offload.json \
-    --max_length 32168 \
+    --max_length 32768 \
     --use_liger True \
     --prompt_template_version qwen2.5-text-only \
     --use_peft --lora_r 128 --lora_alpha 256 --lora_target_modules all-linear
@@ -308,7 +311,7 @@ deepspeed functionary/train/train_dpo.py \
     --gradient_checkpointing True \
     --optim paged_adamw_8bit \
     --deepspeed functionary/train/ds_config/zero3_wo_offload.json \
-    --max_length 32168 \
+    --max_length 32768 \
     --use_liger True \
     --prompt_template_version qwen2.5-text-only
 ```
