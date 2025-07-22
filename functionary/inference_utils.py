@@ -31,7 +31,7 @@ class StopWordsCriteria(StoppingCriteria):
         return False
 
 
-def analyze_tools_and_tool_choice(request):
+def analyze_tools_and_tool_choice(request, add_search_tool: bool = False):
     if request.tools:
         tools = enforce_tool_choice(
             choice=request.tool_choice, tools_or_functions=request.tools
@@ -47,6 +47,11 @@ def analyze_tools_and_tool_choice(request):
     else:
         tools_or_functions = []
         tool_func_choice = "none"
+
+    if add_search_tool:
+        from functionary.tool_list import SEARCH_TOOL
+
+        tools_or_functions.append(SEARCH_TOOL)
 
     return tools_or_functions, tool_func_choice
 

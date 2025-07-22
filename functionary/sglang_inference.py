@@ -310,7 +310,9 @@ async def v1_chat_generate_completion(
 
 
 def v1_chat_generate_response(
-    output_text: Union[str, List[str]], params: ChatCompletionParams
+    output_text: Union[str, List[str]],
+    params: ChatCompletionParams,
+    add_search_tool: bool = False,
 ) -> ChatCompletionResponse:
     """
     Generate a ChatCompletionResponse from the output text and parameters.
@@ -385,6 +387,7 @@ async def v1_chat_completions(
     srt_backend: Any,
     raw_request: Request,
     served_model: List[str],
+    add_search_tool: bool = False,
 ):
     """
     Handle chat completions for v1 of the API.
@@ -417,7 +420,9 @@ async def v1_chat_completions(
         else srt_backend.get_tokenizer()
     )
     prompt_template = get_prompt_template_from_tokenizer(tokenizer=tokenizer)
-    tools_or_functions, tool_func_choice = analyze_tools_and_tool_choice(request)
+    tools_or_functions, tool_func_choice = analyze_tools_and_tool_choice(
+        request, add_search_tool
+    )
 
     # Check for errors
     error_check_ret = await check_all_errors(request, served_model)
@@ -425,35 +430,65 @@ async def v1_chat_completions(
         return error_check_ret
 
     # Generate the adapted request
-    adapted_request, request = v1_chat_generate_request(
-        request, tokenizer, tools_or_functions, tool_func_choice, return_text=False
-    )
+    while True:
+        adapted_request, request = v1_chat_generate_request(
+            request, tokenizer, tools_or_functions, tool_func_choice, return_text=False
+        )
 
-    # Prepare the parameters for generate_completion and generate_response functions
-    params = ChatCompletionParams(
-        adapted_request=adapted_request,
-        raw_request=raw_request,
-        request=request,
-        tokenizer=tokenizer,
-        tokenizer_manager=tokenizer_manager,
-        srt_backend=srt_backend,
-        prompt_template=prompt_template,
-        tools_or_functions=tools_or_functions,
-        tool_func_choice=tool_func_choice,
-        frontend_state=None,  # None first. Set later if needed
-        grammar_sampling=True if srt_backend else False,
-    )
+        # Prepare the parameters for generate_completion and generate_response functions
+        params = ChatCompletionParams(
+            adapted_request=adapted_request,
+            raw_request=raw_request,
+            request=request,
+            tokenizer=tokenizer,
+            tokenizer_manager=tokenizer_manager,
+            srt_backend=srt_backend,
+            prompt_template=prompt_template,
+            tools_or_functions=tools_or_functions,
+            tool_func_choice=tool_func_choice,
+            frontend_state=None,  # None first. Set later if needed
+            grammar_sampling=True if srt_backend else False,
+        )
 
-    # Generate the text completion
-    output, error = await v1_chat_generate_completion(params)
-    if error:
-        return error
+        # Generate the text completion
+        output, error = await v1_chat_generate_completion(params)
+        if error:
+            return error
 
-    # If streaming, return the output(StreamingResponse) directly
-    if adapted_request.stream:
-        return output
+        # If streaming, return the output(StreamingResponse) directly
+        if adapted_request.stream:
+            return output
 
-    # Generate the API response
-    response = v1_chat_generate_response(output_text=output, params=params)
+        # Generate the API response
+        response = v1_chat_generate_response(output_text=output, params=params)
+        if not add_search_tool:
+            break
+        else:  # check if search_tool is used
+            from functionary.tool_list import SEARCH_TOOL, search_tool
+
+            assistant_message = response.choices[0].message
+            if assistant_message.tool_calls:
+                tool_response_messages = []
+                for tool_call in assistant_message.tool_calls:
+                    if tool_call.function.name == SEARCH_TOOL["function"]["name"]:
+                        search_tool_response = search_tool(
+                            json.loads(tool_call.function.arguments)
+                        )
+                        tool_response_messages.append(
+                            ChatMessage(
+                                role="tool",
+                                content=search_tool_response,
+                                tool_call_id=tool_call.id,
+                                name=SEARCH_TOOL["function"]["name"],
+                            )
+                        )
+                # update the request
+                if len(tool_response_messages) > 0:
+                    request.messages.append(assistant_message)
+                    request.messages.extend(tool_response_messages)
+                else:  # search-tool is not used
+                    break
+            else:
+                break
 
     return response

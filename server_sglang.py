@@ -25,7 +25,7 @@ import os
 import threading
 import time
 from http import HTTPStatus
-from typing import AsyncIterator, Dict, List, Optional, Union, Any, Callable
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 
 import orjson
 
@@ -38,33 +38,32 @@ import uvloop
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse, Response, StreamingResponse
-from uvicorn.config import LOGGING_CONFIG
 from sglang.lang.backend.runtime_endpoint import RuntimeEndpoint
+from sglang.srt.entrypoints.http_server import (
+    _launch_subprocesses,
+    _wait_and_warmup,
+    add_prometheus_middleware,
+    enable_func_timer,
+    lifespan,
+    set_uvicorn_logging_configs,
+)
 from sglang.srt.managers.data_parallel_controller import (
     run_data_parallel_controller_process,
 )
-from sglang.srt.entrypoints.http_server import (
-    _launch_subprocesses,
-    set_uvicorn_logging_configs,
-    _wait_and_warmup,
-    enable_func_timer,
-    add_prometheus_middleware,
-    lifespan,
-)
-from sglang.srt.managers.detokenizer_manager import run_detokenizer_process
 from sglang.srt.managers.io_struct import GenerateReqInput
-from sglang.srt.managers.scheduler import run_scheduler_process
-from sglang.srt.managers.tokenizer_manager import TokenizerManager
-from sglang.srt.openai_api.adapter import load_chat_template_for_openai_api
-from sglang.srt.openai_api.protocol import ModelCard, ModelList
+
+# from sglang.srt.openai_api.protocol import ModelCard, ModelList
+from sglang.srt.entrypoints.openai.protocol import ModelCard, ModelList
 from sglang.srt.server_args import PortArgs, ServerArgs
 from sglang.srt.utils import (
     add_api_key_middleware,
     configure_logger,
     is_port_available,
+    kill_process_tree,
     prepare_model_and_tokenizer,
 )
-from sglang.srt.utils import kill_process_tree
+from uvicorn.config import LOGGING_CONFIG
+
 from functionary.sglang_inference import v1_chat_completions
 
 logger = logging.getLogger(__name__)
@@ -75,6 +74,7 @@ asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 app = FastAPI(lifespan=lifespan)
 tokenizer_manager = None
 served_model = []
+add_search_tool = False
 
 app.add_middleware(
     CORSMiddleware,
@@ -172,7 +172,9 @@ app.put("/generate")(generate_request)
 
 @app.post("/v1/chat/completions")
 async def openai_v1_chat_completions(raw_request: Request):
-    return await v1_chat_completions(tokenizer_manager, None, raw_request, served_model)
+    return await v1_chat_completions(
+        tokenizer_manager, None, raw_request, served_model, add_search_tool
+    )
 
 
 @app.get("/v1/models", response_class=ORJSONResponse)
@@ -207,8 +209,17 @@ def launch_server(
     1. The HTTP server, Engine, and TokenizerManager both run in the main process.
     2. Inter-process communication is done through IPC (each process uses a different port) via the ZMQ library.
     """
-    global tokenizer_manager, scheduler_info
-    tokenizer_manager, scheduler_info = _launch_subprocesses(server_args=server_args)
+    global tokenizer_manager, scheduler_info, template_manager
+    tokenizer_manager, template_manager, scheduler_info = _launch_subprocesses(
+        server_args=server_args
+    )
+    sgl.srt.entrypoints.http_server._global_state = (
+        sgl.srt.entrypoints.http_server._GlobalState(
+            tokenizer_manager=tokenizer_manager,
+            template_manager=template_manager,
+            scheduler_info=scheduler_info,
+        )
+    )
 
     # Add api key authorization
     if server_args.api_key:
@@ -257,8 +268,16 @@ if __name__ == "__main__":
         default=None,
         help="enable detailed request input/output logging by providing logfile",
     )
+    parser.add_argument(
+        "--add-search-tool",
+        type=bool,
+        default=False,
+        help="add a search tool to the model",
+    )
+
     ServerArgs.add_cli_args(parser)
     args = parser.parse_args()
+    add_search_tool = args.add_search_tool
 
     served_model = [args.model_path]
     if args.served_model_name is not None:

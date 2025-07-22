@@ -43,7 +43,13 @@ pip install -e .[vllm]
 ```
 **SGLang**
 ```shell
-pip install -e .[sglang] --find-links https://flashinfer.ai/whl/cu124/torch2.5/flashinfer-python
+pip install uv 
+uv pip install "sglang[all]==0.4.9.post2"
+pip install jsonref
+```
+If you want to use the search tool, please install:
+```shell
+pip install tavily-python
 ```
 
 ### Running the server
@@ -58,7 +64,11 @@ python3 server_vllm.py --model "meetkai/functionary-v4r-small-preview" --host 0.
 ```shell
 python3 server_sglang.py --model-path "meetkai/functionary-v4r-small-preview" --host 0.0.0.0 --port 8000 --context-length 8192
 ```
-
+If you want to use search tool, just add the option: `--add-search-tool True`:
+```shell
+export TAVILY_API_KEY=YOUR_API_KEY
+python3 server_sglang.py --model-path "meetkai/functionary-v4r-small-preview" --host 0.0.0.0 --port 8000 --context-length 8192 --add-search-tool True
+```
 #### Medium Model
 
 Our medium models require: 4xA6000 or 2xA100 80GB to run, need to use: `tensor-parallel-size` or `tp` (SGLang)
