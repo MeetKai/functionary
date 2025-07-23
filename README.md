@@ -47,6 +47,7 @@ pip install uv
 uv pip install "sglang[all]==0.4.9.post2"
 pip install jsonref
 ```
+If you encounter this error: `ImportError: libnuma.so.1: cannot open shared object file: No such file or directory`, you need to run: `apt install libnuma-dev libnuma1`
 If you want to use the search tool, please install:
 ```shell
 pip install tavily-python

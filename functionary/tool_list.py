@@ -24,10 +24,12 @@ SEARCH_TOOL = {
 
 
 def search_tool(arguments: dict):
-    print(f"search: {json.dumps(arguments, ensure_ascii=False, indent=4)}")
+    # print(f"search: {json.dumps(arguments, ensure_ascii=False, indent=4)}")
     query = arguments["query"]
     response = tavily_client.search(query=query)
-    return json.dumps(response, ensure_ascii=False, indent=4)
+    result = json.dumps(response, ensure_ascii=False)
+    # print(f"search result:\n{json.dumps(response, ensure_ascii=False, indent=4)}")
+    return result
 
 
 if __name__ == "__main__":

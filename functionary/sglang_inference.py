@@ -424,6 +424,15 @@ async def v1_chat_completions(
         request, add_search_tool
     )
 
+    # if client's tools include _search, we will handle this as if add_search_tool is True
+    if any(
+        [
+            tool["type"] == "function" and tool["function"]["name"] == "_search"
+            for tool in tools_or_functions
+        ]
+    ):
+        add_search_tool = True
+
     # Check for errors
     error_check_ret = await check_all_errors(request, served_model)
     if error_check_ret is not None:
