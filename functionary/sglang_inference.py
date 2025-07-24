@@ -438,6 +438,7 @@ async def v1_chat_completions(
     if error_check_ret is not None:
         return error_check_ret
 
+    history_trace = []
     # Generate the adapted request
     while True:
         adapted_request, request = v1_chat_generate_request(
@@ -470,6 +471,7 @@ async def v1_chat_completions(
 
         # Generate the API response
         response = v1_chat_generate_response(output_text=output, params=params)
+
         if not add_search_tool:
             break
         else:  # check if search_tool is used
@@ -495,9 +497,16 @@ async def v1_chat_completions(
                 if len(tool_response_messages) > 0:
                     request.messages.append(assistant_message)
                     request.messages.extend(tool_response_messages)
+
+                    # add to the history trace to debug
+                    history_trace.append(assistant_message)
+                    history_trace.extend(tool_response_messages)
                 else:  # search-tool is not used
                     break
             else:
                 break
 
+    # set the history trace to the response
+
+    response.choices[0].history = history_trace
     return response

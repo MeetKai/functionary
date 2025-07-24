@@ -171,6 +171,7 @@ class ChatCompletionResponseChoice(BaseModel):
     finish_reason: Optional[
         Literal["stop", "length", "function_call", "tool_calls"]
     ] = None
+    history: List[ChatMessage] = []
 
 
 class ChatCompletionResponse(BaseModel):
