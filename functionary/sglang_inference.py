@@ -470,34 +470,35 @@ async def v1_chat_completions(
 
         # Generate the API response
         response = v1_chat_generate_response(output_text=output, params=params)
-        if not add_search_tool:
-            break
-        else:  # check if search_tool is used
-            from functionary.tool_list import SEARCH_TOOL, search_tool
+        # if not add_search_tool:
+        #     break
+        # else:  # check if search_tool is used
+        #     from functionary.tool_list import SEARCH_TOOL, search_tool
 
-            assistant_message = response.choices[0].message
-            if assistant_message.tool_calls:
-                tool_response_messages = []
-                for tool_call in assistant_message.tool_calls:
-                    if tool_call.function.name == SEARCH_TOOL["function"]["name"]:
-                        search_tool_response = search_tool(
-                            json.loads(tool_call.function.arguments)
-                        )
-                        tool_response_messages.append(
-                            ChatMessage(
-                                role="tool",
-                                content=search_tool_response,
-                                tool_call_id=tool_call.id,
-                                name=SEARCH_TOOL["function"]["name"],
-                            )
-                        )
-                # update the request
-                if len(tool_response_messages) > 0:
-                    request.messages.append(assistant_message)
-                    request.messages.extend(tool_response_messages)
-                else:  # search-tool is not used
-                    break
-            else:
-                break
+        #     assistant_message = response.choices[0].message
+        #     if assistant_message.tool_calls:
+        #         tool_response_messages = []
+        #         for tool_call in assistant_message.tool_calls:
+        #             if tool_call.function.name == SEARCH_TOOL["function"]["name"]:
+        #                 search_tool_response = search_tool(
+        #                     json.loads(tool_call.function.arguments)
+        #                 )
+        #                 tool_response_messages.append(
+        #                     ChatMessage(
+        #                         role="tool",
+        #                         content=search_tool_response,
+        #                         tool_call_id=tool_call.id,
+        #                         name=SEARCH_TOOL["function"]["name"],
+        #                     )
+        #                 )
+        #         # update the request
+        #         if len(tool_response_messages) > 0:
+        #             request.messages.append(assistant_message)
+        #             request.messages.extend(tool_response_messages)
+        #         else:  # search-tool is not used
+        #             break
+        #     else:
+        #         break
+        break
 
     return response
