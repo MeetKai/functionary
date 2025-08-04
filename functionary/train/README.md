@@ -9,6 +9,9 @@ pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https
 # Install Dependencies
 pip install -e .
 
+# Install flash-attention 
+pip install flash-attn==2.7.4.post1 --no-build-isolation
+
 # Install Liger if using liger:
 pip install -e .[liger]
 ```
@@ -208,4 +211,107 @@ Using **--packing** to speed up training by packing short data points, currently
 After finish training, you can merge the Lora weights with the pretrained weights by the following commmand:
 ```shell
 python -m functionary.train.merge_lora_weight save_folder pretrained_path checkpoint model_max_length prompt_template_version
+```
+
+
+
+## DPO Training
+For DPO training, you need to first install the trl: ```pip install trl==0.17.0```
+Here is the example command:
+```shell
+export WANDB_PROJECT=functionary
+export WANDB_LOG_MODEL=all
+torchrun --nproc_per_node=1 functionary/train/train_dpo.py \
+    --model_name_or_path Qwen/Qwen3-4B \
+    --train_data_path gen_train.jsonl \
+    --eval_data_path gen_dev.jsonl \
+    --bf16 True \
+    --output_dir test_output_dir \
+    --num_train_epochs 1 \
+    --per_device_train_batch_size 4 \
+    --per_device_eval_batch_size 1 \
+    --gradient_accumulation_steps 1 \
+    --eval_accumulation_steps 1 \
+    --eval_strategy steps \
+    --eval_steps 100 \
+    --save_strategy no \
+    --logging_steps 5 \
+    --learning_rate 1e-5 \
+    --weight_decay 0. \
+    --warmup_steps 35 \
+    --lr_scheduler_type cosine_with_min_lr \
+    --lr_scheduler_kwargs "{\"min_lr_rate\": 0.1}" \
+    --tf32 True \
+    --gradient_checkpointing True \
+    --optim paged_adamw_8bit \
+    --max_length 32168 \
+    --use_liger True \
+    --prompt_template_version qwen2.5-text-only
+```
+
+Using deepspeed:
+```shell
+export WANDB_PROJECT=functionary
+export WANDB_LOG_MODEL=all
+deepspeed functionary/train/train_dpo.py \
+    --model_name_or_path Qwen/Qwen3-4B \
+    --train_data_path gen_train.jsonl \
+    --eval_data_path gen_dev.jsonl \
+    --bf16 True \
+    --output_dir test_output_dir \
+    --num_train_epochs 1 \
+    --per_device_train_batch_size 4 \
+    --per_device_eval_batch_size 1 \
+    --gradient_accumulation_steps 1 \
+    --eval_accumulation_steps 1 \
+    --eval_strategy steps \
+    --eval_steps 100 \
+    --save_strategy no \
+    --logging_steps 5 \
+    --learning_rate 1e-5 \
+    --weight_decay 0. \
+    --warmup_steps 35 \
+    --lr_scheduler_type cosine_with_min_lr \
+    --lr_scheduler_kwargs "{\"min_lr_rate\": 0.1}" \
+    --tf32 True \
+    --gradient_checkpointing True \
+    --optim paged_adamw_8bit \
+    --deepspeed functionary/train/ds_config/zero3_wo_offload.json \
+    --max_length 32768 \
+    --use_liger True \
+    --prompt_template_version qwen2.5-text-only \
+    --use_peft --lora_r 128 --lora_alpha 256 --lora_target_modules all-linear
+```
+
+Using Lora with Deepspeed:
+```shell
+export WANDB_PROJECT=functionary
+export WANDB_LOG_MODEL=all
+deepspeed functionary/train/train_dpo.py \
+    --model_name_or_path Qwen/Qwen3-4B \
+    --train_data_path gen_train.jsonl \
+    --eval_data_path gen_dev.jsonl \
+    --bf16 True \
+    --output_dir test_output_dir \
+    --num_train_epochs 1 \
+    --per_device_train_batch_size 4 \
+    --per_device_eval_batch_size 1 \
+    --gradient_accumulation_steps 1 \
+    --eval_accumulation_steps 1 \
+    --eval_strategy steps \
+    --eval_steps 100 \
+    --save_strategy no \
+    --logging_steps 5 \
+    --learning_rate 1e-5 \
+    --weight_decay 0. \
+    --warmup_steps 35 \
+    --lr_scheduler_type cosine_with_min_lr \
+    --lr_scheduler_kwargs "{\"min_lr_rate\": 0.1}" \
+    --tf32 True \
+    --gradient_checkpointing True \
+    --optim paged_adamw_8bit \
+    --deepspeed functionary/train/ds_config/zero3_wo_offload.json \
+    --max_length 32768 \
+    --use_liger True \
+    --prompt_template_version qwen2.5-text-only
 ```
