@@ -209,3 +209,44 @@ After finish training, you can merge the Lora weights with the pretrained weight
 ```shell
 python -m functionary.train.merge_lora_weight save_folder pretrained_path checkpoint model_max_length prompt_template_version
 ```
+
+# ADD GRPO Training 
+First, you need to deploy vllm server for the training:
+```shell
+CUDA_VISIBLE_DEVICES=0 trl vllm-serve --model MODEL_NAME --max-model-len 32768 --port 8999 --host 0.0.0.0
+```
+Then run the following cmd:
+```
+deepspeed functionary/train/train_grpo.py \
+    --model_name_or_path PRETRAINED_MODEL_PATH \
+    --train_data_path TRAINING_PATH \
+    --eval_data_path VALIDATION_PATH \
+    --bf16 True \
+    --output_dir OUTPUT_DIR \
+    --num_train_epochs 1 \
+    --per_device_train_batch_size 2 \
+    --per_device_eval_batch_size 2 \
+    --gradient_accumulation_steps 1 \
+    --eval_accumulation_steps 1 \
+    --eval_strategy no \
+    --save_strategy no \
+    --logging_steps 1 \
+    --learning_rate 3e-6 \
+    --weight_decay 0. \
+    --warmup_steps 35 \
+    --lr_scheduler_type cosine_with_min_lr \
+    --lr_scheduler_kwargs "{\"min_lr_rate\": 0.2}" \
+    --tf32 True \
+    --gradient_checkpointing True \
+    --optim paged_adamw_8bit \
+    --use_liger True \
+    --num_generations 2 \
+    --use_vllm True \
+    --vllm_mode server --vllm_server_host 0.0.0.0 --vllm_server_port 8999 \
+    --deepspeed functionary/train/ds_config/zero3_wo_offload.json \
+    --max_completion_length 16384 \
+    --max_prompt_length 8192 \
+    --prompt_template_version qwen2.5-text-only \
+    --reward_functions_path PATH_TO_REWARDS.py \
+    --reward_function_names REWARD_FUNC_NAME 
+```

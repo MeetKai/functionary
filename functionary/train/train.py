@@ -65,7 +65,7 @@ LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="meta-llama/Llama-2-7b-hf")
-
+    attn_implementation: Optional[str] = field(default="flash_attention_2")
 
 @dataclass
 class DataArguments:
@@ -192,7 +192,7 @@ def train():
         torch_dtype=compute_dtype,
         config=config,
         cache_dir=training_args.cache_dir,
-        attn_implementation="flash_attention_2",  # use_flash_attention_2 is replaced by this from version: 4.36.0
+        attn_implementation=model_args.attn_implementation,  # use_flash_attention_2 is replaced by this from version: 4.36.0
     )
     model.config.use_cache = False
     # Activate computing load balancing loss iin MixtralForCausalLM

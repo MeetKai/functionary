@@ -35,7 +35,7 @@ LOCAL_RANK = int(os.getenv("LOCAL_RANK", "0"))
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="meta-llama/Llama-2-7b-hf")
-
+    attn_implementation: Optional[str] = field(default="flash_attention_2")
 
 @dataclass
 class DataArguments:
@@ -223,14 +223,14 @@ def load_model_with_rope_scaling(
         config=config,
         cache_dir=training_args.cache_dir,
         device_map=get_device_map(training_args, lora_args),
-        attn_implementation="flash_attention_2",  # use_flash_attention_2 is replaced by this from version: 4.36.0
+        attn_implementation=model_args.attn_implementation,  # use_flash_attention_2 is replaced by this from version: 4.36.0
         torch_dtype=compute_dtype,
         quantization_config=(
             BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=True,
                 bnb_4bit_quant_type="nf4",
-                attn_implementation="flash_attention_2",
+                attn_implementation=model_args.attn_implementation,
                 bnb_4bit_compute_dtype=compute_dtype,
             )
             if lora_args.q_lora
