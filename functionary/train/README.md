@@ -211,6 +211,14 @@ python -m functionary.train.merge_lora_weight save_folder pretrained_path checkp
 ```
 
 # ADD GRPO Training 
+Installation:
+```shell
+pip install trl==0.23.0
+pip install flash-attn==2.8.3 --no-build-isolation
+pip install trl[vllm]
+pip install trl[deepspeed]
+pip install bitsandbytes==0.47.0
+```
 First, you need to deploy vllm server for the training:
 ```shell
 CUDA_VISIBLE_DEVICES=0 trl vllm-serve --model MODEL_NAME --max-model-len 32768 --port 8999 --host 0.0.0.0
@@ -218,18 +226,19 @@ CUDA_VISIBLE_DEVICES=0 trl vllm-serve --model MODEL_NAME --max-model-len 32768 -
 Then run the following cmd:
 ```
 deepspeed functionary/train/train_grpo.py \
-    --model_name_or_path PRETRAINED_MODEL_PATH \
-    --train_data_path TRAINING_PATH \
-    --eval_data_path VALIDATION_PATH \
+    --model_name_or_path MODEL_NAME \
+    --train_data_path TRAIN.jsonl \
+    --eval_data_path DEV.jsonl \
     --bf16 True \
-    --output_dir OUTPUT_DIR \
+    --output_dir SAVE_PATH \
     --num_train_epochs 1 \
     --per_device_train_batch_size 2 \
     --per_device_eval_batch_size 2 \
     --gradient_accumulation_steps 1 \
     --eval_accumulation_steps 1 \
     --eval_strategy no \
-    --save_strategy no \
+    --save_strategy steps \
+    --save_steps 500 \
     --logging_steps 1 \
     --learning_rate 3e-6 \
     --weight_decay 0. \
@@ -247,6 +256,8 @@ deepspeed functionary/train/train_grpo.py \
     --max_completion_length 16384 \
     --max_prompt_length 8192 \
     --prompt_template_version qwen2.5-text-only \
-    --reward_functions_path PATH_TO_REWARDS.py \
-    --reward_function_names REWARD_FUNC_NAME 
+    --reward_functions_path functionary/train/my_rewards.py \
+    --use_liger_loss False \
+    --save_only_model True \
+    --reward_function_names check_exact_label_match 2>&1 | tee train_grpo.log
 ```

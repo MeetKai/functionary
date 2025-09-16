@@ -154,8 +154,7 @@ def main():
     )
     train_ds = get_dataset(data_args.train_data_path, prompt_template)
     dev_ds = get_dataset(data_args.eval_data_path, prompt_template)
-
-    original_batch_size = training_args.per_device_train_batch_size
+    print(f"train size: {len(train_ds)}; dev size: {len(dev_ds)}")
 
     quantization_config = get_quantization_config(model_args)
     device_string = "cuda:" + str(LOCAL_RANK)
