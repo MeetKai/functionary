@@ -104,6 +104,18 @@ class DataArguments:
         default=False,
         metadata={"help": "Whether to ignore cached tokenized data or not"},
     )
+    additional_mask_type: Optional[str] = field(
+        default="none",
+        metadata={
+            "help": "Whether to mask the reasoning or output tokens during training. One of 'reasoning', 'output', 'none'"
+        },
+    )
+    end_of_reasoning_token: Optional[str] = field(
+        default="</think>",
+        metadata={
+            "help": "The token to use for masking the reasoning tokens during training"
+        },
+    )
 
 
 @dataclass
@@ -252,7 +264,7 @@ def train():
 
     if training_args.do_eval:
         print_rank0("***** HERE ARE SOME EXAMPLES FROM EVALUATION ***")
- #       training_utils.print_some_examples(eval_dataset, tokenizer)
+    #       training_utils.print_some_examples(eval_dataset, tokenizer)
 
     def preprocess_logits_for_metrics(logits, labels):
         return training_utils.preprocess_logits_for_metrics(

@@ -4,6 +4,7 @@ import os
 import pickle
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Union
+import copy
 
 import torch
 import transformers
@@ -149,6 +150,8 @@ def read_dataset(model_path, data_args, training_args, tokenizer, ds_type):
     data_class_args = {
         "ignore_cached": data_args.ignore_cached,
         "keep_assistant_prefix": False,
+        "additional_mask_type": data_args.additional_mask_type,
+        "end_of_reasoning_token": data_args.end_of_reasoning_token,
     }
     if data_args.packing:
         cached_folder = get_cached_folder(
@@ -809,6 +812,63 @@ class CachedDataset(Dataset):
         print(json.dumps(self.create_meta_info()))
 
 
+def find_indices_of_unmasked_chunks(labels: List[int]) -> List[Tuple[int, int]]:
+    """Find indices of unmasked chunks in labels
+    Args:
+        labels (List[int]): List of integers, where -100 indicates masked position
+
+    Returns:
+        List[Tuple[int, int]]: List of tuples, where each tuple contains the start and end indices of an unmasked chunk (labels[i] != -100 for i in (start, end))
+    """
+    indices = []
+    in_chunk = False
+    start = 0
+    for idx, val in enumerate(labels):
+        if val != -100:
+            if not in_chunk:
+                start = idx
+                in_chunk = True
+        else:
+            if in_chunk:
+                indices.append((start, idx - 1))
+                in_chunk = False
+    if in_chunk:
+        indices.append((start, len(labels) - 1))
+    return indices
+
+
+def mask_left_or_right_of_token(
+    labels: List[int], token_id: int, side: str = "left"
+) -> List[int]:
+    # First find unmasked chunks in labels; chunks that are not -100
+    chunk_indices = find_indices_of_unmasked_chunks(labels)
+    new_labels = copy.deepcopy(labels)
+    for start, end in chunk_indices:
+        # search for end_of_reasoning_token_id in labels[start:end + 1]
+        c_token_index = -1
+        for i in range(start, end + 1):
+            assert labels[i] != -100, "labels[i] should not be -100"
+            if labels[i] == token_id:
+                c_token_index = i
+                break
+        if c_token_index != -1:
+            if side == "left":  # mask the token itself
+                for j in range(start, c_token_index + 1):
+                    new_labels[j] = -100
+            else:  # side == "right" # do not mask the token itself
+                for j in range(c_token_index + 1, end + 1):
+                    new_labels[j] = -100
+    return new_labels
+
+
+def mask_reasoning(labels: List[int], end_of_reasoning_token_id: int) -> List[int]:
+    return mask_left_or_right_of_token(labels, end_of_reasoning_token_id, "left")
+
+
+def mask_output(labels: List[int], end_of_output_token_id: int) -> List[int]:
+    return mask_left_or_right_of_token(labels, end_of_output_token_id, "right")
+
+
 class TokenizedDataset(CachedDataset):
     """Dataset that all data points are tokenized ahead."""
 
@@ -820,6 +880,10 @@ class TokenizedDataset(CachedDataset):
         ignore_cached: bool = False,
         batch_size: int = 5000,
         keep_assistant_prefix: bool = False,
+        additional_mask_type: Optional[
+            str
+        ] = "none",  # one of "none"; "reasoning", "output"
+        end_of_reasoning_token: str = "</think>",
     ):
         super().__init__(tokenizer, cached_folder, ignore_cached)
 
@@ -831,6 +895,23 @@ class TokenizedDataset(CachedDataset):
                 batch_size=batch_size,
                 keep_assistant_prefix=keep_assistant_prefix,
             )
+
+            if additional_mask_type != "none":
+                end_of_reasoning_token_id = tokenizer.encode(end_of_reasoning_token)[-1]
+                assert additional_mask_type in [
+                    "reasoning",
+                    "output",
+                ], "additional_mask_type must be one of 'reasoning', 'output'"
+                for dp in self.data_points:
+                    if additional_mask_type == "reasoning":
+                        dp["labels"] = mask_reasoning(
+                            dp["labels"], end_of_reasoning_token_id
+                        )
+                    elif additional_mask_type == "output":
+                        dp["labels"] = mask_output(
+                            dp["labels"], end_of_reasoning_token_id
+                        )
+
             if cached_folder is not None:
                 print(f"dump data to cached: {cached_folder}")
                 self.dump(cached_folder)
@@ -883,6 +964,10 @@ class LazyPreprocessDataset(Dataset):
         raw_data,
         tokenizer: transformers.PreTrainedTokenizer,
         keep_assistant_prefix: bool = False,
+        additional_mask_type: Optional[
+            str
+        ] = "none",  # one of "none"; "reasoning", "output"
+        end_of_reasoning_token: str = "</think>",
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -890,6 +975,9 @@ class LazyPreprocessDataset(Dataset):
         self.raw_data = raw_data
         self.cached_data_dict = {}
         self.keep_assistant_prefix = keep_assistant_prefix
+        self.additional_mask_type = additional_mask_type
+        self.end_of_reasoning_token = end_of_reasoning_token
+        self.end_of_reasoning_token_id = tokenizer.encode(end_of_reasoning_token)[-1]
 
     def __len__(self):
         return len(self.raw_data)
@@ -903,9 +991,16 @@ class LazyPreprocessDataset(Dataset):
             tokenizer=self.tokenizer,
             keep_assistant_prefix=self.keep_assistant_prefix,
         )
+
+        labels = ret["inputs"]["labels"]
+        if self.additional_mask_type == "reasoning":
+            labels = mask_reasoning(labels, self.end_of_reasoning_token_id)
+        elif self.additional_mask_type == "output":
+            labels = mask_output(labels, self.end_of_reasoning_token_id)
+
         ret = {
             "input_ids": ret["inputs"]["input_ids"],
-            "labels": ret["inputs"]["labels"],
+            "labels": labels,
             "attention_mask": ret["inputs"]["attention_mask"],
         }
         self.cached_data_dict[i] = ret
@@ -926,6 +1021,10 @@ class PackedDataset(CachedDataset):
         use_flash_attention: bool = True,
         pack_length: Optional[int] = None,
         max_packed_size: Optional[int] = -1,
+        additional_mask_type: Optional[
+            str
+        ] = "none",  # one of "none"; "reasoning", "output"
+        end_of_reasoning_token: str = "</think>",
     ):
         super().__init__(tokenizer, cached_folder, ignore_cached)
         self.use_flash_attention = use_flash_attention
@@ -940,6 +1039,22 @@ class PackedDataset(CachedDataset):
                 batch_size=batch_size,
                 keep_assistant_prefix=keep_assistant_prefix,
             )
+            if additional_mask_type != "none":
+                end_of_reasoning_token_id = tokenizer.encode(end_of_reasoning_token)[-1]
+                assert additional_mask_type in [
+                    "reasoning",
+                    "output",
+                ], "additional_mask_type must be one of 'reasoning', 'output'"
+                for dp in self.data_points:
+                    if additional_mask_type == "reasoning":
+                        dp["labels"] = mask_reasoning(
+                            dp["labels"], end_of_reasoning_token_id
+                        )
+                    elif additional_mask_type == "output":
+                        dp["labels"] = mask_output(
+                            dp["labels"], end_of_reasoning_token_id
+                        )
+
             self.update_packing_info()
             if cached_folder is not None:
                 print(f"dump data to cached: {cached_folder}")
