@@ -473,6 +473,7 @@ def map_raw_data_to_input_dic(
     padding: str,
     batch_size: int = 5000,
     keep_assistant_prefix: bool = False,
+    end_of_reasoning_token_id: int = -1,
 ) -> List[Dict]:
     """This function is used to map list of raw_data to list of processed data points for packing
     Args:
@@ -499,7 +500,28 @@ def map_raw_data_to_input_dic(
         )
 
         assert len(batch_result["batch_inputs"]) == len(raw_data[start:end])
-        for item in batch_result["batch_inputs"]:
+        # check additional mask type; if additional_mask_type is not none, we need to mask the labels
+
+        for item, original_dp in zip(batch_result["batch_inputs"], raw_data[start:end]):
+            # check  if we need to mask the reasoning or output tokens or not
+            additional_mask_type = "none"
+            if "metadata" in original_dp:
+                if "mask_type" in original_dp["metadata"]:
+                    additional_mask_type = original_dp["metadata"]["mask_type"]
+                    assert additional_mask_type in [
+                        "reasoning",
+                        "output",
+                        "none",
+                    ], "additional_mask_type must be one of 'reasoning', 'output', 'none'"
+
+            print(f"additional_mask_type: {additional_mask_type}")
+            if additional_mask_type == "reasoning":
+                item["labels"] = mask_reasoning(
+                    item["labels"], end_of_reasoning_token_id
+                )
+            elif additional_mask_type == "output":
+                item["labels"] = mask_output(item["labels"], end_of_reasoning_token_id)
+
             if is_valid_labels(item["labels"]):
                 data_points.append(item)
             else:
@@ -886,6 +908,7 @@ class TokenizedDataset(CachedDataset):
         end_of_reasoning_token: str = "</think>",
     ):
         super().__init__(tokenizer, cached_folder, ignore_cached)
+        self.end_of_reasoning_token_id = tokenizer.encode(end_of_reasoning_token)[-1]
 
         if not self.load_from_cache:  # if not loaded from cached
             self.data_points = map_raw_data_to_input_dic(
@@ -894,10 +917,10 @@ class TokenizedDataset(CachedDataset):
                 padding="do_not_pad",
                 batch_size=batch_size,
                 keep_assistant_prefix=keep_assistant_prefix,
+                end_of_reasoning_token_id=self.end_of_reasoning_token_id,
             )
 
             if additional_mask_type != "none":
-                end_of_reasoning_token_id = tokenizer.encode(end_of_reasoning_token)[-1]
                 assert additional_mask_type in [
                     "reasoning",
                     "output",
@@ -905,11 +928,11 @@ class TokenizedDataset(CachedDataset):
                 for dp in self.data_points:
                     if additional_mask_type == "reasoning":
                         dp["labels"] = mask_reasoning(
-                            dp["labels"], end_of_reasoning_token_id
+                            dp["labels"], self.end_of_reasoning_token_id
                         )
                     elif additional_mask_type == "output":
                         dp["labels"] = mask_output(
-                            dp["labels"], end_of_reasoning_token_id
+                            dp["labels"], self.end_of_reasoning_token_id
                         )
 
             if cached_folder is not None:
@@ -993,9 +1016,22 @@ class LazyPreprocessDataset(Dataset):
         )
 
         labels = ret["inputs"]["labels"]
-        if self.additional_mask_type == "reasoning":
+        additional_mask_type = "none"
+        if "metadata" in self.raw_data[i]:
+            if "mask_type" in self.raw_data[i]["metadata"]:
+                additional_mask_type = self.raw_data[i]["metadata"]["mask_type"]
+                assert additional_mask_type in [
+                    "reasoning",
+                    "output",
+                    "none",
+                ], "additional_mask_type must be one of 'reasoning', 'output', 'none'"
+
+        if self.additional_mask_type != "none":
+            additional_mask_type = self.additional_mask_type
+
+        if additional_mask_type == "reasoning":
             labels = mask_reasoning(labels, self.end_of_reasoning_token_id)
-        elif self.additional_mask_type == "output":
+        elif additional_mask_type == "output":
             labels = mask_output(labels, self.end_of_reasoning_token_id)
 
         ret = {
@@ -1030,7 +1066,9 @@ class PackedDataset(CachedDataset):
         self.use_flash_attention = use_flash_attention
         self.pack_length = pack_length if pack_length else tokenizer.model_max_length
         self.max_packed_size = max_packed_size
+        self.end_of_reasoning_token_id = tokenizer.encode(end_of_reasoning_token)[-1]
         print("self.pack_length: ", self.pack_length)
+
         if not self.load_from_cache:
             self.data_points = map_raw_data_to_input_dic(
                 raw_data=raw_data,
@@ -1038,9 +1076,10 @@ class PackedDataset(CachedDataset):
                 padding="do_not_pad",
                 batch_size=batch_size,
                 keep_assistant_prefix=keep_assistant_prefix,
+                end_of_reasoning_token_id=self.end_of_reasoning_token_id,
             )
             if additional_mask_type != "none":
-                end_of_reasoning_token_id = tokenizer.encode(end_of_reasoning_token)[-1]
+
                 assert additional_mask_type in [
                     "reasoning",
                     "output",
@@ -1048,11 +1087,11 @@ class PackedDataset(CachedDataset):
                 for dp in self.data_points:
                     if additional_mask_type == "reasoning":
                         dp["labels"] = mask_reasoning(
-                            dp["labels"], end_of_reasoning_token_id
+                            dp["labels"], self.end_of_reasoning_token_id
                         )
                     elif additional_mask_type == "output":
                         dp["labels"] = mask_output(
-                            dp["labels"], end_of_reasoning_token_id
+                            dp["labels"], self.end_of_reasoning_token_id
                         )
 
             self.update_packing_info()
