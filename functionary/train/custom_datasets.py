@@ -514,7 +514,7 @@ def map_raw_data_to_input_dic(
                         "none",
                     ], "additional_mask_type must be one of 'reasoning', 'output', 'none'"
 
-            print(f"additional_mask_type: {additional_mask_type}")
+            # print(f"additional_mask_type: {additional_mask_type}")
             if additional_mask_type == "reasoning":
                 item["labels"] = mask_reasoning(
                     item["labels"], end_of_reasoning_token_id
@@ -829,6 +829,22 @@ class CachedDataset(Dataset):
             f.write(json.dumps(self.create_meta_info()))
         t2 = datetime.datetime.now()
         print("time for dumping data: ", (t2 - t1).total_seconds())
+    
+    def dump_to_jsonl(self, json_path: str, ignore_attention_mask: bool = False):
+        t1 = datetime.datetime.now()
+        with open(json_path, "w") as f:
+            for index, dp in enumerate(self.data_points):
+                new_dp = copy.deepcopy(dp)
+                if ignore_attention_mask:
+                    new_dp.pop("attention_mask", None)
+                f.write(json.dumps(new_dp) + "\n")
+                if index % 10000 == 0 and index > 0:
+                    t2 = datetime.datetime.now()
+                    avg_time = (t2 - t1).total_seconds() / (index + 1)
+                    avg_time_per_1k = avg_time * 1000
+                    remaining_time = avg_time * (len(self.data_points) - index - 1)
+                    print(f"dumped {index + 1} data points to {json_path} in avg_time_per_1k={avg_time_per_1k:.2f} ms, remaining time: {remaining_time:.2f} seconds")
+        print(f"dumped {len(self.data_points)} data points to {json_path}")
 
     def stat(self):
         print(json.dumps(self.create_meta_info()))
@@ -906,6 +922,7 @@ class TokenizedDataset(CachedDataset):
             str
         ] = "none",  # one of "none"; "reasoning", "output"
         end_of_reasoning_token: str = "</think>",
+        save_cached_if_not_exists: bool = True,
     ):
         super().__init__(tokenizer, cached_folder, ignore_cached)
         self.end_of_reasoning_token_id = tokenizer.encode(end_of_reasoning_token)[-1]
@@ -935,7 +952,7 @@ class TokenizedDataset(CachedDataset):
                             dp["labels"], self.end_of_reasoning_token_id
                         )
 
-            if cached_folder is not None:
+            if cached_folder is not None and save_cached_if_not_exists:
                 print(f"dump data to cached: {cached_folder}")
                 self.dump(cached_folder)
 
@@ -1061,6 +1078,7 @@ class PackedDataset(CachedDataset):
             str
         ] = "none",  # one of "none"; "reasoning", "output"
         end_of_reasoning_token: str = "</think>",
+        save_cached_if_not_exists: bool = True,
     ):
         super().__init__(tokenizer, cached_folder, ignore_cached)
         self.use_flash_attention = use_flash_attention
@@ -1095,7 +1113,7 @@ class PackedDataset(CachedDataset):
                         )
 
             self.update_packing_info()
-            if cached_folder is not None:
+            if cached_folder is not None and save_cached_if_not_exists:
                 print(f"dump data to cached: {cached_folder}")
                 self.dump(cached_folder)
         else:  # update packing

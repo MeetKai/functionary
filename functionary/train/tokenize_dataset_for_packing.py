@@ -20,6 +20,8 @@ def main(
     max_length: int = typer.Option(4096),
     pack_length: int = typer.Option(-1),
     max_packed_size: int = typer.Option(-1),
+    ignore_attention_mask: bool = typer.Option(False),
+    save_cached_if_not_exists: bool = typer.Option(False),
 ):
     """Tokenize the dataset ahead for packing
 
@@ -43,17 +45,21 @@ def main(
 
     if pack_length == -1:
         pack_length = max_length
-
-    tokenizer.pad_token = tokenizer.eos_token
+    
+    if not tokenizer.pad_token:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.chat_template = prompt_template.get_chat_template_jinja()
+    
     added_tokens = prompt_template.get_additional_tokens()
-    special_tokens = {"additional_special_tokens": added_tokens}
-    num_new_tokens = tokenizer.add_special_tokens(special_tokens)
-    print("number of added tokens: ", num_new_tokens)
+    if len(added_tokens) > 0:
+        special_tokens = {"additional_special_tokens": added_tokens}
+        num_new_tokens = tokenizer.add_special_tokens(special_tokens)
+        print("number of added tokens: ", num_new_tokens)
 
     with open(data_path, "r") as f:
         raw_data = [json.loads(line) for line in f]
 
-    keep_assistant_prefix = True if data_type == "train" else False
+    # keep_assistant_prefix = True if data_type == "train" else False
     if not os.path.exists(save_folder):
         os.mkdir(save_folder)
 
@@ -67,12 +73,14 @@ def main(
         tokenizer,
         cached_folder=cached_folder,
         ignore_cached=False,
-        keep_assistant_prefix=keep_assistant_prefix,
+        keep_assistant_prefix=False,
         use_flash_attention=True,
         pack_length=pack_length,
         max_packed_size=max_packed_size,
+        save_cached_if_not_exists=save_cached_if_not_exists,
     )
     ds.stat()
+    ds.dump_to_jsonl(f"{cached_folder}/tokenized_data.jsonl", ignore_attention_mask=ignore_attention_mask)
 
 
 if __name__ == "__main__":
