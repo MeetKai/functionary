@@ -45,11 +45,11 @@ def main(
 
     if pack_length == -1:
         pack_length = max_length
-    
+
     if not tokenizer.pad_token:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.chat_template = prompt_template.get_chat_template_jinja()
-    
+
     added_tokens = prompt_template.get_additional_tokens()
     if len(added_tokens) > 0:
         special_tokens = {"additional_special_tokens": added_tokens}
@@ -63,7 +63,7 @@ def main(
     if not os.path.exists(save_folder):
         os.mkdir(save_folder)
 
-    cached_folder = f"{save_folder}/{data_type}_cached"
+    cached_folder = f"{save_folder}/{data_type}"
     if not os.path.exists(cached_folder):
         os.mkdir(cached_folder)
 
@@ -80,7 +80,7 @@ def main(
         save_cached_if_not_exists=save_cached_if_not_exists,
     )
     ds.stat()
-    ds.dump_to_jsonl(f"{cached_folder}/tokenized_data.jsonl", ignore_attention_mask=ignore_attention_mask)
+    ds.dump_to_hf_dataset(cached_folder)
 
 
 if __name__ == "__main__":

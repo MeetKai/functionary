@@ -5,6 +5,7 @@ import pickle
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Union
 import copy
+from datasets import Dataset as HFDataset
 
 import torch
 import transformers
@@ -16,6 +17,82 @@ from functionary.prompt_template import (
 )
 import string
 from pathlib import Path
+
+
+def tokenize_texts(
+    tokenizer: Any,
+    texts: List[str],
+    padding: str,
+    max_length: int,
+    truncation: bool,
+    workers: int = -1,
+) -> Dict[str, List]:
+    """
+    Tokenizes a list of texts in parallel using the datasets library.
+
+    Args:
+        tokenizer: A Hugging Face "Fast" tokenizer (PreTrainedTokenizerFast).
+        texts: A list of raw text strings.
+        padding: Padding strategy (e.g., "max_length", "longest").
+        max_length: Maximum sequence length.
+        truncation: Whether to truncate sequences.
+
+    Returns:
+        A dictionary with "input_ids" and "attention_mask", where
+        each value is a list of lists.
+    """
+
+    if not tokenizer.is_fast:
+        print(
+            "Warning: You are not using a 'Fast' tokenizer. "
+            "Parallel processing may be slow or disabled."
+        )
+
+    # 1. Load the list of texts into a Dataset object
+    # This creates an in-memory Arrow table, which is very fast.
+    dataset = HFDataset.from_dict({"text": texts})
+
+    # 2. Define the internal function to apply to batches
+    # This function will be called by each parallel worker.
+    def _tokenize_batch(batch):
+        # The tokenizer is called just as you had it,
+        # but on the "text" field of the batch.
+        return tokenizer(
+            batch["text"],
+            padding=padding,
+            max_length=max_length,
+            truncation=truncation,
+        )
+
+    # 3. Get the number of available CPU cores
+    if workers == -1:
+        workers = os.cpu_count()
+        if workers is None:
+            workers = 1
+
+    # 4. Run the parallel mapping
+    # - `batched=True`: Processes texts in batches for speed.
+    # - `num_proc`: Spawns multiple processes.
+    # - `remove_columns`: Cleans up the original "text" column.
+    tokenized_dataset = dataset.map(
+        _tokenize_batch, batched=True, num_proc=workers, remove_columns=["text"]
+    )
+
+    print("Tokenization complete.")
+
+    # 5. Format the output as requested
+    # This collects the results from the Arrow table back into
+    # standard Python lists.
+    output_data = {
+        "input_ids": tokenized_dataset["input_ids"],
+        "attention_mask": tokenized_dataset["attention_mask"],
+    }
+
+    # Also add token_type_ids if the tokenizer produced them (e.g., for BERT)
+    if "token_type_ids" in tokenized_dataset.column_names:
+        output_data["token_type_ids"] = tokenized_dataset["token_type_ids"]
+
+    return output_data
 
 
 def get_batch_indices(size: int, batch_size: int) -> List[Tuple[int, int]]:
@@ -413,8 +490,8 @@ def prepare_training_inputs_batch(
         prompt_str_list.append(prompt_str)
     max_length = max_length if max_length is not None else tokenizer.model_max_length
 
-    input_dic = tokenizer(
-        prompt_str_list, padding=padding, max_length=max_length, truncation=True
+    input_dic = tokenize_texts(
+        tokenizer, prompt_str_list, padding, max_length, True, workers=8
     )
     # input_token_ids = input_dic["input_ids"]
     batch_labels = []
@@ -829,7 +906,21 @@ class CachedDataset(Dataset):
             f.write(json.dumps(self.create_meta_info()))
         t2 = datetime.datetime.now()
         print("time for dumping data: ", (t2 - t1).total_seconds())
-    
+
+    def dump_to_hf_dataset(self, folder: str):
+        data_dic = {"input_ids": [], "labels": [], "length": []}
+        for dp in self.data_points:
+            input_ids = dp["input_ids"]
+            labels = dp["labels"]
+            length = sum(dp["attention_mask"])
+            assert length == len(input_ids) == len(labels)
+            data_dic["input_ids"].append(input_ids)
+            data_dic["labels"].append(labels)
+            data_dic["length"].append(length)
+
+        dataset = HFDataset.from_dict(data_dic)
+        dataset.save_to_disk(folder)
+
     def dump_to_jsonl(self, json_path: str, ignore_attention_mask: bool = False):
         t1 = datetime.datetime.now()
         with open(json_path, "w") as f:
@@ -843,7 +934,9 @@ class CachedDataset(Dataset):
                     avg_time = (t2 - t1).total_seconds() / (index + 1)
                     avg_time_per_1k = avg_time * 1000
                     remaining_time = avg_time * (len(self.data_points) - index - 1)
-                    print(f"dumped {index + 1} data points to {json_path} in avg_time_per_1k={avg_time_per_1k:.2f} ms, remaining time: {remaining_time:.2f} seconds")
+                    print(
+                        f"dumped {index + 1} data points to {json_path} in avg_time_per_1k={avg_time_per_1k:.2f} ms, remaining time: {remaining_time:.2f} seconds"
+                    )
         print(f"dumped {len(self.data_points)} data points to {json_path}")
 
     def stat(self):
