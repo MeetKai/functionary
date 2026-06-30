@@ -1,5 +1,8 @@
 # Functionary
 
+> [!WARNING]
+> **This project is deprecated and is no longer actively maintained.** This repository reflects a very old snapshot of Functionary and does not represent the current state of the project. The code, models, and documentation here are significantly out of date. It remains available for reference only — we are no longer providing updates, bug fixes, or support, and issues and pull requests may not be reviewed.
+
 <a href="https://meetkai.com/">
   <img align="right" width="256" height="256" src="https://github.com/meetkai/functionary/assets/3749407/c7a1972d-6ad7-40dc-8000-dceabe6baabd">
 </a>
